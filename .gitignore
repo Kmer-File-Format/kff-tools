@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# Cmake
+**/CMakeCache.txt
+**/CMakeFiles/
+**/Makefile
+**/*.cmake
+
+# bins
+kff-tools
