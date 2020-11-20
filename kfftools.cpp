@@ -32,8 +32,8 @@ KffTool * parse_args(int argc, char** argv) {
 	}
 
 	// Determine wich app was parsed
-	KffTool * tool = (KffTool *)0;
-	CLI::App * parsed_app;
+	KffTool * tool = nullptr;
+	CLI::App * parsed_app = nullptr;
 	if (split_app->parsed()) {
 		tool = split;
 		parsed_app = split_app;
