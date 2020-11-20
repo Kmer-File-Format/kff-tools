@@ -10,7 +10,16 @@ Each following part describes one of these tools.
 
 Split a kff file into one kff file per section.
 
-code status: TODO
+software status: Ready but not fully tested
+
+Parameters:
+* **-i <input.kff>** \[required\]: Input file to split.
+* **-o <path>**: Directory where the split output files are writen (Default ./).
+
+Usage:
+```bash
+  kff-tools split -i to_split.kff -o split_dir/
+```
 
 ## kff-tools merge
 

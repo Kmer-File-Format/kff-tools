@@ -14,9 +14,7 @@ class Split: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_dirname;
-	
-	std::ifstream input_file;
-	std::istream * in;
+
 public:
 	Split();
 	void cli_prepare(CLI::App * subapp);
