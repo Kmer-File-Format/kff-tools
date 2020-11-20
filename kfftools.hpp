@@ -8,6 +8,7 @@
 class KffTool {
 public:
 	virtual void cli_prepare(CLI::App * subapp) = 0;
+	virtual void exec() = 0;
 };
 
 
