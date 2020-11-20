@@ -20,7 +20,7 @@ private:
 public:
 	Split();
 	void cli_prepare(CLI::App * subapp);
-	void init();
+	void exec();
 };
 
 
