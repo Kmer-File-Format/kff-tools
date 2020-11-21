@@ -61,8 +61,7 @@ void Split::exec() {
 
 			// Analyse the section size
 			auto begin_byte = input_file.fs.tellp();
-			Block_section_reader * section = Block_section_reader::construct_section(section_type, &input_file);
-			section->jump_section();
+			input_file.jump_next_section();
 			auto end_byte = input_file.fs.tellp();
 			long size = end_byte - begin_byte;
 			input_file.fs.seekp(begin_byte);
