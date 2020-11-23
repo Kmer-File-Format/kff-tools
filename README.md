@@ -12,7 +12,7 @@ Split a kff file into one kff file per section.
 
 Parameters:
 * **-i <input.kff>** \[required\]: Input file to split.
-* **-o <path>**: Directory where the split output files are writen (Default ./).
+* **-o <path>**: Directory where the split output files are written (Default ./).
 
 Usage:
 ```bash
@@ -24,8 +24,18 @@ Remaining work: The outdir must be created if not exists.
 ## kff-tools merge
 
 Merge a list of kff files into only one.
+The order of the input file will be preserved in the merged output.
 
-code status: TODO
+Parameters:
+* **-i <input1.kff> <input2.kff> ...** \[required\]: Input file list to merge.
+All the files must share the same encoding.
+If not, please first translate them (you can use the translate subprogram of kff-tools).
+* **-o <output.kff>** \[required\]: Name of the merged kff file.
+
+Usage:
+```bash
+  kff-tools merge -i to_merge_1.kff to_merge_2.kff to_merge_3.kff -o merged.kff
+```
 
 ## kff-tools enlarge
 
