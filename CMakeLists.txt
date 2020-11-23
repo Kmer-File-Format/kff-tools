@@ -24,12 +24,14 @@ add_subdirectory(kmer_file_format/C++/)
 set(SRCS
     kfftools.cpp
     split.cpp
+    merge.cpp
     )
     
 set(HEADERS
     CLI11.hpp
     kfftools.hpp
     split.hpp
+    merge.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})

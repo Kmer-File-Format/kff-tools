@@ -10,8 +10,6 @@ Each following part describes one of these tools.
 
 Split a kff file into one kff file per section.
 
-software status: Ready but not fully tested
-
 Parameters:
 * **-i <input.kff>** \[required\]: Input file to split.
 * **-o <path>**: Directory where the split output files are writen (Default ./).
@@ -21,9 +19,11 @@ Usage:
   kff-tools split -i to_split.kff -o split_dir/
 ```
 
+Remaining work: The outdir must be created if not exists.
+
 ## kff-tools merge
 
-Merge a set of kff files into only one.
+Merge a list of kff files into only one.
 
 code status: TODO
 
@@ -36,6 +36,12 @@ code status: TODO
 ## kff-tools outstr
 
 Read a file and print out the kmers and data as strings
+
+code status: TODO
+
+## kff-tools translate
+
+Read and rewrite a kff file changing the nucleotide encoding.
 
 code status: TODO
 
