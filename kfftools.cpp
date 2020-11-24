@@ -6,6 +6,7 @@
 
 #include "split.hpp"
 #include "merge.hpp"
+#include "translate.hpp"
 
 
 using namespace std;
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
 	vector<KffTool *> tools;
 	tools.push_back(new Split());
 	tools.push_back(new Merge());
+	tools.push_back(new Translate());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
