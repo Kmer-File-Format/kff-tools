@@ -12,7 +12,7 @@ Split a kff file into one kff file per section.
 
 Parameters:
 * **-i <input.kff>** \[required\]: Input file to split.
-* **-o <path>**: Directory where the split output files are written (Default ./).
+* **-o <path/>**: Directory where the split output files are written (Default ./).
 
 Usage:
 ```bash
@@ -37,12 +37,6 @@ Usage:
   kff-tools merge -i to_merge_1.kff to_merge_2.kff to_merge_3.kff -o merged.kff
 ```
 
-## kff-tools enlarge
-
-Each block in each section is split into one block per kmer.
-
-code status: TODO
-
 ## kff-tools outstr
 
 Read a file and print out the kmers and data as strings
@@ -55,6 +49,12 @@ Read and rewrite a kff file changing the nucleotide encoding.
 
 code status: TODO
 
+## kff-tools diff
+
+Read two kff files and print the differences between them
+
+code status: TODO
+
 ## kff-tools data-rm
 
 Read a kff file and write the same one with a data size of 0.
@@ -62,8 +62,8 @@ i.e. all the data are removed to only keep kmer sequences
 
 code status: TODO
 
-## kff-tools diff
+## kff-tools expand
 
-Read two kff files and print the differences between them
+Each block in each section is split into one block per kmer.
 
 code status: TODO
