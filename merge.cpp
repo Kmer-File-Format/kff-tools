@@ -36,7 +36,15 @@ void Merge::exec() {
 
 	// Write header of the output
 	Kff_file outfile(output_filename, "w");
-
+	outfile.write_encoding(
+		global_encoding[0],
+		global_encoding[1],
+		global_encoding[2],
+		global_encoding[3]
+	);
+	// Set metadata
+	std::string meta = "Merged file";
+	outfile.write_metadata(meta.length(), (uint8_t *)meta.c_str());
 
 	// Append each file one by one
 	for (string in_filename : input_filenames) {
