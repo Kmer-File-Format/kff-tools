@@ -22,16 +22,20 @@ set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
 add_subdirectory(kmer_file_format/C++/)
 
 set(SRCS
+    encoding.cpp
     kfftools.cpp
     split.cpp
     merge.cpp
+    translate.cpp
     )
     
 set(HEADERS
+    encoding.hpp
     CLI11.hpp
     kfftools.hpp
     split.hpp
     merge.hpp
+    translate.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})

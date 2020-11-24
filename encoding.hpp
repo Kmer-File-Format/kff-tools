@@ -1,3 +1,6 @@
+#include <cstdint>
+#include <iostream>
+
 
 /** 
 	* Object used to translate compacted sequences from an encoding to another.
@@ -17,7 +20,7 @@ public:
 		* @param destination The destination encoding. A 4 cell array where each of
 		* the numbers from 0 to 3 must be present.
 		**/
-	Translator(uint8_t soucre[4], uint8_t destination[4]);
+	Translator(uint8_t source[4], uint8_t destination[4]);
 	/**
 	  * Inplace translate the sequence from the source encoding to the destination.
 	  *
