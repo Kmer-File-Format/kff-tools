@@ -27,6 +27,7 @@ set(SRCS
     split.cpp
     merge.cpp
     translate.cpp
+    outstr.cpp
     )
     
 set(HEADERS
@@ -36,6 +37,7 @@ set(HEADERS
     split.hpp
     merge.hpp
     translate.hpp
+    outstr.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
