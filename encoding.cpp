@@ -10,7 +10,7 @@ Translator::Translator(uint8_t source[4], uint8_t destination[4]) {
 		nucl_translation[source[i]] = destination[i] & 0b11;
 	
 	// Lookup translation for Bytes
-	for (uint8_t i=0 ; i<256 ; i++) {
+	for (uint i=0 ; i<256 ; i++) {
 		lookup[i] = 0;
 
 		for (uint pos=0 ; pos<4 ; pos++) {

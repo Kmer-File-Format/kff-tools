@@ -6,6 +6,13 @@ kff file format is [described here](https://github.com/yoann-dufresne/kmer_file_
 kff-tools is a program containing a set of small programs allowing kff files manipulations.
 Each following part describes one of these tools.
 
+## kff-tools validate
+
+Try to read a kff file and validate its structure.
+Fail if something is incoherent with the standard but doesn't guaranty the validity if anything seems right.
+
+code status: TODO
+
 ## kff-tools split
 
 Split a kff file into one kff file per section.

@@ -44,11 +44,6 @@ void Translate::cli_prepare(CLI::App * app) {
 }
 
 void Translate::exec() {
-	// // Useful variables
-	// long buffer_size = 1048576; // 1 MB
-	// char buffer[1048576];
-	// uint8_t global_encoding[4];
-
 	// Prepare the destination encoding
 	uint8_t dest_encoding[4];
 	for (uint char_idx=0 ; char_idx<4 ; char_idx++) {
@@ -73,7 +68,6 @@ void Translate::exec() {
 	Kff_file infile(input_filename, "r");
 	infile.read_encoding();
 	Translator translator(infile.encoding, dest_encoding);
-	// translator.translate(uint8_t * sequence, size_t byte_length);
 
 	// Write header of the output
 	Kff_file outfile(output_filename, "w");
@@ -84,92 +78,100 @@ void Translate::exec() {
 		dest_encoding[3]
 	);
 	// Set metadata
-	auto metadata_size = infile.size_metadata();
-	uint8_t metadata[1024];
+	uint32_t metadata_size = infile.size_metadata();
+	uint8_t * metadata = new uint8_t[metadata_size];
 	infile.read_metadata(metadata_size, metadata);
 	outfile.write_metadata(metadata_size, metadata);
+	delete[] metadata;
 
+	// Prepare sequence and data buffers
+	uint8_t * nucleotides = new uint8_t[1];
+	uint8_t * data = new uint8_t[1];
 
-	// // Append each file one by one
-	// for (string in_filename : input_filenames) {
-	// 	// Open the file
-	// 	Kff_file infile(in_filename, "r");
-	// 	infile.read_encoding();
+	// Read and write section per section
+	char section_type = infile.read_section_type();
+	while (not infile.fs.eof()) {
+		// Read variables
+		if (section_type == 'v') {
+			// Load variables
+			Section_GV isgv = infile.open_section_GV();
+			Section_GV osgv = outfile.open_section_GV();
 
-	// 	// Encoding verification
-	// 	for (uint i=0 ; i<4 ; i++) {
-	// 		if (infile.encoding[i] != global_encoding[i]) {
-	// 			cerr << "Wrong encoding for file " << in_filename << endl;
-	// 			cerr << "Its nucleotide encoding is different from previous kff files." << endl;
-	// 			cerr << "Please first use 'kff-tools translate' to have the same encoding" << endl;
-	// 			exit(1);
-	// 		}
-	// 	}
+			bool nucl_buffer_changed = false;
+			bool data_buffer_changed = false;
+			for (auto var_tuple : isgv.vars) {
+				osgv.write_var(var_tuple.first, var_tuple.second);
 
-	// 	// Jump over metadata
-	// 	long metadata_size = static_cast<long>(infile.size_metadata());
-	// 	infile.fs.seekp(infile.fs.tellp() + metadata_size);
+				if (var_tuple.first == "k" or var_tuple.first == "max")
+					nucl_buffer_changed = true;
+				if (var_tuple.first == "data_size" or var_tuple.first == "max")
+					data_buffer_changed = true;
+			}
+			isgv.close();
+			osgv.close();
 
-	// 	// Read section by section
-	// 	char section_type = infile.read_section_type();
-	// 	while(not infile.fs.eof()) {
-	// 		vector<string> to_copy;
-	// 		long size, end_byte, begin_byte;
+			// Buffer updates
+			if (nucl_buffer_changed) {
+				delete[] nucleotides;
+				uint max_nucl = outfile.global_vars["k"] + outfile.global_vars["max_size"] - 1;
+				nucleotides = new uint8_t[max_nucl / 4 + 1];
+			}
+			if (data_buffer_changed) {
+				delete[] data;
+				uint nb_data = outfile.global_vars["max_size"];
+				data = new uint8_t[nb_data];
+			}
+		}
+		// translate a raw block
+		else if (section_type == 'r') {
+			// Open sections
+			Section_Raw in_section = infile.open_section_raw();
+			Section_Raw out_section = outfile.open_section_raw();
 
-	// 		switch (section_type) {
-	// 			// Write the variables that change from previous sections (possibly sections from other input files)
-	// 			case 'v':
-	// 			// Read the values
-	// 			infile.open_section_GV();
+			// Translate block per block
+			uint64_t k = outfile.global_vars["k"];
+			for (uint i=0 ; i<in_section.nb_blocks ; i++) {
+				uint nb_kmers = in_section.read_compacted_sequence(nucleotides, data);
+				uint size = k + nb_kmers - 1;
+				size = size % 4 == 0 ? size / 4 : size / 4 + 1;
+				translator.translate(nucleotides, size);
+				out_section.write_compacted_sequence(nucleotides, k + nb_kmers - 1, data);
+			}
 
-	// 			// Verify the presence and value of each variable in output
-	// 			for (auto& tuple : infile.global_vars) {
-	// 				if (outfile.global_vars.find(tuple.first) == outfile.global_vars.end()
-	// 						or outfile.global_vars[tuple.first] != tuple.second)
-	// 					to_copy.push_back(tuple.first);
-	// 			}
-	// 			// Create a global variable section if needed
-	// 			if (to_copy.size() > 0) {
-	// 				Section_GV sgv = outfile.open_section_GV();
-	// 				// Write variables
-	// 				for (string s : to_copy)
-	// 					sgv.write_var(s, infile.global_vars[s]);
-	// 				sgv.close();
-	// 			}
-	// 			break;
+			in_section.close();
+			out_section.close();
+		}
+		// Translate a minimizer block
+		else if (section_type == 'm') {
+			// Open sections
+			Section_Minimizer in_section = infile.open_section_minimizer();
+			Section_Minimizer out_section = outfile.open_section_minimizer();
 
-	// 			// copy the sequence section from input to output
-	// 			case 'r':
-	// 			case 'm':
-	// 			// Analyse the section size
-	// 			begin_byte = infile.fs.tellp();
-	// 			infile.jump_next_section();
-	// 			end_byte = infile.fs.tellp();
-	// 			size = end_byte - begin_byte;
-	// 			infile.fs.seekp(begin_byte);
+			// translate and write the minimizer
+			uint k = outfile.global_vars["k"];
+			uint m = outfile.global_vars["m"];
+			translator.translate(in_section.minimizer, m);
+			out_section.write_minimizer(in_section.minimizer);
 
-	// 			// Read from input and write into output
-	// 			while (size > 0) {
-	// 				size_t size_to_copy = size > buffer_size ? buffer_size : size;
+			// Translate block per block
+			for (uint i=0 ; i<in_section.nb_blocks ; i++) {
+				// Read
+				uint64_t mini_pos;
+				uint nb_kmers = in_section.read_compacted_sequence_without_mini(nucleotides, data, mini_pos);
+				// Translate
+				uint nucl_size = k - m + nb_kmers - 1;
+				uint byte_size = nucl_size % 4 == 0 ? nucl_size / 4 : nucl_size / 4 + 1;
+				translator.translate(nucleotides, byte_size);
+				// Write
+				out_section.write_compacted_sequence_without_mini(nucleotides, nucl_size, mini_pos, data);
+			}
 
-	// 				infile.fs.read(buffer, size_to_copy);
-	// 				outfile.fs.write(buffer, size_to_copy);
+			in_section.close();
+			out_section.close();
+		}
 
-	// 				size -= size_to_copy;
-	// 			}
-	// 			break;
-
-	// 			default:
-	// 				cerr << "Unknown section type " << section_type << endl;
-	// 				exit(2);
-	// 		}
-
-	// 		// Prepare next section
-	// 		section_type = infile.read_section_type();
-	// 	}
-
-	// 	infile.close();
-	// }
-
-	// outfile.close();
+		section_type = infile.read_section_type();
+	}
+	infile.close();
+	outfile.close();
 }
