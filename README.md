@@ -26,8 +26,6 @@ Usage:
   kff-tools split -i to_split.kff -o split_dir/
 ```
 
-Remaining work: The outdir must be created if not exists.
-
 ## kff-tools merge
 
 Merge a list of kff files into only one.
@@ -46,9 +44,16 @@ Usage:
 
 ## kff-tools outstr
 
-Read a file and print out the kmers and data as strings
+Read a file and print to stdout the kmers and data as strings (one kmer per line)
 
-code status: TODO
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to print.
+
+Usage:
+```bash
+  kff-tools outstr -i to_encode.kff
+```
+
 
 ## kff-tools translate
 
@@ -64,12 +69,6 @@ Usage:
 ```bash
   kff-tools translate -i to_encode.kff -o encoded.kff -e AGTC
 ```
-
-## kff-tools diff
-
-Read two kff files and print the differences between them
-
-code status: TODO
 
 ## kff-tools data-rm
 
