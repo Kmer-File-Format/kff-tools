@@ -19,7 +19,7 @@ Split a kff file into one kff file per section.
 
 Parameters:
 * **-i &lt;input.kff&gt;** \[required\]: Input file to split.
-* **-o &lt;path/&gt;**: Directory where the split output files are written (Default ./).
+* **-o &lt;path&gt;**: Directory where the split output files are written (Default ./).
 
 Usage:
 ```bash
