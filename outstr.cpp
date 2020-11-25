@@ -13,7 +13,7 @@ Outstr::Outstr() {
 }
 
 void Outstr::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("outstr", "Output kmer sequences as string on stdout.");
+	this->subapp = app->add_subcommand("outstr", "Output kmer sequences as string on stdout. One kmer per line is printed");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "The file to print");
 	input_option->required();
 }
