@@ -62,7 +62,11 @@ void Split::exec() {
 
 			// Analyse the section size
 			auto begin_byte = input_file.fs.tellp();
-			input_file.jump_next_section();
+			if (not input_file.jump_next_section()) {
+				cerr << "Error inside of the input file." << endl;
+				cerr << "Impossible to jump over the section" << endl;
+				exit(1);
+			}
 			auto end_byte = input_file.fs.tellp();
 			long size = end_byte - begin_byte;
 			input_file.fs.seekp(begin_byte);
