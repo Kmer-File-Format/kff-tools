@@ -66,7 +66,6 @@ void Translate::exec() {
 
 	// Read the encoding and prepare the translator
 	Kff_file infile(input_filename, "r");
-	infile.read_encoding();
 	Translator translator(infile.encoding, dest_encoding);
 
 	// Write header of the output
@@ -78,10 +77,9 @@ void Translate::exec() {
 		dest_encoding[3]
 	);
 	// Set metadata
-	uint32_t metadata_size = infile.size_metadata();
-	uint8_t * metadata = new uint8_t[metadata_size];
-	infile.read_metadata(metadata_size, metadata);
-	outfile.write_metadata(metadata_size, metadata);
+	uint8_t * metadata = new uint8_t[infile.metadata_size];
+	infile.read_metadata(metadata);
+	outfile.write_metadata(infile.metadata_size, metadata);
 	delete[] metadata;
 
 	// Prepare sequence and data buffers
