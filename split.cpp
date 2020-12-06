@@ -23,10 +23,8 @@ void Split::exec() {
 		output_dirname += "/";
 
 	Kff_file input_file(input_filename, "r");
-	input_file.read_encoding();
-	uint8_t input_metadata[1024];
-	uint32_t metadata_size = input_file.size_metadata();
-	input_file.read_metadata(metadata_size, input_metadata);
+	uint8_t * input_metadata = new uint8_t[input_file.metadata_size];
+	input_file.read_metadata(input_metadata);
 
 	long buffer_size = 1048576; // 1 MB
 	char buffer[1048576];
@@ -49,7 +47,7 @@ void Split::exec() {
 				input_file.encoding[2],
 				input_file.encoding[3]
 			);
-			output_file.write_metadata(metadata_size, input_metadata);
+			output_file.write_metadata(input_file.metadata_size, input_metadata);
 
 			// Write needed variables
 			Section_GV sgv = output_file.open_section_GV();
