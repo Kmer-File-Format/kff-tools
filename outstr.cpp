@@ -21,7 +21,7 @@ void Outstr::cli_prepare(CLI::App * app) {
 void Outstr::exec() {
 	// Read the encoding and prepare the translator
 	Kff_reader reader = Kff_reader(input_filename);
-	Stringifyer strif(reader.file->encoding);
+	Stringifyer strif(reader.get_encoding());
 
 	// Prepare sequence and data buffers
 	uint8_t * nucleotides;
@@ -29,6 +29,6 @@ void Outstr::exec() {
 
 	while (reader.has_next()) {
 		reader.next_kmer(&nucleotides, &data);
-		cout << strif.translate(nucleotides, reader.file->global_vars["k"]) << " " << (uint)*data << endl;
+		cout << strif.translate(nucleotides, reader.get_var("k")) << " " << (uint)*data << endl;
 	}
 }
