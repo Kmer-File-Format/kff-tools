@@ -60,8 +60,7 @@ void Merge::exec() {
 			}
 		}
 
-		// Jump over metadata
-		infile.fs.seekp(infile.fs.tellp() + static_cast<long>(infile.metadata_size));
+		// NB: Automatic jump over metadata due to API
 
 		// Read section by section
 		char section_type = infile.read_section_type();
@@ -113,7 +112,7 @@ void Merge::exec() {
 				break;
 
 				default:
-					cerr << "Unknown section type " << section_type << endl;
+					cerr << "Unknown section type " << section_type << " in file " << in_filename << endl;
 					exit(2);
 			}
 
