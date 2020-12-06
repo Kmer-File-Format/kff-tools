@@ -29,7 +29,6 @@ void Merge::exec() {
 
 	// Read the encoding of the first file and push it as outcoding
 	Kff_file infile(input_filenames[0], "r");
-	infile.read_encoding();
 	for (uint i=0 ; i<4 ; i++)
 		global_encoding[i] = infile.encoding[i];
 	infile.close();
@@ -50,7 +49,6 @@ void Merge::exec() {
 	for (string in_filename : input_filenames) {
 		// Open the file
 		Kff_file infile(in_filename, "r");
-		infile.read_encoding();
 
 		// Encoding verification
 		for (uint i=0 ; i<4 ; i++) {
@@ -63,8 +61,7 @@ void Merge::exec() {
 		}
 
 		// Jump over metadata
-		long metadata_size = static_cast<long>(infile.size_metadata());
-		infile.fs.seekp(infile.fs.tellp() + metadata_size);
+		infile.fs.seekp(infile.fs.tellp() + static_cast<long>(infile.metadata_size));
 
 		// Read section by section
 		char section_type = infile.read_section_type();
