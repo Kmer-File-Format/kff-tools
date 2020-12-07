@@ -111,13 +111,13 @@ void Translate::exec() {
 			// Buffer updates
 			if (nucl_buffer_changed) {
 				delete[] nucleotides;
-				uint max_nucl = outfile.global_vars["k"] + outfile.global_vars["max_size"] - 1;
+				uint max_nucl = outfile.global_vars["k"] + outfile.global_vars["max"] - 1;
 				nucleotides = new uint8_t[max_nucl / 4 + 1];
 			}
 			if (data_buffer_changed) {
 				delete[] data;
-				uint nb_data = outfile.global_vars["max_size"];
-				data = new uint8_t[nb_data];
+				uint nb_data = outfile.global_vars["max"];
+				data = new uint8_t[nb_data * outfile.global_vars["data_size"]];
 			}
 		}
 		// translate a raw block
@@ -148,7 +148,8 @@ void Translate::exec() {
 			// translate and write the minimizer
 			uint k = outfile.global_vars["k"];
 			uint m = outfile.global_vars["m"];
-			translator.translate(in_section.minimizer, m);
+			uint size = m % 4 == 0 ? m / 4 : m / 4 + 1;
+			translator.translate(in_section.minimizer, size);
 			out_section.write_minimizer(in_section.minimizer);
 
 			// Translate block per block
@@ -170,6 +171,9 @@ void Translate::exec() {
 
 		section_type = infile.read_section_type();
 	}
+
+	delete[] nucleotides;
+	delete[] data;
 	infile.close();
 	outfile.close();
 }
