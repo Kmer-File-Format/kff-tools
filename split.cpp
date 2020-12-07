@@ -84,4 +84,6 @@ void Split::exec() {
 		}
 		section_type = input_file.read_section_type();
 	}
+
+	delete[] input_metadata;
 }
