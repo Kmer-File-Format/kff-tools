@@ -8,6 +8,7 @@
 #include "merge.hpp"
 #include "translate.hpp"
 #include "outstr.hpp"
+#include "datarm.hpp"
 
 
 using namespace std;
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
 	tools.push_back(new Merge());
 	tools.push_back(new Translate());
 	tools.push_back(new Outstr());
+	tools.push_back(new DataRm());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);

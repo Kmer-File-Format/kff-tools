@@ -6,13 +6,6 @@ kff file format is [described here](https://github.com/yoann-dufresne/kmer_file_
 kff-tools is a program containing a set of small programs allowing kff files manipulations.
 Each following part describes one of these tools.
 
-## kff-tools validate
-
-Try to read a kff file and validate its structure.
-Fail if something is incoherent with the standard but doesn't guaranty the validity if anything seems right.
-
-code status: TODO
-
 ## kff-tools split
 
 Split a kff file into one kff file per section.
@@ -73,9 +66,16 @@ Usage:
 ## kff-tools data-rm
 
 Read a kff file and write the same one with a data size of 0.
-i.e. all the data are removed to only keep kmer sequences
+It means that all the data are removed and the file only preserve sequences.
 
-code status: TODO
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to copy.
+* **-o &lt;output.kff&gt;** \[required\]: Copied file without data.
+
+Usage:
+```bash
+  kff-tools data-rm -i file.kff -o file_nodata.kff
+```
 
 ## kff-tools disjoin
 

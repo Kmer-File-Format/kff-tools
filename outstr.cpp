@@ -18,6 +18,22 @@ void Outstr::cli_prepare(CLI::App * app) {
 	input_option->required();
 }
 
+
+string format_data(uint8_t * data, size_t data_size) {
+	if (data_size == 0)
+		return "";
+	else if (data_size < 8) {
+		return to_string((uint)*data);
+	} else {
+		string val = "";
+		for (uint i=0 ; i<data_size ; i++) {
+			val += "[" + to_string(data[i]) + "]";
+		}
+		return val;
+	}
+}
+
+
 void Outstr::exec() {
 	// Read the encoding and prepare the translator
 	Kff_reader reader = Kff_reader(input_filename);
@@ -29,6 +45,7 @@ void Outstr::exec() {
 
 	while (reader.has_next()) {
 		reader.next_kmer(&nucleotides, &data);
-		cout << strif.translate(nucleotides, reader.get_var("k")) << " " << (uint)*data << endl;
+		cout << strif.translate(nucleotides, reader.get_var("k")) << " ";
+		cout << format_data(data, reader.get_var("data_size")) << endl;
 	}
 }

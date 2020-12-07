@@ -28,6 +28,7 @@ set(SRCS
     merge.cpp
     translate.cpp
     outstr.cpp
+    datarm.cpp
     )
     
 set(HEADERS
@@ -38,6 +39,7 @@ set(HEADERS
     merge.hpp
     translate.hpp
     outstr.hpp
+    datarm.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
