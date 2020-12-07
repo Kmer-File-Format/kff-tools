@@ -33,7 +33,7 @@ void Split::exec() {
 	char section_type = input_file.read_section_type();
 	while (not input_file.fs.eof()) {
 		if (section_type == 'v') {
-			input_file.open_section_GV();
+			Section_GV sgv(&input_file);
 		} else {
 			// Beginning of a section with kmers. Open a new kff file
 			stringstream ss;
@@ -50,7 +50,7 @@ void Split::exec() {
 			output_file.write_metadata(input_file.metadata_size, input_metadata);
 
 			// Write needed variables
-			Section_GV sgv = output_file.open_section_GV();
+			Section_GV sgv(&output_file);
 			sgv.write_var("k", input_file.global_vars["k"]);
 			sgv.write_var("max", input_file.global_vars["max"]);
 			sgv.write_var("data_size", input_file.global_vars["data_size"]);

@@ -92,8 +92,8 @@ void Translate::exec() {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
-			Section_GV isgv = infile.open_section_GV();
-			Section_GV osgv = outfile.open_section_GV();
+			Section_GV isgv(&infile);
+			Section_GV osgv(&outfile);
 
 			bool nucl_buffer_changed = false;
 			bool data_buffer_changed = false;
@@ -123,8 +123,8 @@ void Translate::exec() {
 		// translate a raw block
 		else if (section_type == 'r') {
 			// Open sections
-			Section_Raw in_section = infile.open_section_raw();
-			Section_Raw out_section = outfile.open_section_raw();
+			Section_Raw in_section(&infile);
+			Section_Raw out_section(&outfile);
 
 			// Translate block per block
 			uint64_t k = outfile.global_vars["k"];
@@ -142,8 +142,8 @@ void Translate::exec() {
 		// Translate a minimizer block
 		else if (section_type == 'm') {
 			// Open sections
-			Section_Minimizer in_section = infile.open_section_minimizer();
-			Section_Minimizer out_section = outfile.open_section_minimizer();
+			Section_Minimizer in_section(&infile);
+			Section_Minimizer out_section(&outfile);
 
 			// translate and write the minimizer
 			uint k = outfile.global_vars["k"];
