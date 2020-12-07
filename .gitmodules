@@ -1,1 +1,5 @@
 
+[submodule "kff-cpp-api"]
+	path = kff-cpp-api
+	url = https://github.com/Kmer-File-Format/kff-cpp-api.git
+	branch = main

@@ -4,7 +4,6 @@
 
 #include "CLI11.hpp"
 #include "kfftools.hpp"
-#include "kmer_file_format/C++/kff_io.hpp"
 
 
 #ifndef TRANSLATE_H

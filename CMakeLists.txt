@@ -19,7 +19,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -Ofast")
 set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
 
 # declare libraries
-add_subdirectory(kmer_file_format/C++/)
+add_subdirectory(kff-cpp-api/)
 
 set(SRCS
     encoding.cpp
