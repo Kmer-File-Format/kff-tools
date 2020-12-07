@@ -77,7 +77,7 @@ i.e. all the data are removed to only keep kmer sequences
 
 code status: TODO
 
-## kff-tools expand
+## kff-tools disjoin
 
 Each block in each section is split into one block per kmer.
 
