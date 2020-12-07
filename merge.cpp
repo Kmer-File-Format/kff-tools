@@ -71,18 +71,20 @@ void Merge::exec() {
 			switch (section_type) {
 				// Write the variables that change from previous sections (possibly sections from other input files)
 				case 'v':
-				// Read the values
-				infile.open_section_GV();
+				{
+					// Read the values
+					Section_GV in_sgv(&infile);
 
-				// Verify the presence and value of each variable in output
-				for (auto& tuple : infile.global_vars) {
-					if (outfile.global_vars.find(tuple.first) == outfile.global_vars.end()
-							or outfile.global_vars[tuple.first] != tuple.second)
-						to_copy.push_back(tuple.first);
+					// Verify the presence and value of each variable in output
+					for (auto& tuple : in_sgv.vars) {
+						if (outfile.global_vars.find(tuple.first) == outfile.global_vars.end()
+								or outfile.global_vars[tuple.first] != tuple.second)
+							to_copy.push_back(tuple.first);
+					}
 				}
 				// Create a global variable section if needed
 				if (to_copy.size() > 0) {
-					Section_GV sgv = outfile.open_section_GV();
+					Section_GV sgv(&outfile);
 					// Write variables
 					for (string s : to_copy)
 						sgv.write_var(s, infile.global_vars[s]);
