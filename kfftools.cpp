@@ -9,6 +9,7 @@
 #include "translate.hpp"
 #include "outstr.hpp"
 #include "datarm.hpp"
+#include "disjoin.hpp"
 
 
 using namespace std;
@@ -64,6 +65,7 @@ int main(int argc, char** argv) {
 	tools.push_back(new Translate());
 	tools.push_back(new Outstr());
 	tools.push_back(new DataRm());
+	tools.push_back(new Disjoin());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
