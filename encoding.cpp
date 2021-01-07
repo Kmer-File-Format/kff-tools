@@ -70,7 +70,8 @@ string Stringifyer::translate(uint8_t * sequence, size_t nucl_length) {
 	// Translate Byte per Byte
 	for (size_t idx=1 ; idx<byte_length ; idx++) {
 		// Translate a Byte
-		result += lookup[sequence[idx]];
+		uint8_t byte = sequence[idx];
+		result += lookup[byte];
 	}
 
 	return result;
