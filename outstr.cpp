@@ -40,11 +40,11 @@ void Outstr::exec() {
 	Stringifyer strif(reader.get_encoding());
 
 	// Prepare sequence and data buffers
-	uint8_t * nucleotides;
-	uint8_t * data;
+	uint8_t * nucleotides = nullptr;
+	uint8_t * data = nullptr;
 
 	while (reader.has_next()) {
-		reader.next_kmer(&nucleotides, &data);
+		reader.next_kmer(nucleotides, data);
 		cout << strif.translate(nucleotides, reader.get_var("k")) << " ";
 		cout << format_data(data, reader.get_var("data_size")) << endl;
 	}
