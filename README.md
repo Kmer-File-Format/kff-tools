@@ -77,6 +77,35 @@ Usage:
   kff-tools data-rm -i file.kff -o file_nodata.kff
 ```
 
+## kff-tools translate
+
+Read and rewrite a kff file changing the nucleotide encoding.
+
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to translate.
+* **-o &lt;output.kff&gt;** \[required\]: Translated file.
+* **-e &lt;encoding&gt;** \[required\]: 4 chars encoding. All the letters A, C, G and T must be present in the encoding order.
+For example, AGTC represent the encoding A=0, G=1, T=2, C=3.
+
+Usage:
+```bash
+  kff-tools translate -i to_encode.kff -o encoded.kff -e AGTC
+```
+
+## kff-tools validate
+
+Read a kff file and crash if a bad format is detected.
+Print details of the file on verbose mode.
+
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to read.
+* **-v** : Verbose mode.
+
+Usage:
+```bash
+  kff-tools validate -i file.kff -v
+```
+
 ## kff-tools disjoin
 
 Each block in each section is split into one block per kmer.
