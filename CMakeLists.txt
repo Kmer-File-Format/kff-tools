@@ -18,6 +18,8 @@ set(CMAKE_CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Ofast")
 set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
 
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 # declare libraries
 add_subdirectory(kff-cpp-api/)
 
