@@ -10,6 +10,7 @@
 #include "outstr.hpp"
 #include "datarm.hpp"
 #include "disjoin.hpp"
+#include "validate.hpp"
 
 
 using namespace std;
@@ -66,6 +67,7 @@ int main(int argc, char** argv) {
 	tools.push_back(new Outstr());
 	tools.push_back(new DataRm());
 	tools.push_back(new Disjoin());
+	tools.push_back(new Validate());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
