@@ -109,5 +109,14 @@ Usage:
 ## kff-tools disjoin
 
 Each block in each section is split into one block per kmer.
+The number of kmers inside of each section is preserved.
+The number of blocks per section is increased to 1 block per kmer.
 
-code status: TODO
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to disjoin.
+* **-o &lt;disjoin.kff&gt;** \[required\]: Disjoin output file.
+
+Usage:
+```bash
+  kff-tools disjoin -i file.kff -o disjoin.kff
+```
