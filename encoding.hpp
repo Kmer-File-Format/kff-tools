@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
-
+#include <map>
 
 /** 
 	* Object used to translate compacted sequences from an encoding to another.
@@ -44,9 +44,9 @@ private:
 
 public:
 	/**
-		* Constructor that construct a 256 Bytes lookup table for fast conversion
+		* Construct a 256 Bytes lookup table for fast conversion
 		*
-		* @param source The sequence encoding
+		* @param encoding The sequence encoding
 		**/
 	Stringifyer(uint8_t encoding[4]);
 	/**
@@ -56,5 +56,28 @@ public:
 	  * the encodings.
 	  * @param nucl_length Length in nucleotides of the sequence.
 	  **/
-	std::string translate(uint8_t * sequence, size_t nucl_length);
+	std::string translate(uint8_t * sequence, const size_t nucl_length) const;
+};
+
+
+class Binarizer {
+private:
+	std::map<std::string, uint8_t> lookup;
+
+public:
+	/**
+		* Construct a lookup table to translate strings to uint8_t values.
+		* This lookup table is used to translate longer than 4 strings.
+		*
+		* @param encoding The 2-bit nucleotide encoding
+		*/
+	Binarizer(uint8_t encoding[4]);
+	/**
+		* Translate the content of the sequence into a binarized version.
+		*
+		* @param sequence string sequence to translate.
+		* @param binarized array where the binary version is stored.
+		* The space must be allocated outside of the function.
+		*/
+	void translate(std::string sequence, uint8_t * binarized);
 };
