@@ -33,6 +33,7 @@ set(SRCS
     datarm.cpp
     disjoin.cpp
     validate.cpp
+    convert.cpp
     )
     
 set(HEADERS
@@ -46,6 +47,7 @@ set(HEADERS
     datarm.hpp
     disjoin.hpp
     validate.hpp
+    convert.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
