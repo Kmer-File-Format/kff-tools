@@ -12,8 +12,12 @@
 class Convert: public KffTool {
 private:
 	std::string input_filename;
-	std::string output_filename;
+	std::string output_prefix;
+	uint m;
 	bool verbose;
+
+	void monofile();
+	void multifile();
 
 public:
 	Convert();
