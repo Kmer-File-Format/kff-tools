@@ -1,6 +1,7 @@
 #include <string>
 #include <fstream>
 #include <unordered_map>
+#include <cstring>
 
 #include "convert.hpp"
 #include "encoding.hpp"
@@ -23,7 +24,7 @@ void Convert::cli_prepare(CLI::App * app) {
 	input_option->required();
 	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. If m is not set, one file <prefix>.kff is output, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff)");
 	output_option->required();
-	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into bins, one bin per minimizer.");
+	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into bins, one bin per minimizer. (Max 31)");
 }
 
 void Convert::exec() {
@@ -32,6 +33,63 @@ void Convert::exec() {
 	} else {
 		this->multifile();
 	}
+}
+
+void Convert::search_mini(const uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
+	// Datastructure prepare
+	// uint k_offset = (4 - (k % 4)) % 4;
+	uint k_bytes = (k + 3) / 4;
+	uint m_bytes = (m + 3) / 4;
+	uint8_t * bin_copy = new uint8_t[k_bytes];
+	// Mask to cover all the minimizer bytes except the highest one
+	uint low_mask = (1 << (8 * (m_bytes - 1))) - 1;
+	// Mask to cover usefull bits of the higher byte of the minimizer
+	uint high_mask = (1 << (2 * (((m-1) % 4) + 1))) - 1;
+
+	cout << "bytes " << k_bytes << " " << m_bytes << endl;
+	cout << "m " << m << " high mask " << high_mask << " low mask " << low_mask << endl;
+
+	// Minimizer prepare (Do not use memcpy for endianess problems !!)
+	minimizer = 0;
+	for (uint i=0 ; i<m_bytes-1 ; i++) {
+		minimizer += ((uint)bin[k_bytes - 1 - i]) << (8 * i);
+	}
+	minimizer += ((uint)bin[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
+	uint mini_candidate = minimizer;
+
+	// Forward search
+	memcpy(bin_copy, bin, k_bytes);
+	for (int m_idx=k-m ; m_idx>=0 ; m_idx--) {
+		cout << m_idx << " ";
+		cout << mini_candidate << endl;
+		// Update minimizer
+		if (mini_candidate <= minimizer) {
+			minimizer = mini_candidate;
+			minimizer_position = m_idx;
+			cout << "new low " << mini_candidate << endl;
+		}
+
+
+		// Shift everything
+		rightshift8(bin_copy, k_bytes, 2);
+		cout << "copy " << (uint)bin_copy[0] << " " << (uint)bin_copy[1] << endl;
+		mini_candidate >>= 2;
+		cout << mini_candidate << endl;
+		// remove first byte
+		mini_candidate &= low_mask;
+		cout << mini_candidate << endl;
+		// Update first byte
+		cout << k_bytes - 1 - (m_bytes - 1) << " " << (8 * (m_bytes - 1)) << endl;
+		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
+		cout << "candidate " << mini_candidate << endl;
+		cout << endl;
+	}
+
+	cout << endl;
+	// Reverse search
+
+	// Deallocation
+	delete[] bin_copy;
 }
 
 void Convert::multifile() {
@@ -67,11 +125,15 @@ void Convert::multifile() {
 		// Search for minimizer
 		uint minimizer = 0;
 		uint minimizer_position = 0;
-		bool reversed = false;
-		// Reverse complement if needed
-		if (reversed) {
-			cerr << "TODO: reverse complement" << endl;
-		}
+		// bool reversed = false;
+
+		search_mini(bin, k, minimizer, minimizer_position);
+		cout << "coucou" << endl;
+
+		// // Reverse complement if needed
+		// if (reversed) {
+		// 	cerr << "TODO: reverse complement" << endl;
+		// }
 		// Create file for minimizer if missing
 		if (outfiles.find(minimizer) == outfiles.end()) {
 			// Create the file and write its header
