@@ -16,7 +16,7 @@ private:
 	uint m;
 	bool verbose;
 
-	void search_mini(const uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position);
+	void search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position);
 	void monofile();
 	void multifile();
 
