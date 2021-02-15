@@ -22,7 +22,7 @@ void Convert::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("convert", "Convert a kmer text file to a kff file.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A list of kmers in text format (1 per line)");
 	input_option->required();
-	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. If m is not set, one file <prefix>.kff is output, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff)");
+	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. If m is not set, one file <prefix>.kff is output, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff). WARNING: The minimizer is only searched in the forward way. The program assume that the user do not want to reverse some of its kmers.");
 	output_option->required();
 	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into bins, one bin per minimizer. (Max 31)");
 }
@@ -35,9 +35,27 @@ void Convert::exec() {
 	}
 }
 
-void Convert::search_mini(const uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
+// void rev_comp(uint8_t * bin, const uint k) {
+// 	uint k_offset = (4 - (k % 4)) % 4;
+// 	uint k_bytes = (k + 3) / 4;
+
+// 	// Complement
+// 	for (uint idx=0 ; idx<k_bytes ; idx++)
+// 		bin[idx] ^= 0xAA;
+
+// 	// Align
+// 	leftshift8(bin, k_bytes, k_offset * 2);
+
+// 	// Reverse
+// 	for (uint idx=0 ; idx<k_bytes/2 ; idx++) {
+// 		uint8_t tmp = bin[idx];
+// 		bin[idx] = bin[k_bytes-1-idx];
+// 		bin[k_bytes-1-idx] = tmp;
+// 	}
+// }
+
+void Convert::search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
 	// Datastructure prepare
-	// uint k_offset = (4 - (k % 4)) % 4;
 	uint k_bytes = (k + 3) / 4;
 	uint m_bytes = (m + 3) / 4;
 	uint8_t * bin_copy = new uint8_t[k_bytes];
@@ -46,8 +64,6 @@ void Convert::search_mini(const uint8_t * bin, const uint k, uint & minimizer, u
 	// Mask to cover usefull bits of the higher byte of the minimizer
 	uint high_mask = (1 << (2 * (((m-1) % 4) + 1))) - 1;
 
-	cout << "bytes " << k_bytes << " " << m_bytes << endl;
-	cout << "m " << m << " high mask " << high_mask << " low mask " << low_mask << endl;
 
 	// Minimizer prepare (Do not use memcpy for endianess problems !!)
 	minimizer = 0;
@@ -60,36 +76,59 @@ void Convert::search_mini(const uint8_t * bin, const uint k, uint & minimizer, u
 	// Forward search
 	memcpy(bin_copy, bin, k_bytes);
 	for (int m_idx=k-m ; m_idx>=0 ; m_idx--) {
-		cout << m_idx << " ";
-		cout << mini_candidate << endl;
 		// Update minimizer
 		if (mini_candidate <= minimizer) {
 			minimizer = mini_candidate;
 			minimizer_position = m_idx;
-			cout << "new low " << mini_candidate << endl;
 		}
-
 
 		// Shift everything
 		rightshift8(bin_copy, k_bytes, 2);
-		cout << "copy " << (uint)bin_copy[0] << " " << (uint)bin_copy[1] << endl;
 		mini_candidate >>= 2;
-		cout << mini_candidate << endl;
 		// remove first byte
 		mini_candidate &= low_mask;
-		cout << mini_candidate << endl;
 		// Update first byte
-		cout << k_bytes - 1 - (m_bytes - 1) << " " << (8 * (m_bytes - 1)) << endl;
 		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-		cout << "candidate " << mini_candidate << endl;
-		cout << endl;
 	}
 
-	cout << endl;
-	// Reverse search
+	// // Reverse complement
+	// memcpy(bin_copy, bin, k_bytes);
+	// rev_comp(bin_copy, k);
+
+	// // Backward search
+	// bool backward = false;
+	// for (int m_idx=k-m ; m_idx>=0 ; m_idx--) {
+	// 	// Update minimizer
+	// 	if (mini_candidate <= minimizer) {
+	// 		minimizer = mini_candidate;
+	// 		minimizer_position = m_idx;
+	// 		backward = true;
+	// 	}
+
+	// 	// Shift everything
+	// 	rightshift8(bin_copy, k_bytes, 2);
+	// 	mini_candidate >>= 2;
+	// 	// remove first byte
+	// 	mini_candidate &= low_mask;
+	// 	// Update first byte
+	// 	mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
+	// }
+
+	// // Reverse kmer if needed
+	// if (backward)
+	// 	rev_comp(bin, k);
 
 	// Deallocation
 	delete[] bin_copy;
+}
+
+void uint_to_bin(uint kmer, uint8_t * bin_kmer, uint k) {
+	uint k_bytes = (k + 3) / 4;
+
+	for (int idx=k_bytes-1 ; idx>=0 ; idx--) {
+		bin_kmer[idx] = kmer & 0b11111111;
+		kmer >>= 8;
+	}
 }
 
 void Convert::multifile() {
@@ -108,6 +147,7 @@ void Convert::multifile() {
 	uint8_t encoding[4] = {0, 1, 3, 2};
 	Binarizer brz(encoding);
 	uint8_t * bin = new uint8_t[k / 4 + 1];
+	uint8_t * bin_mini = new uint8_t[m / 4 + 1];
 	// Read the input kmer stream
 	txt_file = ifstream(input_filename);
 	while (getline(txt_file, line)) {
@@ -128,12 +168,7 @@ void Convert::multifile() {
 		// bool reversed = false;
 
 		search_mini(bin, k, minimizer, minimizer_position);
-		cout << "coucou" << endl;
 
-		// // Reverse complement if needed
-		// if (reversed) {
-		// 	cerr << "TODO: reverse complement" << endl;
-		// }
 		// Create file for minimizer if missing
 		if (outfiles.find(minimizer) == outfiles.end()) {
 			// Create the file and write its header
@@ -148,6 +183,8 @@ void Convert::multifile() {
 			sgv.close();
 			// Open the minimizer block section
 			outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
+			uint_to_bin(minimizer, bin_mini, m);
+			outsections[minimizer]->write_minimizer(bin_mini);
 		}
 		// Verify k size in the output file
 		if (outfiles[minimizer]->global_vars["k"] != k) {
@@ -160,12 +197,15 @@ void Convert::multifile() {
 			sgv.close();
 			// Open a new block section
 			outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
+			uint_to_bin(minimizer, bin_mini, m);
+			outsections[minimizer]->write_minimizer(bin_mini);
 		}
 		// Write the minimizer in the right file
 		outsections[minimizer]->write_compacted_sequence (bin, k, minimizer_position, nullptr);
 	}
 
 	delete[] bin;
+	delete[] bin_mini;
 	// close all the outfiles
 	for (auto & it : outsections) {
 		// Close the section
