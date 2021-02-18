@@ -1,33 +1,37 @@
 #include <string>
 #include <fstream>
+#include <vector>
 #include <unordered_map>
 #include <cstring>
+#include <cstdio>
 
-#include "convert.hpp"
+#include "instr.hpp"
 #include "encoding.hpp"
+#include "merge.hpp"
 
 
 using namespace std;
 
 
 
-Convert::Convert() {
+Instr::Instr() {
 	input_filename = "";
 	output_prefix = "";
 	m = 0;
-	verbose = false;
+	split = false;
 }
 
-void Convert::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("convert", "Convert a kmer text file to a kff file.");
-	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A list of kmers in text format (1 per line)");
+void Instr::cli_prepare(CLI::App * app) {
+	this->subapp = app->add_subcommand("instr", "Convert a text kmer file into one or multuple kff file(s).");
+	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text kmer file in tsv format. One kmer per line and data as the second field (can be omitted for no data)");
 	input_option->required();
-	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. If m is not set, one file <prefix>.kff is output, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff). WARNING: The minimizer is only searched in the forward way. The program assume that the user do not want to reverse some of its kmers.");
+	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. For a single file the name will be <prefix>.kff, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff).");
 	output_option->required();
-	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into bins, one bin per minimizer. (Max 31)");
+	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into one section per lexicagraphic minimizer. (Max 31)");
+	subapp->add_flag("-s, --split", split, "The output is splited into one file per minimizer.");
 }
 
-void Convert::exec() {
+void Instr::exec() {
 	if (m == 0) {
 		this->monofile();
 	} else {
@@ -35,26 +39,8 @@ void Convert::exec() {
 	}
 }
 
-// void rev_comp(uint8_t * bin, const uint k) {
-// 	uint k_offset = (4 - (k % 4)) % 4;
-// 	uint k_bytes = (k + 3) / 4;
 
-// 	// Complement
-// 	for (uint idx=0 ; idx<k_bytes ; idx++)
-// 		bin[idx] ^= 0xAA;
-
-// 	// Align
-// 	leftshift8(bin, k_bytes, k_offset * 2);
-
-// 	// Reverse
-// 	for (uint idx=0 ; idx<k_bytes/2 ; idx++) {
-// 		uint8_t tmp = bin[idx];
-// 		bin[idx] = bin[k_bytes-1-idx];
-// 		bin[k_bytes-1-idx] = tmp;
-// 	}
-// }
-
-void Convert::search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
+void Instr::search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
 	// Datastructure prepare
 	uint k_bytes = (k + 3) / 4;
 	uint m_bytes = (m + 3) / 4;
@@ -91,34 +77,6 @@ void Convert::search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & 
 		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
 	}
 
-	// // Reverse complement
-	// memcpy(bin_copy, bin, k_bytes);
-	// rev_comp(bin_copy, k);
-
-	// // Backward search
-	// bool backward = false;
-	// for (int m_idx=k-m ; m_idx>=0 ; m_idx--) {
-	// 	// Update minimizer
-	// 	if (mini_candidate <= minimizer) {
-	// 		minimizer = mini_candidate;
-	// 		minimizer_position = m_idx;
-	// 		backward = true;
-	// 	}
-
-	// 	// Shift everything
-	// 	rightshift8(bin_copy, k_bytes, 2);
-	// 	mini_candidate >>= 2;
-	// 	// remove first byte
-	// 	mini_candidate &= low_mask;
-	// 	// Update first byte
-	// 	mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-	// }
-
-	// // Reverse kmer if needed
-	// if (backward)
-	// 	rev_comp(bin, k);
-
-	// Deallocation
 	delete[] bin_copy;
 }
 
@@ -131,7 +89,8 @@ void uint_to_bin(uint kmer, uint8_t * bin_kmer, uint k) {
 	}
 }
 
-void Convert::multifile() {
+void Instr::multifile() {
+	vector<string> filenames;
 	map<uint, Kff_file *> outfiles;
 	map<uint, Section_Minimizer *> outsections;
 
@@ -172,7 +131,9 @@ void Convert::multifile() {
 		// Create file for minimizer if missing
 		if (outfiles.find(minimizer) == outfiles.end()) {
 			// Create the file and write its header
-			outfiles[minimizer] = new Kff_file(output_prefix + "_" + to_string(minimizer) + ".kff", "w");
+			string filename = output_prefix + "_" + to_string(minimizer) + ".kff";
+			filenames.push_back(filename);
+			outfiles[minimizer] = new Kff_file(filename, "w");
 			outfiles[minimizer]->write_encoding(0, 1, 3, 2);
 			// Write the global variable needed
 			Section_GV sgv(outfiles[minimizer]);
@@ -215,10 +176,18 @@ void Convert::multifile() {
 		outfiles[it.first]->close();
 		delete outfiles[it.first];
 	}
+
+	if (not split) {
+		Merge merger;
+		merger.merge(filenames, output_prefix + ".kff");
+
+		for (string filename : filenames)
+			remove(filename.c_str());
+	}
 }
 
 
-void Convert::monofile() {
+void Instr::monofile() {
 	// prepare outfile
 	Kff_file outfile(output_prefix + ".kff", "w");
 	outfile.write_encoding(0, 1, 3, 2);
