@@ -17,6 +17,7 @@ private:
 public:
 	Merge();
 	void cli_prepare(CLI::App * subapp);
+	void merge(std::vector<std::string> inputs, std::string output);
 	void exec();
 };
 

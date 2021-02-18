@@ -21,20 +21,20 @@ void Merge::cli_prepare(CLI::App * app) {
 	out_option->required();
 }
 
-void Merge::exec() {
+void Merge::merge(vector<string> inputs, string output) {
 	// Useful variables
 	long buffer_size = 1048576; // 1 MB
 	char buffer[1048576];
 	uint8_t global_encoding[4];
 
 	// Read the encoding of the first file and push it as outcoding
-	Kff_file infile(input_filenames[0], "r");
+	Kff_file infile(inputs[0], "r");
 	for (uint i=0 ; i<4 ; i++)
 		global_encoding[i] = infile.encoding[i];
 	infile.close();
 
 	// Write header of the output
-	Kff_file outfile(output_filename, "w");
+	Kff_file outfile(output, "w");
 	outfile.write_encoding(
 		global_encoding[0],
 		global_encoding[1],
@@ -46,7 +46,7 @@ void Merge::exec() {
 	outfile.write_metadata(meta.length(), (uint8_t *)meta.c_str());
 
 	// Append each file one by one
-	for (string in_filename : input_filenames) {
+	for (string in_filename : inputs) {
 		// Open the file
 		Kff_file infile(in_filename, "r");
 
@@ -126,4 +126,8 @@ void Merge::exec() {
 	}
 
 	outfile.close();
+}
+
+void Merge::exec() {
+	this->merge(input_filenames, output_filename);
 }
