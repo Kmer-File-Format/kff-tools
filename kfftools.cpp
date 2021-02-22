@@ -12,6 +12,7 @@
 #include "disjoin.hpp"
 #include "validate.hpp"
 #include "instr.hpp"
+#include "compact.hpp"
 
 
 using namespace std;
@@ -70,6 +71,7 @@ int main(int argc, char** argv) {
 	tools.push_back(new Disjoin());
 	tools.push_back(new Validate());
 	tools.push_back(new Instr());
+	tools.push_back(new Compact());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
