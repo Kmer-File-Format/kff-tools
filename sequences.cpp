@@ -10,7 +10,7 @@ using namespace std;
 /* Bitshift to the left all the bits in the array with a maximum of 7 bits.
  * Overflow on the left will be set into the previous cell.
  */
-static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
+void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
 	for (uint64_t i=0 ; i<length-1 ; i++) {
@@ -20,7 +20,7 @@ static void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 }
 
 /* Similar to the previous function but on the right */
-static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
+void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 	assert(bitshift < 8);
 
 	for (uint64_t i=length-1 ; i>0 ; i--) {
@@ -32,28 +32,30 @@ static void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift) {
 /* Fusion to bytes into one.
  * The merge_index higher bits are from left_bits the others from right_bits
  */
-static uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
+uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
 	uint8_t mask = 0xFF << (8-merge_index);
 	return (left_bits & mask) | (right_bits & ~mask);
 }
 
 
-
+// #include <iostream>
 void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extracted, const uint begin_nucl, const uint end_nucl) {
 	// Extract the correct slice
 	uint seq_left_offset = (4 - seq_size % 4) % 4;
 	uint extract_start_byte = (seq_left_offset + begin_nucl) / 4;
 	uint extract_stop_byte = (seq_left_offset + end_nucl) / 4;
+
 	memcpy(extracted, sequence + extract_start_byte, extract_stop_byte - extract_start_byte + 1);
 
 	// Align the bits
-	uint extract_left_offset = (4 - ((end_nucl - begin_nucl + 1) % 4)) % 4;
-	int shift = (int)seq_left_offset - (int)extract_left_offset;
+	uint extract_left_offset = (seq_left_offset + begin_nucl) % 4;
+	uint extract_right_offset = (seq_size - end_nucl - 1) % 4;
+	
 
-	if (shift >= 0) {
-		leftshift8(extracted, extract_stop_byte - extract_start_byte + 1, 2 * shift);
+	if (extract_right_offset < 4 - extract_left_offset) {
+		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, extract_right_offset * 2);
 	} else {
-		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, -2 * shift);
+		leftshift8(extracted, extract_stop_byte - extract_start_byte + 1, (4 - extract_right_offset) * 2);
 	}
 }
 

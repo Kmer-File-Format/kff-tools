@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "disjoin.hpp"
+#include "sequences.hpp"
 
 
 using namespace std;
