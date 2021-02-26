@@ -32,4 +32,10 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
   */
 uint64_t seq_to_uint(const uint8_t * seq, uint seq_size);
 
+
+// ----- Usefull binary functions -----
+void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift);
+void rightshift8(uint8_t * bitarray, size_t length, size_t bitshift);
+uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index);
+
 #endif

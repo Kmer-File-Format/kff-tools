@@ -8,6 +8,7 @@
 #include "instr.hpp"
 #include "encoding.hpp"
 #include "merge.hpp"
+#include "sequences.hpp"
 
 
 using namespace std;

@@ -17,7 +17,19 @@ Compact::Compact() {
 
 	load_mem_size = 1;
 	loading_memory = new uint8_t[load_mem_size];
+	kmer_buffer = new uint8_t[1];
+	skmer_buffer = new uint8_t[1];
+	data_buffer = new uint8_t[1];
 }
+
+
+Compact::~Compact() {
+	delete[] loading_memory;
+	delete[] kmer_buffer;
+	delete[] skmer_buffer;
+	delete[] data_buffer;
+}
+
 
 void Compact::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("compact", "Read a kff file and try to compact the kmers from minimizer sections. The available ram must be sufficent to load a complete minimizer section into memory");
@@ -62,12 +74,31 @@ void Compact::compact(string input, string output) {
 
 				in_sgv.close();
 				out_sgv.close();
+
+				delete[] kmer_buffer;
+				delete[] skmer_buffer;
+				delete[] data_buffer;
+				uint k = infile.global_vars["k"];
+				uint max = infile.global_vars["max"];
+				uint data_size = infile.global_vars["data_size"];
+
+				kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+				skmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+				data_buffer = new uint8_t[max * data_size];
 			}
 			break;
 
 			// copy the sequence section from input to output
 			case 'r':
 			{
+				uint in_max = infile.global_vars["max"];
+				uint out_max = outfile.global_vars["max"];
+				if (in_max != out_max) {
+					Section_GV sgv(&outfile);
+					sgv.write_var("max", in_max);
+					sgv.close();
+				}
+
 				// Analyse the section size to prepare copy
 				cerr << "WARNING: Raw sections are not compacted !" << endl;
 				auto begin_byte = infile.fs.tellp();
@@ -92,7 +123,28 @@ void Compact::compact(string input, string output) {
 			}
 			case 'm':
 			{
-				uint m = infile.global_vars["m"];
+				// Verify the ability to compact
+				uint m = outfile.global_vars["m"];
+				uint k = outfile.global_vars["k"];
+				uint max = outfile.global_vars["max"];
+
+				if (max < 2 * (k - m)) {
+					max = 2 * (k - m);
+					Section_GV sgv(&outfile);
+					sgv.write_var("max", max);
+					sgv.close();
+
+					delete[] kmer_buffer;
+					delete[] skmer_buffer;
+					delete[] data_buffer;
+					uint data_size = outfile.global_vars["data_size"];
+
+					kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+					skmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+					cout << "alloc buffer " << ((k - 1 + max) / 4 + 2) << endl;
+					data_buffer = new uint8_t[max * data_size];
+				}
+
 				// Open the input minimizer section
 				Section_Minimizer sm(&infile);
 				uint8_t * mini = new uint8_t[(m+3)/4];
@@ -103,9 +155,9 @@ void Compact::compact(string input, string output) {
 				this->loadSectionBlocks(sm, infile);
 				// Compute paths from left to right for each available sequence
 				vector<vector<uint> > paths = this->link_kmers(sm.nb_blocks, infile);
-				// Assemble and write the paths
-				// close the section
 				sm.close();
+				// Assemble and write the paths
+				this->compact_and_save(paths, outfile, mini, infile.global_vars["max"]);
 
 				delete[] mini;
 			}
@@ -155,13 +207,6 @@ void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
     // Save values
     this->kmer_nbs.push_back(nb_kmers);
     this->mini_pos.push_back(minimizer_position);
-
-    // Tmp print
-    cout << nb_kmers << " " << minimizer_position << endl;
-    cout << (uint)(this->loading_memory + i * max_block_size)[0] << " ";
-    cout << (uint)(this->loading_memory + i * max_block_size)[1] << " ";
-    cout << endl;
-    cout << "minimizer position: " << minimizer_position << endl;
   }
 }
 
@@ -172,7 +217,6 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 	uint m = infile.global_vars["m"];
 	uint max_kmers = infile.global_vars["max"];
 	uint data_size = infile.global_vars["data_size"];
-	cout << "k " << k << " m " << m << endl;
 	
 	uint skmer_nucl_bytes = (max_kmers + k - 1 - m + 3) / 4;
 	uint skmer_data_bytes = max_kmers * data_size;
@@ -187,12 +231,9 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 	// Distribute kmers into positional bins.
 	// Bin x means x nucleotides inside of the prefix
 	uint kmer_idx = 0;
-	cout << "prefix computation " << endl;
 	for (uint & mini_idx : this->mini_pos) {
-		cout << "mini idx " << mini_idx << endl;
 		// Create absent bin
 		if (prefix_bins.find(mini_idx) == prefix_bins.end()) {
-			cout << "new bin " << mini_idx << endl;
 			prefix_bins[mini_idx] = unordered_map<uint64_t, vector<uint> >();
 			present_bins.push_back(mini_idx);
 		}
@@ -202,28 +243,16 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 		subsequence(seq,
 				k - 1 + this->kmer_nbs[kmer_idx] - m,
 				sub_seq, 0, (k-1)-m-1);
-		cout << (uint)sub_seq[0] << " " << (uint)sub_seq[1] << endl;
-		cout << "pref param " << (k - 1 - m) << endl;
 		// Prefix to int value
 		uint64_t prefix_val = seq_to_uint(sub_seq, k - m - 1);
-		cout << "pref val " << prefix_val << endl;
 
 		// Insert the prefix
 		prefix_bins[mini_idx][prefix_val].push_back(kmer_idx);
 		kmer_idx += 1;
 	}
-	cout << endl;
-	cout << "before sort " << present_bins.size() << endl;
-	for (auto & i : present_bins) cout << i << " ";
-	cout << endl;
+
 	sort(present_bins.begin(), present_bins.end());
-	cout << "before reverse " << present_bins.size() << endl;
-	for (auto & i : present_bins) cout << i << " ";
-	cout << endl;
 	reverse(present_bins.begin(), present_bins.end());
-	cout << "after all " << present_bins.size() << endl;
-	for (auto & i : present_bins) cout << i << " ";
-	cout << endl;
 
 	// Create paths of overlaping sequences
 	// Each sequence is present in only one path
@@ -236,11 +265,8 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 		uint64_t first_prefix = first_idx_bin.begin()->first;
 		vector<uint> & first_kmers_idx = first_idx_bin.begin()->second;
 
-		cout << "first [" << first_prefix << "] " << first_kmers_idx.size() << endl;
-
 		// Start a path
 		current_path.push_back(first_kmers_idx[0]);
-		cout << "first in path " << current_path[0] << endl;
 		first_kmers_idx.erase(first_kmers_idx.begin());
 		if (first_kmers_idx.size() == 0) {
 			first_idx_bin.erase(first_prefix);
@@ -260,21 +286,18 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 
 			// Compute the next bin to look for
 			int suff_idx = (int)last_mini_idx - (int)last_kmer_nb;
-			cout << "suff idx " << suff_idx << endl;
 			if (suff_idx < 0 or prefix_bins.find((uint)suff_idx) == prefix_bins.end()) {
-				cerr << "No sequence with the good minimizer idx" << endl;
+				// cerr << "No sequence with the good minimizer idx" << endl;
 				break;
 			}
 
 			// Extract the (k-1)-suffix of the last element of the path
-			cout << "suffix " << (last_seq_size - 1) << endl;
-			// TODO : HERE
-			subsequence(last_seq, last_seq_size, sub_seq, suff_idx, last_seq_size-1);
-			uint64_t suff_val = seq_to_uint(sub_seq, last_seq_size - 1 - suff_idx);
+			subsequence(last_seq, last_seq_size, sub_seq, last_kmer_nb, last_seq_size-1);
+			uint64_t suff_val = seq_to_uint(sub_seq, last_seq_size - last_kmer_nb);
 
 			// Look for the elements with the good (k-1)-prefix
 			if (prefix_bins[suff_idx].find(suff_val) == prefix_bins[suff_idx].end()) {
-				cerr << "No sequence with the good prefix" << endl;
+				// cerr << "No sequence with the good prefix" << endl;
 				break;
 			}
 			// Iterate over candidates
@@ -300,7 +323,7 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 					// Remove the minimizer indice for kmer if there is no available kmer in this bin.
 					if (prefix_bins[suff_idx].size() == 0) {
 						prefix_bins.erase(suff_idx);
-						remove(present_bins.begin(), present_bins.end(), suff_idx);
+						present_bins.erase(std::remove(present_bins.begin(), present_bins.end(), suff_idx), present_bins.end());
 					}
 				}
 			}
@@ -316,6 +339,108 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 	cout << "paths " << paths.size() << " " << paths[0].size() << endl << endl;
 	return paths;
 }
+
+void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, uint8_t * minimizer, uint input_max_kmers) {
+	// Global variables
+	uint k = outfile.global_vars["k"];
+	uint m = outfile.global_vars["m"];
+	uint max_kmers = outfile.global_vars["max"];
+	uint data_size = outfile.global_vars["data_size"];
+	// Loacal variables
+	uint skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
+	uint skmer_data_bytes = input_max_kmers * data_size;
+	uint max_block_size = skmer_nucl_bytes + skmer_data_bytes;
+
+	Section_Minimizer sm(&outfile);
+	sm.write_minimizer(minimizer);
+	// Construct the path from right to left
+	for (vector<uint> & path : paths) {
+		uint compacted_size = 0;
+		cout << "NEW PATH" << endl;
+
+		// Start the skmer with the last sequence
+		uint last_idx = path[path.size()-1];
+		uint last__used_nucl = k - 1 - m + this->kmer_nbs[last_idx];
+		uint last__used_bytes = (last__used_nucl + 3) / 4;
+		uint last__first_used_byte = skmer_nucl_bytes - last__used_bytes;
+		cout << "skmer_nucl_bytes " << skmer_nucl_bytes << endl;
+		cout << last__first_used_byte << " " << last__used_bytes << endl;
+		memcpy(
+			skmer_buffer + last__first_used_byte,
+			loading_memory + last_idx * max_block_size,
+			last__used_bytes
+		);
+		// exit(0);
+		compacted_size += last__used_nucl;
+		cout << "last sequence " << last_idx << " used nucl " << last__used_nucl << " bytes " << last__used_bytes << endl;
+		cout << (uint)skmer_buffer[skmer_nucl_bytes-2] << " " << (uint)skmer_buffer[skmer_nucl_bytes-1] << endl;
+
+		// Concatenate all the other nucleotides
+		for (int idx=path.size()-2 ; idx>=0 ; idx--) {
+			cout << "Compact size " << compacted_size << endl;
+			uint seq_idx = path[idx];
+			uint seq_size = k - 1 - m + this->kmer_nbs[seq_idx];
+			uint seq_bytes = (seq_size + 3) / 4;
+			uint8_t * seq = loading_memory + seq_idx * max_block_size;
+
+			cout << "idx " << seq_idx << " nb nucl " << seq_size << " nb bytes " << seq_bytes << endl;
+			cout << (uint)seq[0] << " " << (uint)seq[1] << endl;
+
+			// copy in kmer buffer
+			memcpy(kmer_buffer+1, seq, seq_bytes);
+
+			// Shift the kmer buffer
+			uint first_used_nucl_idx = 4 + (4 - (seq_size % 4) % 4);
+			uint last_used_nucl_idx = first_used_nucl_idx + this->kmer_nbs[seq_idx] - 1;
+			cout << "nucl bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
+			// uint last_shifted_byte = 
+			int shift = (compacted_size % 4) - ((k - 1 - m) % 4);
+			cout << shift << endl;
+			if (shift <= 0) {
+				rightshift8(kmer_buffer+1, seq_bytes, -2 * shift);
+			} else {
+				leftshift8(kmer_buffer, seq_bytes+1, 2 * shift);
+			}
+			first_used_nucl_idx -= shift;
+			last_used_nucl_idx -= shift;
+			cout << "shifted bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
+			uint first_used_byte = first_used_nucl_idx / 4;
+			uint last_used_byte = last_used_nucl_idx / 4;
+			uint used_length = last_used_byte - first_used_byte + 1;
+			cout << "used bytes " << first_used_byte << " " << last_used_byte << " length " << used_length << endl;
+			// Copy the bytes needed
+			uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size + this->kmer_nbs[seq_idx]) / 4;
+			cout << "compacted_first_byte " << compacted_first_byte << endl;
+			cout << (uint)skmer_buffer[compacted_first_byte] << " " << (uint)skmer_buffer[compacted_first_byte+1] << endl;
+			memcpy(skmer_buffer+compacted_first_byte, kmer_buffer + first_used_byte, used_length-1);
+			// merge the middle byte
+			skmer_buffer[compacted_first_byte+used_length-1] = fusion8(
+					kmer_buffer[last_used_byte],
+					skmer_buffer[compacted_first_byte+used_length-1],
+					2* ((last_used_nucl_idx+1) % 4));
+			cout << "last used_byte " << last_used_byte << " " << (uint)kmer_buffer[last_used_byte] << endl;
+			cout << "fusion idx " << ((last_used_nucl_idx+1) % 4) << endl;
+		cout << "fusioned bytes " << (uint)kmer_buffer[last_used_byte] << " " << (uint)skmer_buffer[compacted_first_byte+used_length-1] << endl;
+
+			// update values
+			compacted_size += this->kmer_nbs[seq_idx];
+			cout << compacted_size << endl;
+			// exit(0);
+		}
+
+		uint compacted_first_byte = skmer_nucl_bytes - 1 - compacted_size / 4;
+		cout << "first byte " << compacted_first_byte << endl;
+		// cout << skmer_buffer
+		sm.write_compacted_sequence_without_mini(
+			skmer_buffer + compacted_first_byte,
+			compacted_size, this->mini_pos[path[0]], nullptr);
+	}
+
+	sm.close();
+}
+
+// GCT|TGA
+
 
 void Compact::exec() {
 	this->compact(input_filename, output_filename);

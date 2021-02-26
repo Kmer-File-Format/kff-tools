@@ -8,7 +8,7 @@ project(kff-tools VERSION 0.1)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Debug)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
@@ -24,6 +24,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 add_subdirectory(kff-cpp-api/)
 
 set(SRCS
+    sequences.cpp
     encoding.cpp
     kfftools.cpp
     split.cpp
@@ -34,9 +35,11 @@ set(SRCS
     disjoin.cpp
     validate.cpp
     instr.cpp
+    compact.cpp
     )
     
 set(HEADERS
+    sequences.hpp
     encoding.hpp
     CLI11.hpp
     kfftools.hpp
@@ -48,6 +51,7 @@ set(HEADERS
     disjoin.hpp
     validate.hpp
     instr.hpp
+    compact.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
