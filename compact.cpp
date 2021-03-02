@@ -83,8 +83,11 @@ void Compact::compact(string input, string output) {
 				uint data_size = infile.global_vars["data_size"];
 
 				kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+				memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
 				skmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+				memset(skmer_buffer, 0, (k - 1 + max) / 4 + 2);
 				data_buffer = new uint8_t[max * data_size];
+				memset(data_buffer, 0, max * data_size);
 			}
 			break;
 
@@ -140,9 +143,12 @@ void Compact::compact(string input, string output) {
 					uint data_size = outfile.global_vars["data_size"];
 
 					kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
+					memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
 					skmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
-					cout << "alloc buffer " << ((k - 1 + max) / 4 + 2) << endl;
+					memset(skmer_buffer, 0, (k - 1 + max) / 4 + 2);
+					// cout << "alloc buffer " << ((k - 1 + max) / 4 + 2) << endl;
 					data_buffer = new uint8_t[max * data_size];
+					memset(data_buffer, 0, max * data_size);
 				}
 
 				// Open the input minimizer section
@@ -177,7 +183,7 @@ void Compact::compact(string input, string output) {
 }
 
 void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
-	cout << "--- load ---" << endl;
+	// cout << "--- load ---" << endl;
 	uint k = infile.global_vars["k"];
 	uint m = infile.global_vars["m"];
 	uint max_kmers = infile.global_vars["max"];
@@ -210,8 +216,10 @@ void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
   }
 }
 
+#include "encoding.hpp"
+
 vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
-	cout << "--- Create links between sequences ---" << endl;
+	// cout << "--- Create links between sequences ---" << endl;
 	// Usefull variables
 	uint k = infile.global_vars["k"];
 	uint m = infile.global_vars["m"];
@@ -336,7 +344,7 @@ vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 
 	delete[] sub_seq;
 
-	cout << "paths " << paths.size() << " " << paths[0].size() << endl << endl;
+	// cout << "paths " << paths.size() << " " << paths[0].size() << endl << endl;
 	return paths;
 }
 
@@ -347,24 +355,29 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	uint max_kmers = outfile.global_vars["max"];
 	uint data_size = outfile.global_vars["data_size"];
 	// Loacal variables
-	uint skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
+	uint skmer_nucl_bytes = (max_kmers + k - 1 - m + 3) / 4;
+	uint in_skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
 	uint skmer_data_bytes = input_max_kmers * data_size;
-	uint max_block_size = skmer_nucl_bytes + skmer_data_bytes;
+	uint max_block_size = in_skmer_nucl_bytes + skmer_data_bytes;
+
+	// cout << "k " << k << " m " << m << " in max kmers " << input_max_kmers << " current max kmers " << max_kmers << endl;
+	// cout << "in skmer block size " << skmer_nucl_bytes << endl;
+	// Stringifyer strif(outfile.encoding);
 
 	Section_Minimizer sm(&outfile);
 	sm.write_minimizer(minimizer);
 	// Construct the path from right to left
 	for (vector<uint> & path : paths) {
 		uint compacted_size = 0;
-		cout << "NEW PATH" << endl;
+		// cout << "NEW PATH" << endl;
 
 		// Start the skmer with the last sequence
 		uint last_idx = path[path.size()-1];
 		uint last__used_nucl = k - 1 - m + this->kmer_nbs[last_idx];
 		uint last__used_bytes = (last__used_nucl + 3) / 4;
 		uint last__first_used_byte = skmer_nucl_bytes - last__used_bytes;
-		cout << "skmer_nucl_bytes " << skmer_nucl_bytes << endl;
-		cout << last__first_used_byte << " " << last__used_bytes << endl;
+		// cout << "skmer_nucl_bytes " << skmer_nucl_bytes << endl;
+		// cout << last__first_used_byte << " " << last__used_bytes << endl;
 		memcpy(
 			skmer_buffer + last__first_used_byte,
 			loading_memory + last_idx * max_block_size,
@@ -372,30 +385,31 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 		);
 		// exit(0);
 		compacted_size += last__used_nucl;
-		cout << "last sequence " << last_idx << " used nucl " << last__used_nucl << " bytes " << last__used_bytes << endl;
-		cout << (uint)skmer_buffer[skmer_nucl_bytes-2] << " " << (uint)skmer_buffer[skmer_nucl_bytes-1] << endl;
+		// cout << "last sequence " << last_idx << " used nucl " << last__used_nucl << " bytes " << last__used_bytes << endl;
+		// cout << (uint)skmer_buffer[skmer_nucl_bytes-2] << " " << (uint)skmer_buffer[skmer_nucl_bytes-1] << endl;
+		// cout << strif.translate(skmer_buffer+last__first_used_byte, compacted_size) << endl;
 
 		// Concatenate all the other nucleotides
 		for (int idx=path.size()-2 ; idx>=0 ; idx--) {
-			cout << "Compact size " << compacted_size << endl;
+			// cout << "Compact size " << compacted_size << endl;
 			uint seq_idx = path[idx];
 			uint seq_size = k - 1 - m + this->kmer_nbs[seq_idx];
 			uint seq_bytes = (seq_size + 3) / 4;
 			uint8_t * seq = loading_memory + seq_idx * max_block_size;
 
-			cout << "idx " << seq_idx << " nb nucl " << seq_size << " nb bytes " << seq_bytes << endl;
-			cout << (uint)seq[0] << " " << (uint)seq[1] << endl;
+			// cout << "idx " << seq_idx << " nb nucl " << seq_size << " nb bytes " << seq_bytes << endl;
+			// cout << (uint)seq[0] << " " << (uint)seq[1] << endl;
 
 			// copy in kmer buffer
 			memcpy(kmer_buffer+1, seq, seq_bytes);
 
 			// Shift the kmer buffer
-			uint first_used_nucl_idx = 4 + (4 - (seq_size % 4) % 4);
+			uint first_used_nucl_idx = 4 + ((4 - (seq_size % 4)) % 4);
 			uint last_used_nucl_idx = first_used_nucl_idx + this->kmer_nbs[seq_idx] - 1;
-			cout << "nucl bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
+			// cout << "nucl bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
 			// uint last_shifted_byte = 
 			int shift = (compacted_size % 4) - ((k - 1 - m) % 4);
-			cout << shift << endl;
+			// cout << shift << endl;
 			if (shift <= 0) {
 				rightshift8(kmer_buffer+1, seq_bytes, -2 * shift);
 			} else {
@@ -403,37 +417,45 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 			}
 			first_used_nucl_idx -= shift;
 			last_used_nucl_idx -= shift;
-			cout << "shifted bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
+			// cout << "shifted bounds " << first_used_nucl_idx << " " << last_used_nucl_idx << endl;
 			uint first_used_byte = first_used_nucl_idx / 4;
 			uint last_used_byte = last_used_nucl_idx / 4;
 			uint used_length = last_used_byte - first_used_byte + 1;
-			cout << "used bytes " << first_used_byte << " " << last_used_byte << " length " << used_length << endl;
+			// cout << "used bytes " << first_used_byte << " " << last_used_byte << " length " << used_length << endl;
 			// Copy the bytes needed
-			uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size + this->kmer_nbs[seq_idx]) / 4;
-			cout << "compacted_first_byte " << compacted_first_byte << endl;
-			cout << (uint)skmer_buffer[compacted_first_byte] << " " << (uint)skmer_buffer[compacted_first_byte+1] << endl;
+			uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size + this->kmer_nbs[seq_idx] - 1) / 4;
 			memcpy(skmer_buffer+compacted_first_byte, kmer_buffer + first_used_byte, used_length-1);
+			// cout << "compacted first value " << (uint)skmer_buffer[compacted_first_byte] << endl;
 			// merge the middle byte
+			// cout << "-  " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size + this->kmer_nbs[seq_idx]) << endl;
+			// cout << strif.translate(kmer_buffer+last_used_byte, 4) << " " << strif.translate(skmer_buffer+(compacted_first_byte+used_length-1), 4) << endl;
 			skmer_buffer[compacted_first_byte+used_length-1] = fusion8(
 					kmer_buffer[last_used_byte],
 					skmer_buffer[compacted_first_byte+used_length-1],
-					2* ((last_used_nucl_idx+1) % 4));
-			cout << "last used_byte " << last_used_byte << " " << (uint)kmer_buffer[last_used_byte] << endl;
-			cout << "fusion idx " << ((last_used_nucl_idx+1) % 4) << endl;
-		cout << "fusioned bytes " << (uint)kmer_buffer[last_used_byte] << " " << (uint)skmer_buffer[compacted_first_byte+used_length-1] << endl;
+					2* ((last_used_nucl_idx % 4)+1));
+			// cout << "compacted_first_byte " << compacted_first_byte << endl;
+			// cout << (uint)skmer_buffer[compacted_first_byte] << " " << (uint)skmer_buffer[compacted_first_byte+1] << endl;
+			// cout << "last used_byte " << last_used_byte << " " << (uint)kmer_buffer[last_used_byte] << endl;
+			// cout << "fusion idx " << ((last_used_nucl_idx+1) % 4) << endl;
+			// cout << "fusioned bytes " << (uint)kmer_buffer[last_used_byte] << " " << (uint)skmer_buffer[compacted_first_byte+used_length-1] << endl;
 
 			// update values
 			compacted_size += this->kmer_nbs[seq_idx];
-			cout << compacted_size << endl;
-			// exit(0);
+			// cout << "-- " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size) << endl;
+			// cout << compacted_size << endl;
+
+			// if (compacted_size == 12)
+			// 	exit(1);
 		}
 
-		uint compacted_first_byte = skmer_nucl_bytes - 1 - compacted_size / 4;
-		cout << "first byte " << compacted_first_byte << endl;
+		uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size - 1) / 4;
+		// cout << "first byte " << compacted_first_byte << endl;
 		// cout << skmer_buffer
 		sm.write_compacted_sequence_without_mini(
 			skmer_buffer + compacted_first_byte,
 			compacted_size, this->mini_pos[path[0]], nullptr);
+
+		// cout << endl;
 	}
 
 	sm.close();
