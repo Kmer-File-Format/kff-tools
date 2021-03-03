@@ -50,10 +50,16 @@ Usage:
 ## kff-tools instr
 
 Translate a textual kmer file (tsv format) into one or multiple kff file(s).
+Instr supposes that the data are integers.
 
 Parameters:
 * **-i &lt;input.kff&gt;** \[required\]: File to translate.
-* **-o &lt;outprefix&gt;** \[required\]: prefix of the outputed kff file(s).
+* **-o &lt;outprefix&gt;** \[required\]: prefix of the outputed kff file(s). For unique file the output will be &lt;prefix&gt;.kff. &lt;prefix&gt;\_&lt;minimizer&gt;.kff for multiple files.
+* **-s**: Split flag. If set, the kmers will be distributed into one file per minimizer.
+* **-m mini_size**: The minimizer size to use if the s flag is set.
+* **-d nb_bytes**: Number of Bytes to use to store the counts (Default 0).
+
+
 
 Usage:
 ```bash
