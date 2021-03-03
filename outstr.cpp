@@ -23,11 +23,16 @@ string format_data(uint8_t * data, size_t data_size) {
 	if (data_size == 0)
 		return "";
 	else if (data_size < 8) {
-		return to_string((uint)*data);
+		uint val = data[0];
+		for (uint i=1 ; i<data_size ; i++) {
+			val <<= 8;
+			val += data[i];
+		}
+		return std::to_string(val);
 	} else {
 		string val = "";
 		for (uint i=0 ; i<data_size ; i++) {
-			val += "[" + to_string(data[i]) + "]";
+			val += "[" + std::to_string((uint)data[i]) + "]";
 		}
 		return val;
 	}
