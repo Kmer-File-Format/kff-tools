@@ -60,6 +60,47 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
+void search_mini(uint8_t * seq, const uint size, const uint m, uint & minimizer, uint & minimizer_position) {
+	// Datastructure prepare
+	uint k_bytes = (size + 3) / 4;
+	uint m_bytes = (m + 3) / 4;
+	uint8_t * bin_copy = new uint8_t[k_bytes];
+	// Mask to cover all the minimizer bytes except the highest one
+	uint low_mask = (1 << (8 * (m_bytes - 1))) - 1;
+	// Mask to cover usefull bits of the higher byte of the minimizer
+	uint high_mask = (1 << (2 * (((m-1) % 4) + 1))) - 1;
+
+
+	// Minimizer prepare (Do not use memcpy for endianess problems !!)
+	minimizer = 0;
+	for (uint i=0 ; i<m_bytes-1 ; i++) {
+		minimizer += ((uint)seq[k_bytes - 1 - i]) << (8 * i);
+	}
+	minimizer += ((uint)seq[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
+	uint mini_candidate = minimizer;
+
+	// Forward search
+	memcpy(bin_copy, seq, k_bytes);
+	for (int m_idx=size-m ; m_idx>=0 ; m_idx--) {
+		// Update minimizer
+		if (mini_candidate <= minimizer) {
+			minimizer = mini_candidate;
+			minimizer_position = m_idx;
+		}
+
+		// Shift everything
+		rightshift8(bin_copy, k_bytes, 2);
+		mini_candidate >>= 2;
+		// remove first byte
+		mini_candidate &= low_mask;
+		// Update first byte
+		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
+	}
+
+	delete[] bin_copy;
+}
+
+
 uint64_t seq_to_uint(const uint8_t * seq, uint seq_size) {
 	uint nucl_to_extract = seq_size;
 	if (nucl_to_extract > 32)
@@ -80,4 +121,14 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size) {
 	}
 
 	return val;
+}
+
+
+void uint_to_seq(uint seq, uint8_t * bin_seq, uint size) {
+	uint seq_bytes = (size + 3) / 4;
+
+	for (int idx=seq_bytes-1 ; idx>=0 ; idx--) {
+		bin_seq[idx] = seq & 0b11111111;
+		seq >>= 8;
+	}
 }

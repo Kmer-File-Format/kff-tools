@@ -32,6 +32,22 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
   */
 uint64_t seq_to_uint(const uint8_t * seq, uint seq_size);
 
+/** Translate a binarized uint sequence into an binarized sequence array.
+  * @param seq Sequence stored in a uint (ie max 32 nucleotides)
+  * @param bin_seq A Byte array to store the sequence. Must be allocated.
+  * @param size Number of nucleotides in the sequence.
+  */
+void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
+
+/** Search for the minimizer inside of a sequence (forward only)
+  * @param seq binarized sequence.
+  * @param size size in nucleotide of the sequence
+  * @param m Minimizer size
+  * @param minimizer Modified during the execution to store the minimizer.
+  * @param minimizer_position Modified during the execution to store the position of the minimizer.
+  */
+void search_mini(uint8_t * seq, const uint size, const uint m, uint & minimizer, uint & minimizer_position);
+
 
 // ----- Usefull binary functions -----
 void leftshift8(uint8_t * bitarray, size_t length, size_t bitshift);

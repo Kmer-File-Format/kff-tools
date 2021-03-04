@@ -14,6 +14,9 @@ private:
 	std::string input_filename;
 	std::string output_filename;
 
+	bool split;
+	uint m;
+
 	uint load_mem_size;
 	uint8_t * loading_memory;
 	std::vector<uint> kmer_nbs;
@@ -31,6 +34,13 @@ public:
 	Compact();
 	~Compact();
 	void cli_prepare(CLI::App * subapp);
+	/** Read a Section_Raw and write a bucketized and compacted file of the kmers.
+	  * @param insection Section to bucketize then compact.
+	  * @param prefix Prefix of the output file.
+	  *
+	  * @return Name of the file containing the result.
+	  */
+	std::string bucketize(Kff_file & infile, std::string & prefix, uint m);
 	void compact(std::string input, std::string output);
 	void exec();
 };
