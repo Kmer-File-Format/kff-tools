@@ -3,6 +3,10 @@
 #include <string>
 #include <map>
 
+
+#ifndef ENCODING_H
+#define ENCODING_H
+
 /** 
 	* Object used to translate compacted sequences from an encoding to another.
 	* A translation Byte size lookup table is computed during the object creation
@@ -81,3 +85,5 @@ public:
 		*/
 	void translate(std::string sequence, uint8_t * binarized);
 };
+
+#endif
