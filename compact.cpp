@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 
+#include "encoding.hpp"
 #include "sequences.hpp"
 #include "compact.hpp"
 #include "merge.hpp"
@@ -102,7 +103,6 @@ void Compact::compact(string input, string output) {
 			case 'r':
 			{
 				if (this->split and this->m > 0) {
-					cout << "COUCOU" << endl;
 					string tmp_prefix = output + "_tmp_" + std::to_string(raw_idx++);
 					string compacted = this->bucketize(infile, tmp_prefix, this->m);
 					external_compact.push_back(compacted);
@@ -117,6 +117,7 @@ void Compact::compact(string input, string output) {
 
 					// Analyse the section size to prepare copy
 					cerr << "WARNING: Raw sections are not compacted !" << endl;
+					cerr << "-s to split raw sections first, then compact" << endl;
 					auto begin_byte = infile.fs.tellp();
 					if (not infile.jump_next_section()) {
 						cerr << "Error inside of the input file." << endl;
@@ -242,7 +243,6 @@ void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
   }
 }
 
-// #include "encoding.hpp"
 
 vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 	// cout << "--- Create links between sequences ---" << endl;
@@ -380,11 +380,13 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	uint m = outfile.global_vars["m"];
 	uint max_kmers = outfile.global_vars["max"];
 	uint data_size = outfile.global_vars["data_size"];
+	cout << data_size << endl;
 	// Loacal variables
 	uint skmer_nucl_bytes = (max_kmers + k - 1 - m + 3) / 4;
 	uint in_skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
-	uint skmer_data_bytes = input_max_kmers * data_size;
-	uint max_block_size = in_skmer_nucl_bytes + skmer_data_bytes;
+	uint in_skmer_data_bytes = input_max_kmers * data_size;
+	uint out_skmer_data_bytes = max_kmers * data_size;
+	uint max_block_size = in_skmer_nucl_bytes + in_skmer_data_bytes;
 
 	// cout << "k " << k << " m " << m << " in max kmers " << input_max_kmers << " current max kmers " << max_kmers << endl;
 	// cout << "in skmer block size " << skmer_nucl_bytes << endl;
@@ -395,6 +397,7 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	// Construct the path from right to left
 	for (vector<uint> & path : paths) {
 		uint compacted_size = 0;
+		uint compacted_kmers = 0;
 		// cout << "NEW PATH" << endl;
 
 		// Start the skmer with the last sequence
@@ -409,8 +412,14 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 			loading_memory + last_idx * max_block_size,
 			last__used_bytes
 		);
+		memcpy(
+			data_buffer + out_skmer_data_bytes - data_size * this->kmer_nbs[last_idx],
+			loading_memory + last_idx * max_block_size + in_skmer_nucl_bytes,
+			data_size * this->kmer_nbs[last_idx]
+		);
 		// exit(0);
 		compacted_size += last__used_nucl;
+		compacted_kmers += this->kmer_nbs[last_idx];
 		// cout << "last sequence " << last_idx << " used nucl " << last__used_nucl << " bytes " << last__used_bytes << endl;
 		// cout << (uint)skmer_buffer[skmer_nucl_bytes-2] << " " << (uint)skmer_buffer[skmer_nucl_bytes-1] << endl;
 		// cout << strif.translate(skmer_buffer+last__first_used_byte, compacted_size) << endl;
@@ -451,6 +460,11 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 			// Copy the bytes needed
 			uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size + this->kmer_nbs[seq_idx] - 1) / 4;
 			memcpy(skmer_buffer+compacted_first_byte, kmer_buffer + first_used_byte, used_length-1);
+			memcpy(
+				data_buffer + out_skmer_data_bytes - data_size * (compacted_kmers + this->kmer_nbs[seq_idx]),
+				loading_memory + seq_idx * max_block_size + in_skmer_nucl_bytes,
+				data_size * this->kmer_nbs[seq_idx]
+			);
 			// cout << "compacted first value " << (uint)skmer_buffer[compacted_first_byte] << endl;
 			// merge the middle byte
 			// cout << "-  " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size + this->kmer_nbs[seq_idx]) << endl;
@@ -467,19 +481,18 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 
 			// update values
 			compacted_size += this->kmer_nbs[seq_idx];
-			// cout << "-- " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size) << endl;
-			// cout << compacted_size << endl;
-
+			compacted_kmers += this->kmer_nbs[seq_idx];
 			// if (compacted_size == 12)
 			// 	exit(1);
 		}
 
 		uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size - 1) / 4;
+		uint data_first_byte = out_skmer_data_bytes - compacted_kmers * data_size;
 		// cout << "first byte " << compacted_first_byte << endl;
 		// cout << skmer_buffer
 		sm.write_compacted_sequence_without_mini(
 			skmer_buffer + compacted_first_byte,
-			compacted_size, this->mini_pos[path[0]], nullptr);
+			compacted_size, this->mini_pos[path[0]], data_buffer + data_first_byte);
 
 		// cout << endl;
 	}
