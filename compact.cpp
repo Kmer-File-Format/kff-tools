@@ -46,6 +46,28 @@ void Compact::cli_prepare(CLI::App * app) {
 	subapp->add_option("-m, --minimizer-size", m, "Minimizer size to use when raw sections are splitted.");
 }
 
+void Compact::write_variables(unordered_map<string, uint64_t> & variables, Kff_file & file) {
+	unordered_map<string, uint64_t> to_write;
+
+	for(auto & it : variables) {
+		// Keep if not present
+		if (file.global_vars.find(it.first) == file.global_vars.end())
+			to_write[it.first] = it.second;
+		// Keep if value different
+		else if (file.global_vars[it.first] != it.second)
+			to_write[it.first] = it.second;
+	}
+
+	// Write only if needed
+	if (to_write.size() > 0) {
+		Section_GV sgv(&file);
+		for(auto & it : to_write)
+			sgv.write_var(it.first, it.second);
+		sgv.close();
+	}
+
+}
+
 void Compact::compact(string input, string output) {
 	// Read the encoding of the first file and push it as outcoding
 	Kff_file infile(input, "r");
@@ -67,28 +89,30 @@ void Compact::compact(string input, string output) {
 	uint raw_idx = 0;
 	char section_type = infile.read_section_type();
 	while(not infile.fs.eof()) {
+		// cout << "Section " << section_type << endl;
 		switch (section_type) {
 			// Write the variables that change from previous sections (possibly sections from other input files)
 			case 'v':
 			{
 				// Read the values
 				Section_GV in_sgv(&infile);
-				Section_GV out_sgv(&outfile);
 
+				uint k = infile.global_vars["k"];
+				uint max = infile.global_vars["max"];
+				uint data_size = infile.global_vars["data_size"];
 				// Verify the presence and value of each variable in output
 				for (auto& tuple : in_sgv.vars) {
-					out_sgv.write_var(tuple.first, tuple.second);
+					this->saved_variables[tuple.first] = tuple.second;
+					if (tuple.first == "k") k = tuple.second;
+					if (tuple.first == "max") max = tuple.second;
+					if (tuple.first == "data_size") data_size = tuple.second;
 				}
 
 				in_sgv.close();
-				out_sgv.close();
 
 				delete[] kmer_buffer;
 				delete[] skmer_buffer;
 				delete[] data_buffer;
-				uint k = infile.global_vars["k"];
-				uint max = infile.global_vars["max"];
-				uint data_size = infile.global_vars["data_size"];
 
 				kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
 				memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
@@ -109,10 +133,12 @@ void Compact::compact(string input, string output) {
 				} else {
 					uint in_max = infile.global_vars["max"];
 					uint out_max = outfile.global_vars["max"];
-					if (in_max != out_max) {
-						Section_GV sgv(&outfile);
-						sgv.write_var("max", in_max);
-						sgv.close();
+					if (in_max != out_max)
+						this->saved_variables["max"] = in_max;
+
+					if (this->saved_variables.size() > 0) {
+						this->write_variables(this->saved_variables, outfile);
+						this->saved_variables.clear();
 					}
 
 					// Analyse the section size to prepare copy
@@ -143,20 +169,22 @@ void Compact::compact(string input, string output) {
 			case 'm':
 			{
 				// Verify the ability to compact
-				uint m = outfile.global_vars["m"];
-				uint k = outfile.global_vars["k"];
+				uint m = infile.global_vars["m"];
+				uint k = infile.global_vars["k"];
 				uint max = outfile.global_vars["max"];
+				if (this->saved_variables.find("max") != this->saved_variables.end())
+					max = this->saved_variables["max"];
 
 				if (max < 2 * (k - m)) {
 					max = 2 * (k - m);
-					Section_GV sgv(&outfile);
-					sgv.write_var("max", max);
-					sgv.close();
-
+					this->saved_variables["max"] = max;
+				
 					delete[] kmer_buffer;
 					delete[] skmer_buffer;
 					delete[] data_buffer;
 					uint data_size = outfile.global_vars["data_size"];
+					if (this->saved_variables.find("data_size") != this->saved_variables.end())
+						data_size = this->saved_variables["data_size"];
 
 					kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
 					memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
@@ -166,6 +194,9 @@ void Compact::compact(string input, string output) {
 					data_buffer = new uint8_t[max * data_size];
 					memset(data_buffer, 0, max * data_size);
 				}
+
+				this->write_variables(this->saved_variables, outfile);
+				this->saved_variables.clear();
 
 				// Open the input minimizer section
 				Section_Minimizer sm(&infile);
@@ -380,7 +411,6 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	uint m = outfile.global_vars["m"];
 	uint max_kmers = outfile.global_vars["max"];
 	uint data_size = outfile.global_vars["data_size"];
-	cout << data_size << endl;
 	// Loacal variables
 	uint skmer_nucl_bytes = (max_kmers + k - 1 - m + 3) / 4;
 	uint in_skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
@@ -591,6 +621,8 @@ string Compact::bucketize(Kff_file & infile, string & prefix, uint m) {
 	for (uint i=0 ; i<filenames.size() ; i++) {
 		string & filename = filenames[i];
 		comp.compact(filename, filename + "_compacted.kff");
+		// cout << filename + "_compacted.kff" << endl;
+		// exit(1);
 		std::remove(filename.c_str());
 		filenames[i] = filename + "_compacted.kff";
 	}

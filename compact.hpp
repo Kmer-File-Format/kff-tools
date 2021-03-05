@@ -1,6 +1,7 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 
 #include "CLI11.hpp"
 #include "kfftools.hpp"
@@ -25,6 +26,10 @@ private:
   uint8_t * kmer_buffer;
   uint8_t * skmer_buffer;
 	uint8_t * data_buffer;
+	
+	std::unordered_map<std::string, uint64_t> saved_variables;
+
+	void write_variables(std::unordered_map<std::string, uint64_t> & variables, Kff_file & file);
 
 	void loadSectionBlocks(Section_Minimizer & ms, Kff_file & infile);
 	std::vector<std::vector<uint> > link_kmers(uint nb_kmers, Kff_file & infile);
