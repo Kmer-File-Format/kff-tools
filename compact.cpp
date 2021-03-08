@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <queue>
 
 #include "encoding.hpp"
 #include "sequences.hpp"
@@ -237,6 +238,9 @@ void Compact::compact(string input, string output) {
 		Merge merger;
 		merger.merge(external_compact, output);
 		std::remove(tmp_name.c_str());
+
+		for (string & name : external_compact)
+			std::remove(name.c_str());
 	}
 }
 
@@ -540,10 +544,13 @@ void Compact::exec() {
 
 string Compact::bucketize(Kff_file & infile, string & prefix, uint m) {
 	Section_Raw sr(&infile);
+	uint max_file_pointers = 256;
 
 	vector<string> filenames;
 	map<uint, Kff_file *> outfiles;
 	map<uint, Section_Minimizer *> outsections;
+	queue<uint> oldest_fps;
+	map<uint, uint> fp_counts;
 
 	uint64_t k = infile.global_vars["k"];
 	uint64_t max = infile.global_vars["max"];
@@ -573,7 +580,31 @@ string Compact::bucketize(Kff_file & infile, string & prefix, uint m) {
 
 			search_mini(kmer, k, m, minimizer, minimizer_position);
 
-			// Create file for minimizer if missing
+			// Register the filepointer as opened if not last used
+			if (oldest_fps.size() == 0 or oldest_fps.back() != minimizer) {
+				oldest_fps.push(minimizer);
+				if (fp_counts.find(minimizer) == fp_counts.end())
+					fp_counts[minimizer] = 0;
+				fp_counts[minimizer] += 1;
+			}
+
+			// Tmp close a file if too much file are open
+			while (fp_counts.size() > max_file_pointers) {
+				// Get oldest used and opened fp
+				uint oldest = oldest_fps.front();
+				oldest_fps.pop();
+
+				if (fp_counts[oldest] > 1)
+					fp_counts[oldest] -= 1;
+				else {
+					// Reduce the number of file pointers by 1
+					fp_counts.erase(oldest);
+					// The fp is automatically reopened on write calls.
+					outfiles[oldest]->tmp_close();
+				}
+			}
+
+			// First time with the file
 			if (outfiles.find(minimizer) == outfiles.end()) {
 				// Create the file and write its header
 				string filename = prefix + "_" + to_string(minimizer) + ".kff";
