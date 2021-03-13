@@ -11,7 +11,7 @@ Each following part describes one of these tools.
 Split a kff file into one kff file per section.
 
 Parameters:
-* **-i &lt;input.kff&gt;** \[required\]: Input file to split.
+* **-i &lt;infile.kff&gt;** \[required\]: Input file to split.
 * **-o &lt;path&gt;**: Directory where the split output files are written (Default ./).
 
 Usage:
@@ -123,4 +123,13 @@ Parameters:
 Usage:
 ```bash
   kff-tools disjoin -i file.kff -o disjoin.kff
+```
+
+
+# Test the code
+
+Run functional tests from the root of the project
+
+```bash
+  python3 -m unittest discover -s tests/
 ```
