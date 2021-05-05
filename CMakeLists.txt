@@ -35,7 +35,7 @@ set(SRCS
     disjoin.cpp
     validate.cpp
     instr.cpp
-    compact.cpp
+    bucket.cpp
     )
     
 set(HEADERS
@@ -51,7 +51,7 @@ set(HEADERS
     disjoin.hpp
     validate.hpp
     instr.hpp
-    compact.hpp
+    bucket.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
