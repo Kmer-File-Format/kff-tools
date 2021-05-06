@@ -67,6 +67,7 @@ void Instr::multifile() {
 			break;
 		}
 	}
+	cout << (delimiter == ' ') << " " << (delimiter == '\t') << endl;
 	uint64_t k = line.substr(0, line.find(delimiter)).length();
 
 	// Prepare the binarized datastructures
