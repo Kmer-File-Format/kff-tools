@@ -17,7 +17,6 @@ private:
 	uint data_size;
 	bool split;
 
-	void search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position);
 	void monofile();
 	void multifile();
 

@@ -37,6 +37,9 @@
 **/Makefile
 **/*.cmake
 
+# python
+**/__pycache__/
+
 # project related
 data/
 kff-tools

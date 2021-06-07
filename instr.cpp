@@ -2,6 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <unordered_map>
+#include <queue>
 #include <cstring>
 #include <cstdio>
 
@@ -42,60 +43,14 @@ void Instr::exec() {
 	}
 }
 
-
-void Instr::search_mini(uint8_t * bin, const uint k, uint & minimizer, uint & minimizer_position) {
-	// Datastructure prepare
-	uint k_bytes = (k + 3) / 4;
-	uint m_bytes = (m + 3) / 4;
-	uint8_t * bin_copy = new uint8_t[k_bytes];
-	// Mask to cover all the minimizer bytes except the highest one
-	uint low_mask = (1 << (8 * (m_bytes - 1))) - 1;
-	// Mask to cover usefull bits of the higher byte of the minimizer
-	uint high_mask = (1 << (2 * (((m-1) % 4) + 1))) - 1;
-
-
-	// Minimizer prepare (Do not use memcpy for endianess problems !!)
-	minimizer = 0;
-	for (uint i=0 ; i<m_bytes-1 ; i++) {
-		minimizer += ((uint)bin[k_bytes - 1 - i]) << (8 * i);
-	}
-	minimizer += ((uint)bin[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-	uint mini_candidate = minimizer;
-
-	// Forward search
-	memcpy(bin_copy, bin, k_bytes);
-	for (int m_idx=k-m ; m_idx>=0 ; m_idx--) {
-		// Update minimizer
-		if (mini_candidate <= minimizer) {
-			minimizer = mini_candidate;
-			minimizer_position = m_idx;
-		}
-
-		// Shift everything
-		rightshift8(bin_copy, k_bytes, 2);
-		mini_candidate >>= 2;
-		// remove first byte
-		mini_candidate &= low_mask;
-		// Update first byte
-		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-	}
-
-	delete[] bin_copy;
-}
-
-void uint_to_bin(uint kmer, uint8_t * bin_kmer, uint k) {
-	uint k_bytes = (k + 3) / 4;
-
-	for (int idx=k_bytes-1 ; idx>=0 ; idx--) {
-		bin_kmer[idx] = kmer & 0b11111111;
-		kmer >>= 8;
-	}
-}
-
 void Instr::multifile() {
 	vector<string> filenames;
 	map<uint, Kff_file *> outfiles;
 	map<uint, Section_Minimizer *> outsections;
+	queue<uint> oldest_fps;
+	map<uint, uint> fp_counts;
+
+	uint max_file_pointers = 256;
 
 	// Prepare first k value
 	ifstream txt_file(input_filename);
@@ -103,7 +58,17 @@ void Instr::multifile() {
 	getline(txt_file, line);
 	txt_file.close();
 
-	uint64_t k = line.substr(0, line.find("\t")).length();
+	// Find the delimiter
+	char delimiter = ' ';
+	for (uint i=0 ; i<line.length() ; i++) {
+		char c = line[i];
+		if (not ((c >= 'a' and c <='z') or (c >= 'A' and c <='Z'))) {
+			delimiter = c;
+			break;
+		}
+	}
+	cout << (delimiter == ' ') << " " << (delimiter == '\t') << endl;
+	uint64_t k = line.substr(0, line.find(delimiter)).length();
 
 	// Prepare the binarized datastructures
 	uint8_t encoding[4] = {0, 1, 3, 2};
@@ -114,8 +79,8 @@ void Instr::multifile() {
 	// Read the input kmer stream
 	txt_file = ifstream(input_filename);
 	while (getline(txt_file, line)) {
-		string kmer = line.substr(0, line.find("\t"));
-		uint64_t data_int = stoi(line.substr(line.find("\t")+1));
+		string kmer = line.substr(0, line.find(delimiter));
+		uint64_t data_int = stoi(line.substr(line.find(delimiter)+1));
 
 		// Change the size of k
 		if (kmer.length() != k) {
@@ -131,48 +96,58 @@ void Instr::multifile() {
 		uint minimizer_position = 0;
 		// bool reversed = false;
 
-		search_mini(bin, k, minimizer, minimizer_position);
+		search_mini(bin, k, m, minimizer, minimizer_position);
 
-		// Create file for minimizer if missing
-		if (outfiles.find(minimizer) == outfiles.end()) {
-			// Create the file and write its header
-			string filename = output_prefix + "_" + to_string(minimizer) + ".kff";
-			filenames.push_back(filename);
-			outfiles[minimizer] = new Kff_file(filename, "w");
-			outfiles[minimizer]->write_encoding(0, 1, 3, 2);
-			// Write the global variable needed
-			Section_GV sgv(outfiles[minimizer]);
-			sgv.write_var("k", k);
-			sgv.write_var("m", m);
-			sgv.write_var("max", 1);
-			sgv.write_var("data_size", data_size);
-			sgv.close();
-			// Open the minimizer block section
-			outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
-			uint_to_bin(minimizer, bin_mini, m);
-			outsections[minimizer]->write_minimizer(bin_mini);
-		}
-		// Verify k size in the output file
-		if (outfiles[minimizer]->global_vars["k"] != k) {
-			// Close current block section
-			outsections[minimizer]->close();
-			delete outsections[minimizer];
-			// Update k
-			Section_GV sgv(outfiles[minimizer]);
-			sgv.write_var("k", k);
-			sgv.close();
-			// Open a new block section
-			outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
-			uint_to_bin(minimizer, bin_mini, m);
-			outsections[minimizer]->write_minimizer(bin_mini);
-		}
-		// Translate int values
-		for (int i=data_size-1 ; i>=0 ; i--) {
-			data[i] = data_int & 0xFF;
-			data_int >>= 8;
-		}
-		// Write the minimizer in the right file
-		outsections[minimizer]->write_compacted_sequence (bin, k, minimizer_position, data);
+		// Register the filepointer as opened if not last used
+			if (oldest_fps.size() == 0 or oldest_fps.back() != minimizer) {
+				oldest_fps.push(minimizer);
+				if (fp_counts.find(minimizer) == fp_counts.end())
+					fp_counts[minimizer] = 0;
+				fp_counts[minimizer] += 1;
+			}
+
+			// Tmp close a file if too much file are open
+			while (fp_counts.size() > max_file_pointers) {
+				// Get oldest used and opened fp
+				uint oldest = oldest_fps.front();
+				oldest_fps.pop();
+
+				if (fp_counts[oldest] > 1)
+					fp_counts[oldest] -= 1;
+				else {
+					// Reduce the number of file pointers by 1
+					fp_counts.erase(oldest);
+					// The fp is automatically reopened on write calls.
+					outfiles[oldest]->tmp_close();
+				}
+			}
+
+			// First time with the file
+			if (outfiles.find(minimizer) == outfiles.end()) {
+				// Create the file and write its header
+				string filename = output_prefix + "_" + to_string(minimizer) + ".kff";
+				filenames.push_back(filename);
+				outfiles[minimizer] = new Kff_file(filename, "w");
+				outfiles[minimizer]->write_encoding(encoding);
+				// Write the global variable needed
+				Section_GV sgv(outfiles[minimizer]);
+				sgv.write_var("k", k);
+				sgv.write_var("m", m);
+				sgv.write_var("max", 1);
+				sgv.write_var("data_size", data_size);
+				sgv.close();
+				// Open the minimizer block section
+				outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
+				uint_to_seq(minimizer, bin_mini, m);
+				outsections[minimizer]->write_minimizer(bin_mini);
+			}
+			// Translate int values
+      for (int i=data_size-1 ; i>=0 ; i--) {
+        data[i] = data_int & 0xFF;
+        data_int >>= 8;
+      }
+			// Write the minimizer in the right file
+			outsections[minimizer]->write_compacted_sequence (bin, k, minimizer_position, data);
 	}
 
 	delete[] bin;
@@ -208,7 +183,16 @@ void Instr::monofile() {
 	getline(txt_file, line);
 	txt_file.close();
 
-	uint64_t k = line.substr(0, line.find("\t")).length();
+	// Find the delimiter
+	char delimiter = ' ';
+	for (uint i=0 ; i<line.length() ; i++) {
+		char c = line[i];
+		if (not ((c >= 'a' and c <='z') or (c >= 'A' and c <='Z'))) {
+			delimiter = c;
+			break;
+		}
+	}
+	uint64_t k = line.substr(0, line.find(delimiter)).length();
 
 	Section_GV sgv(&outfile);
 	sgv.write_var("k", k);
@@ -223,8 +207,10 @@ void Instr::monofile() {
 	uint8_t * bin = new uint8_t[k / 4 + 1];
 	uint8_t * data = new uint8_t[data_size];
 	while (getline(txt_file, line)) {
-		string kmer = line.substr(0, line.find("\t"));
-		uint64_t data_int = stoi(line.substr(line.find("\t")+1));
+		string kmer = line.substr(0, line.find(delimiter));
+		// cout << line << endl;
+		// cout << line.substr(line.find(delimiter)+1) << endl;
+		uint64_t data_int = stoi(line.substr(line.find(delimiter)+1));
 
 		// Change the size of k
 		if (kmer.length() != k) {

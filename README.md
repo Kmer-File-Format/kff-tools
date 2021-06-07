@@ -124,3 +124,12 @@ Usage:
 ```bash
   kff-tools disjoin -i file.kff -o disjoin.kff
 ```
+
+
+# Test the code
+
+Run functional tests from the root of the project
+
+```bash
+  python3 -m unittest discover -s tests/
+```

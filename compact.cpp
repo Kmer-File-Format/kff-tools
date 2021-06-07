@@ -3,9 +3,12 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <queue>
 
+#include "encoding.hpp"
 #include "sequences.hpp"
 #include "compact.hpp"
+#include "merge.hpp"
 
 
 using namespace std;
@@ -14,6 +17,8 @@ using namespace std;
 Compact::Compact() {
 	input_filename = "";
 	output_filename = "";
+	split = false;
+	m = 0;
 
 	load_mem_size = 1;
 	loading_memory = new uint8_t[load_mem_size];
@@ -32,12 +37,36 @@ Compact::~Compact() {
 
 
 void Compact::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("compact", "Read a kff file and try to compact the kmers from minimizer sections. The available ram must be sufficent to load a complete minimizer section into memory");
+	this->subapp = app->add_subcommand("compact", "Read a kff file and try to compact the kmers from minimizer sections. The available ram must be sufficent to load a complete minimizer section into memory. If the split flag is set, prior to compaction, the raw sections are splited into multiple minimizer sections.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "Input kff file to compact.");
 	input_option->required();
-
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff to write (must be different from the input)");
 	out_option->required();
+
+	subapp->add_flag("-s, --split-raw", split, "Split the raw sections into multiple minimizer sections to compact them individually. The m value must be set.");
+	subapp->add_option("-m, --minimizer-size", m, "Minimizer size to use when raw sections are splitted.");
+}
+
+void Compact::write_variables(unordered_map<string, uint64_t> & variables, Kff_file & file) {
+	unordered_map<string, uint64_t> to_write;
+
+	for(auto & it : variables) {
+		// Keep if not present
+		if (file.global_vars.find(it.first) == file.global_vars.end())
+			to_write[it.first] = it.second;
+		// Keep if value different
+		else if (file.global_vars[it.first] != it.second)
+			to_write[it.first] = it.second;
+	}
+
+	// Write only if needed
+	if (to_write.size() > 0) {
+		Section_GV sgv(&file);
+		for(auto & it : to_write)
+			sgv.write_var(it.first, it.second);
+		sgv.close();
+	}
+
 }
 
 void Compact::compact(string input, string output) {
@@ -57,30 +86,34 @@ void Compact::compact(string input, string output) {
 	char buffer[1048576];
 
 	// Read section by section
+	vector<string> external_compact;
+	uint raw_idx = 0;
 	char section_type = infile.read_section_type();
 	while(not infile.fs.eof()) {
+		// cout << "Section " << section_type << endl;
 		switch (section_type) {
 			// Write the variables that change from previous sections (possibly sections from other input files)
 			case 'v':
 			{
 				// Read the values
 				Section_GV in_sgv(&infile);
-				Section_GV out_sgv(&outfile);
 
+				uint k = infile.global_vars["k"];
+				uint max = infile.global_vars["max"];
+				uint data_size = infile.global_vars["data_size"];
 				// Verify the presence and value of each variable in output
 				for (auto& tuple : in_sgv.vars) {
-					out_sgv.write_var(tuple.first, tuple.second);
+					this->saved_variables[tuple.first] = tuple.second;
+					if (tuple.first == "k") k = tuple.second;
+					if (tuple.first == "max") max = tuple.second;
+					if (tuple.first == "data_size") data_size = tuple.second;
 				}
 
 				in_sgv.close();
-				out_sgv.close();
 
 				delete[] kmer_buffer;
 				delete[] skmer_buffer;
 				delete[] data_buffer;
-				uint k = infile.global_vars["k"];
-				uint max = infile.global_vars["max"];
-				uint data_size = infile.global_vars["data_size"];
 
 				kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
 				memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
@@ -94,53 +127,65 @@ void Compact::compact(string input, string output) {
 			// copy the sequence section from input to output
 			case 'r':
 			{
-				uint in_max = infile.global_vars["max"];
-				uint out_max = outfile.global_vars["max"];
-				if (in_max != out_max) {
-					Section_GV sgv(&outfile);
-					sgv.write_var("max", in_max);
-					sgv.close();
+				if (this->split and this->m > 0) {
+					string tmp_prefix = output + "_tmp_" + std::to_string(raw_idx++);
+					string compacted = this->bucketize(infile, tmp_prefix, this->m);
+					external_compact.push_back(compacted);
+				} else {
+					uint in_max = infile.global_vars["max"];
+					uint out_max = outfile.global_vars["max"];
+					if (in_max != out_max)
+						this->saved_variables["max"] = in_max;
+
+					if (this->saved_variables.size() > 0) {
+						this->write_variables(this->saved_variables, outfile);
+						this->saved_variables.clear();
+					}
+
+					// Analyse the section size to prepare copy
+					cerr << "WARNING: Raw sections are not compacted !" << endl;
+					cerr << "-s to split raw sections first, then compact" << endl;
+					auto begin_byte = infile.fs.tellp();
+					if (not infile.jump_next_section()) {
+						cerr << "Error inside of the input file." << endl;
+						cerr << "Impossible to jump over the raw section at byte " << begin_byte << endl;
+						exit(1);
+					}
+					auto end_byte = infile.fs.tellp();
+					long size = end_byte - begin_byte;
+					infile.fs.seekp(begin_byte);
+
+					// copy from input to output
+					while (size > 0) {
+						size_t to_copy = size > buffer_size ? buffer_size : size;
+
+						infile.fs.read(buffer, to_copy);
+						outfile.fs.write(buffer, to_copy);
+
+						size -= to_copy;
+					}
 				}
-
-				// Analyse the section size to prepare copy
-				cerr << "WARNING: Raw sections are not compacted !" << endl;
-				auto begin_byte = infile.fs.tellp();
-				if (not infile.jump_next_section()) {
-					cerr << "Error inside of the input file." << endl;
-					cerr << "Impossible to jump over the raw section at byte " << begin_byte << endl;
-					exit(1);
-				}
-				auto end_byte = infile.fs.tellp();
-				long size = end_byte - begin_byte;
-				infile.fs.seekp(begin_byte);
-
-				// copy from input to output
-				while (size > 0) {
-					size_t to_copy = size > buffer_size ? buffer_size : size;
-
-					infile.fs.read(buffer, to_copy);
-					outfile.fs.write(buffer, to_copy);
-
-					size -= to_copy;
-				}
+				break;
 			}
 			case 'm':
 			{
 				// Verify the ability to compact
-				uint m = outfile.global_vars["m"];
-				uint k = outfile.global_vars["k"];
+				uint m = infile.global_vars["m"];
+				uint k = infile.global_vars["k"];
 				uint max = outfile.global_vars["max"];
+				if (this->saved_variables.find("max") != this->saved_variables.end())
+					max = this->saved_variables["max"];
 
 				if (max < 2 * (k - m)) {
 					max = 2 * (k - m);
-					Section_GV sgv(&outfile);
-					sgv.write_var("max", max);
-					sgv.close();
-
+					this->saved_variables["max"] = max;
+				
 					delete[] kmer_buffer;
 					delete[] skmer_buffer;
 					delete[] data_buffer;
 					uint data_size = outfile.global_vars["data_size"];
+					if (this->saved_variables.find("data_size") != this->saved_variables.end())
+						data_size = this->saved_variables["data_size"];
 
 					kmer_buffer = new uint8_t[(k - 1 + max) / 4 + 2];
 					memset(kmer_buffer, 0, (k - 1 + max) / 4 + 2);
@@ -150,6 +195,9 @@ void Compact::compact(string input, string output) {
 					data_buffer = new uint8_t[max * data_size];
 					memset(data_buffer, 0, max * data_size);
 				}
+
+				this->write_variables(this->saved_variables, outfile);
+				this->saved_variables.clear();
 
 				// Open the input minimizer section
 				Section_Minimizer sm(&infile);
@@ -180,6 +228,20 @@ void Compact::compact(string input, string output) {
 
 	infile.close();
 	outfile.close();
+
+	if (external_compact.size() > 0) {
+		// Rename tmp outfile and add it for merging.
+		string tmp_name = output + "main_part.kff";
+		std::rename(output.c_str(), tmp_name.c_str());
+		external_compact.push_back(tmp_name);
+		// Merge with externally compacted files
+		Merge merger;
+		merger.merge(external_compact, output);
+		std::remove(tmp_name.c_str());
+
+		for (string & name : external_compact)
+			std::remove(name.c_str());
+	}
 }
 
 void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
@@ -216,7 +278,6 @@ void Compact::loadSectionBlocks(Section_Minimizer & sm, Kff_file & infile) {
   }
 }
 
-#include "encoding.hpp"
 
 vector<vector<uint> > Compact::link_kmers(uint nb_kmers, Kff_file & infile) {
 	// cout << "--- Create links between sequences ---" << endl;
@@ -357,8 +418,9 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	// Loacal variables
 	uint skmer_nucl_bytes = (max_kmers + k - 1 - m + 3) / 4;
 	uint in_skmer_nucl_bytes = (input_max_kmers + k - 1 - m + 3) / 4;
-	uint skmer_data_bytes = input_max_kmers * data_size;
-	uint max_block_size = in_skmer_nucl_bytes + skmer_data_bytes;
+	uint in_skmer_data_bytes = input_max_kmers * data_size;
+	uint out_skmer_data_bytes = max_kmers * data_size;
+	uint max_block_size = in_skmer_nucl_bytes + in_skmer_data_bytes;
 
 	// cout << "k " << k << " m " << m << " in max kmers " << input_max_kmers << " current max kmers " << max_kmers << endl;
 	// cout << "in skmer block size " << skmer_nucl_bytes << endl;
@@ -369,6 +431,7 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	// Construct the path from right to left
 	for (vector<uint> & path : paths) {
 		uint compacted_size = 0;
+		uint compacted_kmers = 0;
 		// cout << "NEW PATH" << endl;
 
 		// Start the skmer with the last sequence
@@ -383,8 +446,14 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 			loading_memory + last_idx * max_block_size,
 			last__used_bytes
 		);
+		memcpy(
+			data_buffer + out_skmer_data_bytes - data_size * this->kmer_nbs[last_idx],
+			loading_memory + last_idx * max_block_size + in_skmer_nucl_bytes,
+			data_size * this->kmer_nbs[last_idx]
+		);
 		// exit(0);
 		compacted_size += last__used_nucl;
+		compacted_kmers += this->kmer_nbs[last_idx];
 		// cout << "last sequence " << last_idx << " used nucl " << last__used_nucl << " bytes " << last__used_bytes << endl;
 		// cout << (uint)skmer_buffer[skmer_nucl_bytes-2] << " " << (uint)skmer_buffer[skmer_nucl_bytes-1] << endl;
 		// cout << strif.translate(skmer_buffer+last__first_used_byte, compacted_size) << endl;
@@ -425,6 +494,11 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 			// Copy the bytes needed
 			uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size + this->kmer_nbs[seq_idx] - 1) / 4;
 			memcpy(skmer_buffer+compacted_first_byte, kmer_buffer + first_used_byte, used_length-1);
+			memcpy(
+				data_buffer + out_skmer_data_bytes - data_size * (compacted_kmers + this->kmer_nbs[seq_idx]),
+				loading_memory + seq_idx * max_block_size + in_skmer_nucl_bytes,
+				data_size * this->kmer_nbs[seq_idx]
+			);
 			// cout << "compacted first value " << (uint)skmer_buffer[compacted_first_byte] << endl;
 			// merge the middle byte
 			// cout << "-  " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size + this->kmer_nbs[seq_idx]) << endl;
@@ -441,19 +515,18 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 
 			// update values
 			compacted_size += this->kmer_nbs[seq_idx];
-			// cout << "-- " << strif.translate(skmer_buffer+compacted_first_byte, compacted_size) << endl;
-			// cout << compacted_size << endl;
-
+			compacted_kmers += this->kmer_nbs[seq_idx];
 			// if (compacted_size == 12)
 			// 	exit(1);
 		}
 
 		uint compacted_first_byte = skmer_nucl_bytes - 1 - (compacted_size - 1) / 4;
+		uint data_first_byte = out_skmer_data_bytes - compacted_kmers * data_size;
 		// cout << "first byte " << compacted_first_byte << endl;
 		// cout << skmer_buffer
 		sm.write_compacted_sequence_without_mini(
 			skmer_buffer + compacted_first_byte,
-			compacted_size, this->mini_pos[path[0]], nullptr);
+			compacted_size, this->mini_pos[path[0]], data_buffer + data_first_byte);
 
 		// cout << endl;
 	}
@@ -461,9 +534,137 @@ void Compact::compact_and_save(vector<vector<uint> > paths, Kff_file & outfile, 
 	sm.close();
 }
 
-// GCT|TGA
 
 
 void Compact::exec() {
 	this->compact(input_filename, output_filename);
+}
+
+
+
+string Compact::bucketize(Kff_file & infile, string & prefix, uint m) {
+	Section_Raw sr(&infile);
+	uint max_file_pointers = 256;
+
+	vector<string> filenames;
+	map<uint, Kff_file *> outfiles;
+	map<uint, Section_Minimizer *> outsections;
+	queue<uint> oldest_fps;
+	map<uint, uint> fp_counts;
+
+	uint64_t k = infile.global_vars["k"];
+	uint64_t max = infile.global_vars["max"];
+	uint64_t data_size = infile.global_vars["data_size"];
+	uint kmer_bytes = (k + 3) / 4;
+
+	// Prepare the binarized datastructures
+	uint8_t * bin_mini = new uint8_t[m / 4 + 1];
+	uint bin_bytes = (max + k - 1) / 4 + 1;
+	uint8_t * bin = new uint8_t[bin_bytes];
+	uint8_t * data = new uint8_t[max * data_size];
+
+	// Read the input kmer stream
+	for (uint b_idx=0 ; b_idx<sr.nb_blocks ; b_idx++) {
+		uint nb_kmers = sr.read_compacted_sequence(bin, data);
+		
+		uint seq_nucl = nb_kmers + k - 1;
+		uint seq_bytes = (seq_nucl + 3) / 4;
+		uint first_byte = seq_bytes - kmer_bytes;
+		uint8_t * kmer = bin + first_byte;
+		uint8_t * kmer_data = data + (nb_kmers - 1) * data_size;
+
+		for (uint idx=0 ; idx<nb_kmers; idx++) {
+			// Search for minimizer
+			uint minimizer = 0;
+			uint minimizer_position = 0;
+
+			search_mini(kmer, k, m, minimizer, minimizer_position);
+
+			// Register the filepointer as opened if not last used
+			if (oldest_fps.size() == 0 or oldest_fps.back() != minimizer) {
+				oldest_fps.push(minimizer);
+				if (fp_counts.find(minimizer) == fp_counts.end())
+					fp_counts[minimizer] = 0;
+				fp_counts[minimizer] += 1;
+			}
+
+			// Tmp close a file if too much file are open
+			while (fp_counts.size() > max_file_pointers) {
+				// Get oldest used and opened fp
+				uint oldest = oldest_fps.front();
+				oldest_fps.pop();
+
+				if (fp_counts[oldest] > 1)
+					fp_counts[oldest] -= 1;
+				else {
+					// Reduce the number of file pointers by 1
+					fp_counts.erase(oldest);
+					// The fp is automatically reopened on write calls.
+					outfiles[oldest]->tmp_close();
+				}
+			}
+
+			// First time with the file
+			if (outfiles.find(minimizer) == outfiles.end()) {
+				// Create the file and write its header
+				string filename = prefix + "_" + to_string(minimizer) + ".kff";
+				filenames.push_back(filename);
+				outfiles[minimizer] = new Kff_file(filename, "w");
+				outfiles[minimizer]->write_encoding(infile.encoding);
+				// Write the global variable needed
+				Section_GV sgv(outfiles[minimizer]);
+				sgv.write_var("k", k);
+				sgv.write_var("m", m);
+				sgv.write_var("max", 1);
+				sgv.write_var("data_size", data_size);
+				sgv.close();
+				// Open the minimizer block section
+				outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
+				uint_to_seq(minimizer, bin_mini, m);
+				outsections[minimizer]->write_minimizer(bin_mini);
+			}
+			
+			// Write the minimizer in the right file
+			outsections[minimizer]->write_compacted_sequence (kmer, k, minimizer_position, kmer_data);
+
+			// Update for the next kmer
+			rightshift8(bin, bin_bytes, 2);
+			kmer_data -= data_size;
+		}
+	}
+	sr.close();
+
+	delete[] bin;
+	delete[] bin_mini;
+	delete[] data;
+	// close all the outfiles
+	for (auto & it : outsections) {
+		// Close the section
+		it.second->close();
+		delete it.second;
+		// Close the file
+		outfiles[it.first]->close();
+		delete outfiles[it.first];
+	}
+
+	// Compact each bucket
+	Compact comp;
+	for (uint i=0 ; i<filenames.size() ; i++) {
+		string & filename = filenames[i];
+		comp.compact(filename, filename + "_compacted.kff");
+		// cout << filename + "_compacted.kff" << endl;
+		// exit(1);
+		std::remove(filename.c_str());
+		filenames[i] = filename + "_compacted.kff";
+	}
+
+	// Merge all the buckets
+	Merge merger;
+	merger.merge(filenames, prefix + "_compacted.kff");
+
+	// Remove the files
+	for (string filename : filenames)
+		std::remove(filename.c_str());
+
+	return prefix + "_compacted.kff";
 }
