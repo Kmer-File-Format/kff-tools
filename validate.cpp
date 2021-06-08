@@ -49,8 +49,13 @@ void Validate::exec() {
 			cout << endl;
 		}
 
+		long current_pos = infile.fs.tellp();
+		infile.fs.seekg(0, infile.fs.end);
+		long last_pos = infile.fs.tellp();
+		infile.fs.seekg(current_pos, infile.fs.beg);
+
 		char section_type = infile.read_section_type();
-		while(not infile.fs.eof()) {
+		while(infile.fs.tellp() < last_pos - 3) {
 			if (verbose)
 				cout << "=== Section " << section_type << " ===" << endl;
 
@@ -59,7 +64,7 @@ void Validate::exec() {
 				Section_GV sgv(&infile);
 
 				if (verbose) {
-					cout << "Start Byte " << sgv.begining << endl;
+					cout << "Start Byte " << sgv.beginning << endl;
 					cout << "-> " << sgv.nb_vars << " variables" << endl;
 					for (auto tuple : sgv.vars) {
 						cout << tuple.first << " = " << tuple.second << endl;
@@ -67,6 +72,16 @@ void Validate::exec() {
 				}
 
 				sgv.close();
+			}
+			// Index section
+			else if (section_type == 'i') {
+				Section_Index si(&infile);
+				long end_byte = si.beginning + 17 + 9 * si.index.size();
+				cout << "Section\trelative\tabsolute" << endl;
+				for (const auto & pair : si.index) {
+					cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+				}
+				si.close();
 			}
 			// Raw sequence section
 			else if (section_type == 'r') {
@@ -77,7 +92,7 @@ void Validate::exec() {
 				uint data_size = infile.global_vars["data_size"];
 
 				if (verbose) {
-					cout << "Start Byte " << sr.begining << endl;
+					cout << "Start Byte " << sr.beginning << endl;
 					cout << "-> Number of blocks: " << sr.nb_blocks << endl;
 				}
 
@@ -128,7 +143,7 @@ void Validate::exec() {
 				uint data_size = infile.global_vars["data_size"];
 
 				if (verbose) {
-					cout << "Start Byte " << sm.begining << endl;
+					cout << "Start Byte " << sm.beginning << endl;
 					cout << "-> Minimizer: " << strif.translate(sm.minimizer, m) << endl;
 					cout << "-> Number of blocks: " << sm.nb_blocks << endl;
 					cout << endl;
@@ -180,6 +195,11 @@ void Validate::exec() {
 			section_type = infile.read_section_type();
 		}
 
+		char a=0,b=0,c=0;
+		infile.fs >> a >> b >> c;
+		if (a != 'K' or b !='F' or c!='F')
+			cout << "No KFF signature found at the end of the file. The file must be corrupted." << endl;
+		infile.fs.get();
 
 		if (not infile.fs.eof()) {
 			cout << "/!\\ Remaining bytes at the end of the file !" << endl;
