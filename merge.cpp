@@ -23,7 +23,7 @@ void Merge::cli_prepare(CLI::App * app) {
 
 void Merge::merge(vector<string> inputs, string output) {
 	// Useful variables
-	long buffer_size = 1048576; // 1 MB
+	const long buffer_size = 1048576; // 1 MB
 	char buffer[1048576];
 	uint8_t global_encoding[4];
 
@@ -35,6 +35,7 @@ void Merge::merge(vector<string> inputs, string output) {
 
 	// Write header of the output
 	Kff_file outfile(output, "w");
+	outfile.set_indexation(false);
 	outfile.write_encoding(
 		global_encoding[0],
 		global_encoding[1],
@@ -44,6 +45,11 @@ void Merge::merge(vector<string> inputs, string output) {
 	// Set metadata
 	std::string meta = "Merged file";
 	outfile.write_metadata(meta.length(), (uint8_t *)meta.c_str());
+
+	// remember index previous position for chaining
+	long last_index = 0;
+	// Footers
+	map<string, uint64_t> footer_values;
 
 	// Append each file one by one
 	for (string in_filename : inputs) {
@@ -60,11 +66,15 @@ void Merge::merge(vector<string> inputs, string output) {
 			}
 		}
 
-		// NB: Automatic jump over metadata due to API
+		long current_pos = infile.fs.tellp();
+		infile.fs.seekg(0, infile.fs.end);
+		long filesize = infile.fs.tellp();
+		infile.fs.seekp(current_pos);
 
+		// NB: Automatic jump over metadata due to API
 		// Read section by section
 		char section_type = infile.read_section_type();
-		while(not infile.fs.eof()) {
+		while(infile.fs.tellp() != filesize - 3) {
 			vector<string> to_copy;
 			long size, end_byte, begin_byte;
 
@@ -74,6 +84,20 @@ void Merge::merge(vector<string> inputs, string output) {
 				{
 					// Read the values
 					Section_GV in_sgv(&infile);
+
+					// Discard footers
+					if (in_sgv.vars.find("footer_size") != in_sgv.vars.end()) {
+						for (auto& tuple : in_sgv.vars) {
+							if (tuple.first != "footer_size" and tuple.first != "first_index") {
+								if (footer_values.find(tuple.first) == footer_values.end())
+									footer_values[tuple.first] = tuple.second;
+								else
+									// Sum up the common footer values
+									footer_values[tuple.first] += tuple.second;
+							}
+						}
+						break;
+					}
 
 					// Verify the presence and value of each variable in output
 					for (auto& tuple : in_sgv.vars) {
@@ -112,6 +136,37 @@ void Merge::merge(vector<string> inputs, string output) {
 					size -= size_to_copy;
 				}
 				break;
+				case 'i': {
+				// read section and compute its size
+				Section_Index si(&infile);
+				si.close();
+				long file_size = infile.fs.tellp() - si.beginning - 8l;
+				infile.fs.seekp(si.beginning);
+
+				// Save the position in the file for later chaining
+				long i_position = outfile.fs.tellp();
+				size = file_size;
+				// Copy section (except the chaining part)
+				// Read from input and write into output
+				while (size > 0) {
+					size_t size_to_copy = size > buffer_size ? buffer_size : size;
+
+					infile.fs.read(buffer, size_to_copy);
+					outfile.fs.write(buffer, size_to_copy);
+
+					size -= size_to_copy;
+				}
+				// Jump over the last value of infile
+				infile.fs.seekp(infile.fs.tellp() + 8l);
+				// Chain the section and save its position
+				long i_relative = last_index - (i_position + file_size + 8l);
+				for (uint i=0 ; i<8 ; i++) {
+					char val = (char)(i_relative >> (56 - 8 * i));
+					outfile.fs.write(&val, 1);
+				}
+				// write_value(last_index, outfile.fs);
+				last_index = i_position;
+				} break;
 
 				default:
 					cerr << "Unknown section type " << section_type << " in file " << in_filename << endl;
@@ -123,6 +178,21 @@ void Merge::merge(vector<string> inputs, string output) {
 		}
 
 		infile.close();
+	}
+
+	// Write footer
+	if (last_index != 0) {
+		Section_GV sgv(&outfile);
+		long size = 9;
+
+		for (const auto & tuple : footer_values) {
+			sgv.write_var(tuple.first, tuple.second);
+			size += tuple.first.length() + 1 + 8;
+		}
+		sgv.write_var("first_index", last_index);
+		sgv.write_var("footer_size", size + 2 * (12 + 8));
+		sgv.close();
+
 	}
 
 	outfile.close();
