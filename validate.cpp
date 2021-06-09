@@ -76,12 +76,14 @@ void Validate::exec() {
 			// Index section
 			else if (section_type == 'i') {
 				Section_Index si(&infile);
+				cout << "Start Byte " << si.beginning << endl;
 				long end_byte = si.beginning + 17 + 9 * si.index.size();
 				cout << "Section\trelative\tabsolute" << endl;
 				for (const auto & pair : si.index) {
 					cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
 				}
 				si.close();
+				cout << "Next index position " << si.next_index << endl;
 			}
 			// Raw sequence section
 			else if (section_type == 'r') {
