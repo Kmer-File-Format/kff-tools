@@ -64,12 +64,22 @@ void Translate::exec() {
 		}
 	}
 
+	const long buffer_size = 1048576; // 1 MB
+	char buffer[1048576];
+
 	// Read the encoding and prepare the translator
 	Kff_file infile(input_filename, "r");
 	Translator translator(infile.encoding, dest_encoding);
 
+	// Read file size
+	long pos = infile.fs.tellp();
+	infile.fs.seekg(0, infile.fs.end);
+	long filesize = infile.fs.tellp();
+	infile.fs.seekp(pos);
+
 	// Write header of the output
 	Kff_file outfile(output_filename, "w");
+	outfile.set_indexation(false);
 	outfile.write_encoding(
 		dest_encoding[0],
 		dest_encoding[1],
@@ -88,7 +98,7 @@ void Translate::exec() {
 
 	// Read and write section per section
 	char section_type = infile.read_section_type();
-	while (not infile.fs.eof()) {
+	while (infile.fs.tellp() != filesize - 3) {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
@@ -118,6 +128,24 @@ void Translate::exec() {
 				delete[] data;
 				uint nb_data = outfile.global_vars["max"];
 				data = new uint8_t[nb_data * outfile.global_vars["data_size"]];
+			}
+		}
+		// Pure copy
+		else if (section_type == 'i') {
+			// Read the section
+			Section_Index si(&infile);
+			si.close();
+			// Compute size and go back to start
+			long size = infile.fs.tellp() - si.beginning;
+			infile.fs.seekp(si.beginning);
+			// copy
+			while (size > 0) {
+				size_t size_to_copy = size > buffer_size ? buffer_size : size;
+
+				infile.fs.read(buffer, size_to_copy);
+				outfile.fs.write(buffer, size_to_copy);
+
+				size -= size_to_copy;
 			}
 		}
 		// translate a raw block
@@ -167,6 +195,9 @@ void Translate::exec() {
 
 			in_section.close();
 			out_section.close();
+		} else {
+			cerr << infile.fs.tellp() << ": Unknown section " << section_type << endl;
+			exit(1);
 		}
 
 		section_type = infile.read_section_type();
