@@ -26,7 +26,7 @@ void DataRm::exec() {
 	// Rewrite the encoding
 	Kff_file infile(input_filename, "r");
 	Kff_file outfile(output_filename, "w");
-
+	outfile.set_indexation(true);
 	outfile.write_encoding(infile.encoding);
 
 	// Rewrite metadata
@@ -35,6 +35,11 @@ void DataRm::exec() {
 	outfile.write_metadata(infile.metadata_size, metadata);
 	delete[] metadata;
 
+	long current_pos = infile.fs.tellp();
+	infile.fs.seekg(0, infile.fs.end);
+	long size = infile.fs.tellp();
+	infile.fs.seekp(current_pos);
+
 	// Prepare sequence buffer
 	uint8_t * nucleotides = new uint8_t[1];
 	uint8_t * data = new uint8_t[1];
@@ -42,13 +47,17 @@ void DataRm::exec() {
 
 	// Read and write section per section
 	char section_type = infile.read_section_type();
-	while (not infile.fs.eof()) {
+	while (infile.fs.tellp() != size - 3) {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
 			Section_GV isgv(&infile);
-			Section_GV osgv(&outfile);
 
+			// Remove old footer
+			if (isgv.vars.find("footer_size") != isgv.vars.end())
+				continue;
+
+			Section_GV osgv(&outfile);
 
 			bool nucl_buffer_changed = false;
 			bool data_buffer_changed = false;
@@ -79,6 +88,10 @@ void DataRm::exec() {
 				uint nb_data = outfile.global_vars["max"];
 				data = new uint8_t[nb_data * real_data_size];
 			}
+		}
+		else if (section_type == 'i') {
+			Section_Index si(&infile);
+			si.close();
 		}
 		// rewrite a raw block
 		else if (section_type == 'r') {
