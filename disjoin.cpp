@@ -37,6 +37,12 @@ void Disjoin::exec() {
 	outfile.write_metadata(infile.metadata_size, metadata);
 	delete[] metadata;
 
+	// Compute file size
+	long current_pos = infile.fs.tellp();
+	infile.fs.seekg(0, infile.fs.end);
+	long size = infile.fs.tellp();
+	infile.fs.seekp(current_pos);
+
 	// Prepare sequence buffer
 	uint8_t * nucleotide_shifts[4];
 	for (uint i=0 ; i<4 ; i++)
@@ -46,11 +52,15 @@ void Disjoin::exec() {
 
 	// Read and write section per section
 	char section_type = infile.read_section_type();
-	while (not infile.fs.eof()) {
+	while (infile.fs.tellp() != size - 3) {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
 			Section_GV isgv(&infile);
+			if (isgv.vars.find("footer_size") != isgv.vars.end()) {
+				continue;
+			}
+
 			Section_GV osgv(&outfile);
 
 			bool nucl_buffer_changed = false;
@@ -85,6 +95,10 @@ void Disjoin::exec() {
 				delete[] data;
 				data = new uint8_t[outfile.global_vars["data_size"] * real_max];
 			}
+		}
+		else if (section_type == 'i') {
+			Section_Index si(&infile);
+			si.close();
 		}
 		// rewrite a raw block
 		else if (section_type == 'r') {
