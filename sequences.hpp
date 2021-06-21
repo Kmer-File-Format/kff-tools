@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <string>
 #include <fstream>
+#include <vector>
 
 #include "encoding.hpp"
 #include "kff-cpp-api/kff_io.hpp"
@@ -62,14 +63,11 @@ public:
  */
 class KffSeqStream : public SequenceStream {
 private:
-  Kff_reader reader;
 public:
+  Kff_reader reader;
   KffSeqStream(const std::string filename)
       : reader(filename)
   {};
-  ~KffSeqStream() {
-    delete this->reader;
-  }
   uint next_sequence(uint8_t * & seq, uint8_t * & data);
 };
 
@@ -100,10 +98,19 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size);
   */
 void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
+
+/** Compute all the candidates hash values of the sequence and return them into a vactor.
+ * @param seq binarized sequence
+ * @param size seq size in nucleotides
+ * @param k kmer size
+ * @param m minimizer size max = 31
+ * @return vector containing all the hashed m-size windows
+ **/
+std::vector<uint> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m);
 /** Search for the minimizer inside of a sequence (forward only)
   * @param seq binarized sequence.
   * @param size size in nucleotide of the sequence
-  * @param m Minimizer size
+  * @param m Minimizer size (max 32)
   * @param minimizer Modified during the execution to store the minimizer.
   * @param minimizer_position Modified during the execution to store the position of the minimizer.
   */

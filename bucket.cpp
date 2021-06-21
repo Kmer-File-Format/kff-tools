@@ -7,9 +7,9 @@
 #include <limits>
 
 #include "bucket.hpp"
-#include "encoding.hpp"
 #include "sequences.hpp"
 
+#include "encoding.hpp"
 
 using namespace std;
 
@@ -49,107 +49,20 @@ void Bucket::cli_prepare(CLI::App * app) {
 }
 
 void Bucket::exec() {
-	// Read the encoding and prepare the translator
-	Kff_reader reader = Kff_reader(input_filename);
+	// Open the sequence stream
+	KffSeqStream stream(this->input_filename);
+	Stringifyer strif(stream.reader.get_encoding());
 
-	// Prepare complement values
-	uint8_t * encoding = reader.get_encoding();
-	for (uint i=0 ; i<4 ; i++)
-		this->complement[encoding[i]] = encoding[3-i];
-
-	// Prepare sequence and data buffers
-	uint8_t * nucleotides = nullptr;
-	uint8_t * data = nullptr;
-
-	Stringifyer strif(reader.get_encoding());
-
-	// Read the kmers one at a time
-	while (reader.has_next()) {
-		// Get the kmer
-		reader.next_kmer(nucleotides, data);
-
-		// Controle the variables
-		uint64_t k = reader.get_var("k");
-		if (m > k) {
-			cerr << "m larger than k, kmer ignored " << strif.translate(nucleotides, k);
-			continue;
-		}
-
-		// Bucketize
-		this->bucketize(nucleotides, data, k);
-		// return;
-		// Merge is done on the object destruction
-	}
-}
-
-void Bucket::bucketize(uint8_t * kmer, uint8_t * data, uint64_t k) {
-	// Compute the minimizer
-	int mini_pos;
-	uint mini = get_minimizer(kmer, k, mini_pos);
-	cout << mini_pos << " " << mini << endl;
-
-	// Save to the right file
-}
-
-/** Compute the encoding dependant minimizer. Will return the minimizer regarding the encoding.
-  *
-  * @param kmer The 2-bits encoded byte sequence for the kmer.
-  * @param k kmer length
-  * @param position The variable where the minimizer position will be registered.
-  *
-  * @return The minimizer value.
-  **/
-uint Bucket::get_minimizer(const uint8_t * kmer, const uint64_t k, int & position) const {
-	uint minimizer_value = std::numeric_limits<uint>::max();
-
-	uint current_minimizer = 0;
-	uint current_rev_minimzer = 0;
-	uint kmer_nb_bytes = (k+3)/4;
-
-	// Prepare for the first minimizer
-	for (uint r_idx=0; r_idx<m-1 ; r_idx++) {
-		// Get the nucleotide
-		uint byte_idx = (kmer_nb_bytes - 1) - (r_idx / 4);
-		uint nucl_offset = r_idx % 4;
-		uint nucleotide = (kmer[byte_idx] >> (2 * nucl_offset)) & 0b11;
-
-		// Set the nucleotide to the minimizer candidate
-		current_minimizer >>= 2;
-		current_minimizer += nucleotide << (2 * (m-1));
-
-		// Set the nucleotide to the rev minizer candidate
-		current_rev_minimzer <<= 2;
-		current_rev_minimzer += this->complement[nucleotide];
-	}
-
-	// Compare all the minimizers
-	uint rev_mask = (1 << (2 * m)) - 1;
-	for (uint r_idx=m-1 ; r_idx<k ; r_idx++) {
-		// Get the nucleotide
-		uint byte_idx = (kmer_nb_bytes - 1) - (r_idx / 4);
-		uint nucl_offset = r_idx % 4;
-		uint nucleotide = (kmer[byte_idx] >> (2 * nucl_offset)) & 0b11;
-
-		// Set the nucleotide to the minimizer candidate
-		current_minimizer >>= 2;
-		current_minimizer += nucleotide << (2 * (m-1));
-
-		// Set the nucleotide to the rev minizer candidate
-		current_rev_minimzer <<= 2;
-		current_rev_minimzer += this->complement[nucleotide];
-		current_rev_minimzer &= rev_mask;
-
-		if (current_minimizer <= minimizer_value) {
-			minimizer_value = current_minimizer;
-			position = k - m - (r_idx - m + 1);
-			// cout << r_idx << " " << position << "    ";
-		} else if (!singleside and current_rev_minimzer < minimizer_value) {
-			minimizer_value = current_rev_minimzer;
-			position = - (r_idx - m + 1);
-			// cout << "HOLA" << endl;
+	uint8_t * seq;
+	uint8_t * data;
+	uint nb_kmers;
+	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
+		uint k = stream.reader.get_var("k");
+		cout << strif.translate(seq, nb_kmers + k - 1) << endl;
+		vector<uint> candidates = compute_mini_candidates(seq, nb_kmers + k - 1, k, m);
+		for (uint candidate : candidates) {
+			uint8_t val = candidate;
+			cout << "\t" << strif.translate(&val, 4) << endl;
 		}
 	}
-	cout << endl;
-
-	return minimizer_value;
 }

@@ -95,6 +95,37 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
+vector<uint> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m) {
+	vector<uint> candidates(size - m + 1);
+
+	uint offset = (4 - (size % 4)) % 4;
+	uint current_value = 0;
+	// Compute prefix of first candidate
+	for (uint i=0 ; i<m-1 ; i++) {
+		uint idx = offset + i;
+		uint byte_idx = idx/4;
+		uint nucl_shift = 3 - (idx % 4);
+
+		uint nucl = (seq[byte_idx] >> (nucl_shift * 2)) & 0b11;
+		current_value = (current_value << 2) + nucl;
+	}
+
+	// Compute minimizer candidates
+	uint64_t m_mask = (1 << (m*2)) - 1;
+	for (uint i=m-1 ; i<size ; i++) {
+		uint idx = offset + i;
+		uint byte_idx = idx/4;
+		uint nucl_shift = 3 - (idx % 4);
+
+		uint nucl = (seq[byte_idx] >> (nucl_shift * 2)) & 0b11;
+		current_value = ((current_value << 2) + nucl) & m_mask;	
+		candidates[i - m + 1] = current_value;
+	}
+
+	return candidates;
+}
+
+
 void search_mini(uint8_t * seq, const uint size, const uint m, uint & minimizer, uint & minimizer_position) {
 	// Datastructure prepare
 	uint k_bytes = (size + 3) / 4;
