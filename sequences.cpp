@@ -4,6 +4,7 @@
 #include "sequences.hpp"
 
 
+
 using namespace std;
 
 
@@ -36,6 +37,40 @@ uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
 	uint8_t mask = 0xFF << (8-merge_index);
 	return (left_bits & mask) | (right_bits & ~mask);
 }
+
+
+uint TxtSeqStream::next_sequence(uint8_t * & seq, uint8_t * & data) {
+	// Verify stream integrity
+	if (not this->fs)
+		return 0;
+
+	// read next sequence
+	string line;
+	getline(this->fs, line);
+	// Update buffer
+	uint seq_size = line.size();
+	if (seq_size > this->buffer_size * 4) {
+		delete[] this->buffer;
+		this->buffer_size = (seq_size + 3) / 4;
+		this->buffer = new uint8_t[this->buffer_size];
+	}
+	// convert/copy the sequence
+	this->bz.translate(line, this->buffer);
+	seq = this->buffer;
+
+	return seq_size;
+}
+
+
+uint KffSeqStream::next_sequence(uint8_t * & seq, uint8_t * & data) {
+	if (this->reader.has_next()) {
+		return this->reader.next_block(seq, data);
+	}
+
+	return 0;
+}
+
+
 
 
 // #include <iostream>

@@ -1,5 +1,10 @@
 #include <stdint.h>
 #include <cstdlib>
+#include <string>
+#include <fstream>
+
+#include "encoding.hpp"
+#include "kff-cpp-api/kff_io.hpp"
 
 /* TO READ BEFORE ANY USAGE !!
 
@@ -12,6 +17,62 @@ Byte 0 also have useless bits at the begining if the sequence size is not 4 divi
 
 #ifndef SEQ_H
 #define SEQ_H
+
+/** Generic object to read sequence files.
+ * Each call to next_sequence should return a sequence
+ **/
+class SequenceStream {
+public:
+  /** Read the next sequence in the file.
+    * If this sequence is larger than max_seq_size, it will fill seq with the max_seq_size first
+    * nucleotides and return the full sequence size. remaining nucleotides are discarded.
+    * @param seq Pointer that will be filled with the sequence array. The array is erased during the
+    * next call to the method.
+    * @return size of the sequence that have been read.
+    **/
+  virtual uint next_sequence(uint8_t * & seq, uint8_t * & data) = 0;
+};
+
+/** Read txt sequence file (1 sequence per line)
+ */
+class TxtSeqStream : public SequenceStream {
+private:
+  std::fstream fs;
+  Binarizer bz;
+
+  uint buffer_size;
+  uint8_t * buffer;
+
+public:
+  TxtSeqStream(const std::string filename, const uint8_t encoding[4]) 
+      : fs(filename, std::fstream::in)
+      , bz(encoding)
+      , buffer_size(1024)
+      , buffer(new uint8_t[1024])
+  {};
+  ~TxtSeqStream() {
+    this->fs.close();
+    delete[] buffer;
+  }
+  uint next_sequence(uint8_t * & seq, uint8_t * & data);
+};
+
+
+/** Read txt sequence file (1 sequence per line)
+ */
+class KffSeqStream : public SequenceStream {
+private:
+  Kff_reader reader;
+public:
+  KffSeqStream(const std::string filename)
+      : reader(filename)
+  {};
+  ~KffSeqStream() {
+    delete this->reader;
+  }
+  uint next_sequence(uint8_t * & seq, uint8_t * & data);
+};
+
 
 /** Extract a subsequence of sequence.
   * @param sequence Original sequence

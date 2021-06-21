@@ -79,7 +79,7 @@ string Stringifyer::translate(uint8_t * sequence, const size_t nucl_length) cons
 
 
 
-Binarizer::Binarizer(uint8_t encoding[4]) {
+Binarizer::Binarizer(const uint8_t encoding[4]) {
 	string l = "A";
 	this->lookup[l] = 0 | (encoding[0] & 0b11);
 	l = "C";

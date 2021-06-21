@@ -75,7 +75,7 @@ public:
 		*
 		* @param encoding The 2-bit nucleotide encoding
 		*/
-	Binarizer(uint8_t encoding[4]);
+	Binarizer(const uint8_t encoding[4]);
 	/**
 		* Translate the content of the sequence into a binarized version.
 		*
