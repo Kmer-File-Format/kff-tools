@@ -1,10 +1,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
-#include <cmath>
-#include <algorithm>
-#include <queue>
-#include <limits>
+#include <utility>
 
 #include "bucket.hpp"
 #include "sequences.hpp"
@@ -59,10 +56,20 @@ void Bucket::exec() {
 	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
 		uint k = stream.reader.get_var("k");
 		cout << strif.translate(seq, nb_kmers + k - 1) << endl;
-		vector<uint> candidates = compute_mini_candidates(seq, nb_kmers + k - 1, k, m);
-		for (uint candidate : candidates) {
-			uint8_t val = candidate;
-			cout << "\t" << strif.translate(&val, 4) << endl;
+		cout << "k " << k << endl;
+
+		// Minimizers finding
+		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m);
+		for (const pair<int, uint64_t> & mini : minimizers) {
+			uint8_t val = mini.second;
+			cout << mini.first << ": " << strif.translate(&val, 4) << endl;
 		}
+
+		// Skmer deduction
+		vector<pair<uint, uint> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
+		for (pair<uint, uint> skmer : skmers) {
+			cout << "skmer [" << skmer.first << ":" << skmer.second << "]" << endl;
+		}
+		cout << endl;
 	}
 }

@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cassert>
+#include <algorithm>
 
 #include "sequences.hpp"
 
@@ -95,11 +96,11 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
-vector<uint> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m) {
-	vector<uint> candidates(size - m + 1);
+vector<uint64_t> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m) {
+	vector<uint64_t> candidates(size - m + 1);
 
 	uint offset = (4 - (size % 4)) % 4;
-	uint current_value = 0;
+	uint64_t current_value = 0;
 	// Compute prefix of first candidate
 	for (uint i=0 ; i<m-1 ; i++) {
 		uint idx = offset + i;
@@ -123,6 +124,67 @@ vector<uint> compute_mini_candidates(const uint8_t * seq, const uint size, const
 	}
 
 	return candidates;
+}
+
+vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m) {
+	vector<pair<int, uint64_t> > minimizers;
+	// Get all the candidates
+	vector<uint64_t> candidates = compute_mini_candidates(seq, size, k, m);
+
+	int prev_pos = k + 2;
+	// Compute the minimizer of each sliding window of size k - m
+	for (uint i=0 ; i<=size-k ; i++) {
+		cout << "i " << i << endl;
+		cout << "test [" << i << ":" << (i+k-m) << "]" << endl;
+		auto smallest = min_element(candidates.begin()+i, candidates.begin()+i+(k-m));
+		int pos = smallest - candidates.begin();
+		// New minimizer ?
+		if (pos != prev_pos) {
+			prev_pos = pos;
+			minimizers.emplace_back(pos, *smallest);
+		}
+	}
+
+	return minimizers;
+}
+
+std::vector<pair<uint, uint> > compute_skmers(const uint seq_size, const uint k, const uint m, std::vector<std::pair<int, uint64_t> > & minimizers) {
+	// Superkmer list
+	vector<pair<uint, uint> > skmers;
+
+	uint current_begin = 0;
+	for (uint i=0 ; i<minimizers.size()-1 ; i++) {
+		pair<int, uint64_t> & current_mini = minimizers[i];
+		pair<int, uint64_t> & next_mini = minimizers[i+1];
+
+		uint end = 0;
+		uint new_begin = 0;
+		// First minimizer is dominant
+		if (current_mini.second <= next_mini.second) {
+			end = current_mini.first + k - 1;
+			new_begin = current_mini.first + 1;
+		}
+		// Second minimizer is dominant
+		else {
+			new_begin = next_mini.first - k + m;
+			end = current_mini.first + m - 1 + (new_begin - current_begin);
+		}
+
+		// Add the superkmer and save position
+		skmers.emplace_back(current_begin, end);
+		current_begin = new_begin;
+	}
+
+	// Save the last skmer
+	skmers.emplace_back(current_begin, seq_size-1);
+
+	return skmers;
+}
+
+std::vector<pair<uint, uint> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m) {
+	std::vector<std::pair<int, uint64_t> > minimizers = compute_minizers(seq, size, k, m);
+
+	return compute_skmers(size, k, m, minimizers);
 }
 
 

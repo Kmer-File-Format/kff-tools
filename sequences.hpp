@@ -3,6 +3,7 @@
 #include <string>
 #include <fstream>
 #include <vector>
+#include <utility>
 
 #include "encoding.hpp"
 #include "kff-cpp-api/kff_io.hpp"
@@ -99,6 +100,8 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size);
 void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
 
+// ----- Minimizer search related functions -----
+
 /** Compute all the candidates hash values of the sequence and return them into a vactor.
  * @param seq binarized sequence
  * @param size seq size in nucleotides
@@ -106,7 +109,19 @@ void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
  * @param m minimizer size max = 31
  * @return vector containing all the hashed m-size windows
  **/
-std::vector<uint> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m);
+std::vector<uint64_t> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m);
+/** Compute all the minimizers of a sequence.
+ * @return All pair minimizer position/
+ **/
+std::vector<std::pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m);
+/** Compute all the superkmers
+ * @return All the begin/end pair positions
+ **/
+std::vector<std::pair<uint, uint> > compute_skmers(const uint seq_size, const uint k, const uint m, std::vector<std::pair<int, uint64_t> > & minimizers);
+/** Compute all the superkmers
+ **/
+std::vector<std::pair<uint, uint> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m);
+
 /** Search for the minimizer inside of a sequence (forward only)
   * @param seq binarized sequence.
   * @param size size in nucleotide of the sequence
