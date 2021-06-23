@@ -18,225 +18,156 @@ using namespace std;
 
 Instr::Instr() {
 	input_filename = "";
-	output_prefix = "";
-	m = 0;
-	split = false;
+	output_filename = "";
 	data_size = 0;
+	is_counts = false;
+	k = 0;
+	max_kmerseq = 255;
 }
 
 void Instr::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("instr", "Convert a text kmer file into one or multuple kff file(s). Instr suppose that data are signed integers (max 64 bits).");
-	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text kmer file in tsv format. One kmer per line and data as the second field (can be omitted for no data)");
+	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");
+	k_opt->required();
+	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text file with one sequence per line (sequence omitted if its size < k). Empty data is added (size defined by -d option).");
 	input_option->required();
-	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_prefix, "The kff output file prefix. For a single file the name will be <prefix>.kff, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff).");
+	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
+	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_filename, "The kff output file prefix. For a single file the name will be <prefix>.kff, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff).");
 	output_option->required();
-	subapp->add_option("-m, --mini-size", m, "Set a minimizer size. If set, all the kmers are separated into one section per lexicagraphic minimizer. (Max 31)");
-	subapp->add_flag("-s, --split", split, "The output is splited into one file per minimizer.");
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
+	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
 }
+
+
+/** Read txt sequence file (1 sequence per line)
+ */
+class TxtSeqStream : public SequenceStream {
+private:
+  std::fstream fs;
+  Binarizer bz;
+
+  uint buffer_size;
+  uint8_t * buffer;
+
+  uint k;
+  uint data_size;
+
+public:
+  TxtSeqStream(const std::string filename, const uint8_t encoding[4]) 
+      : fs(filename, std::fstream::in)
+      , bz(encoding)
+      , buffer_size(1024)
+      , buffer(new uint8_t[1024])
+      , k(0)
+      , data_size(0)
+  {};
+  ~TxtSeqStream() {
+    this->fs.close();
+    delete[] buffer;
+  }
+
+  void set_counts(uint k, uint data_size) {
+  	this->k = k;
+  	this->data_size = data_size;
+  }
+  
+  uint next_sequence(uint8_t * & seq, uint8_t * & data) {
+		// Verify stream integrity
+		if (not this->fs)
+			return 0;
+
+		// read next sequence
+		string line;
+		getline(this->fs, line);
+		// Update buffer
+		uint seq_size = line.size();
+		if (seq_size > this->buffer_size * 4) {
+			delete[] this->buffer;
+			this->buffer_size = (seq_size + 3) / 4;
+			this->buffer = new uint8_t[this->buffer_size];
+		}
+		// convert/copy the sequence
+		this->bz.translate(line, this->buffer);
+		seq = this->buffer;
+
+		// If counts
+		if (this->k > 0) {
+			string str_count = line.substr(k+1);
+			unsigned long count = stoul(str_count);
+			for (uint i=0 ; i<this->data_size ; i++) {
+				data[data_size-1-i] = (uint8_t)count & 0xFF;
+				count >>= 8;
+			}
+		}
+
+		return seq_size;
+	}
+};
+
 
 void Instr::exec() {
-	if (m == 0) {
-		this->monofile();
-	} else {
-		this->multifile();
-	}
-}
-
-void Instr::multifile() {
-	vector<string> filenames;
-	map<uint, Kff_file *> outfiles;
-	map<uint, Section_Minimizer *> outsections;
-	queue<uint> oldest_fps;
-	map<uint, uint> fp_counts;
-
-	uint max_file_pointers = 256;
-
-	// Prepare first k value
-	ifstream txt_file(input_filename);
-	string line;
-	getline(txt_file, line);
-	txt_file.close();
-
-	// Find the delimiter
-	char delimiter = ' ';
-	for (uint i=0 ; i<line.length() ; i++) {
-		char c = line[i];
-		if (not ((c >= 'a' and c <='z') or (c >= 'A' and c <='Z'))) {
-			delimiter = c;
-			break;
-		}
-	}
-	cout << (delimiter == ' ') << " " << (delimiter == '\t') << endl;
-	uint64_t k = line.substr(0, line.find(delimiter)).length();
-
-	// Prepare the binarized datastructures
-	uint8_t encoding[4] = {0, 1, 3, 2};
-	Binarizer brz(encoding);
-	uint8_t * bin = new uint8_t[k / 4 + 1];
-	uint8_t * bin_mini = new uint8_t[m / 4 + 1];
-	uint8_t * data = new uint8_t[data_size];
-	// Read the input kmer stream
-	txt_file = ifstream(input_filename);
-	while (getline(txt_file, line)) {
-		string kmer = line.substr(0, line.find(delimiter));
-		uint64_t data_int = stoi(line.substr(line.find(delimiter)+1));
-
-		// Change the size of k
-		if (kmer.length() != k) {
-			k = kmer.length();
-			delete[] bin;
-			bin = new uint8_t[k / 4 + 1];
-		}
-
-		// Binarize the kmer
-		brz.translate(kmer, bin);
-		// Search for minimizer
-		uint minimizer = 0;
-		uint minimizer_position = 0;
-		// bool reversed = false;
-
-		search_mini(bin, k, m, minimizer, minimizer_position);
-
-		// Register the filepointer as opened if not last used
-			if (oldest_fps.size() == 0 or oldest_fps.back() != minimizer) {
-				oldest_fps.push(minimizer);
-				if (fp_counts.find(minimizer) == fp_counts.end())
-					fp_counts[minimizer] = 0;
-				fp_counts[minimizer] += 1;
-			}
-
-			// Tmp close a file if too much file are open
-			while (fp_counts.size() > max_file_pointers) {
-				// Get oldest used and opened fp
-				uint oldest = oldest_fps.front();
-				oldest_fps.pop();
-
-				if (fp_counts[oldest] > 1)
-					fp_counts[oldest] -= 1;
-				else {
-					// Reduce the number of file pointers by 1
-					fp_counts.erase(oldest);
-					// The fp is automatically reopened on write calls.
-					outfiles[oldest]->tmp_close();
-				}
-			}
-
-			// First time with the file
-			if (outfiles.find(minimizer) == outfiles.end()) {
-				// Create the file and write its header
-				string filename = output_prefix + "_" + to_string(minimizer) + ".kff";
-				filenames.push_back(filename);
-				outfiles[minimizer] = new Kff_file(filename, "w");
-				outfiles[minimizer]->write_encoding(encoding);
-				// Write the global variable needed
-				Section_GV sgv(outfiles[minimizer]);
-				sgv.write_var("k", k);
-				sgv.write_var("m", m);
-				sgv.write_var("max", 1);
-				sgv.write_var("data_size", data_size);
-				sgv.close();
-				// Open the minimizer block section
-				outsections[minimizer] = new Section_Minimizer(outfiles[minimizer]);
-				uint_to_seq(minimizer, bin_mini, m);
-				outsections[minimizer]->write_minimizer(bin_mini);
-			}
-			// Translate int values
-      for (int i=data_size-1 ; i>=0 ; i--) {
-        data[i] = data_int & 0xFF;
-        data_int >>= 8;
-      }
-			// Write the minimizer in the right file
-			outsections[minimizer]->write_compacted_sequence (bin, k, minimizer_position, data);
+	// reset data size to 0 if data are not counts
+	if (not this->is_counts) {
+		this->data_size = 0;
+		this->max_kmerseq = 1;
 	}
 
-	delete[] bin;
-	delete[] bin_mini;
-	delete[] data;
-	// close all the outfiles
-	for (auto & it : outsections) {
-		// Close the section
-		it.second->close();
-		delete it.second;
-		// Close the file
-		outfiles[it.first]->close();
-		delete outfiles[it.first];
-	}
-
-	if (not split) {
-		Merge merger;
-		merger.merge(filenames, output_prefix + ".kff");
-
-		for (string filename : filenames)
-			remove(filename.c_str());
-	}
-}
-
-
-void Instr::monofile() {
-	// prepare outfile
-	Kff_file outfile(output_prefix + ".kff", "w");
-	outfile.write_encoding(0, 1, 3, 2);
-
-	ifstream txt_file(input_filename);
-	string line;
-	getline(txt_file, line);
-	txt_file.close();
-
-	// Find the delimiter
-	char delimiter = ' ';
-	for (uint i=0 ; i<line.length() ; i++) {
-		char c = line[i];
-		if (not ((c >= 'a' and c <='z') or (c >= 'A' and c <='Z'))) {
-			delimiter = c;
-			break;
-		}
-	}
-	uint64_t k = line.substr(0, line.find(delimiter)).length();
-
+	// Open a KFF for output
+	Kff_file outfile(this->output_filename, "w");
+	// Write needed variables
 	Section_GV sgv(&outfile);
-	sgv.write_var("k", k);
-	sgv.write_var("max", 1);
-	sgv.write_var("data_size", data_size);
+	sgv.write_var("k", this->k);
+	sgv.write_var("data_size", this->data_size);
+	sgv.write_var("ordered", 0);
+	sgv.write_var("max", this->max_kmerseq);
 	sgv.close();
-	
+
+	// Open the input seq stream
+	const uint8_t encoding[4] = {0, 1, 3, 2};
+	TxtSeqStream stream(input_filename, encoding);
+	if (this->is_counts)
+		stream.set_counts(this->k, this->data_size);
+
+	// Write the sequences inside of a raw section
 	Section_Raw sr(&outfile);
 
-	txt_file = ifstream(input_filename);
-	Binarizer brz(outfile.encoding);
-	uint8_t * bin = new uint8_t[k / 4 + 1];
+	uint8_t * seq;
+	uint8_t * sub_seq = new uint8_t[(max_kmerseq + 3) / 4];
 	uint8_t * data = new uint8_t[data_size];
-	while (getline(txt_file, line)) {
-		string kmer = line.substr(0, line.find(delimiter));
-		// cout << line << endl;
-		// cout << line.substr(line.find(delimiter)+1) << endl;
-		uint64_t data_int = stoi(line.substr(line.find(delimiter)+1));
+	uint seq_size = 0;
+	// read the next line from the txt file
+	while ((seq_size = stream.next_sequence(seq, data)) > 0) {
+		// Sequence too small
+		if (seq_size < k)
+			continue;
 
-		// Change the size of k
-		if (kmer.length() != k) {
-			sr.close();
-			k = kmer.length();
-			Section_GV sgv(&outfile);
-			sgv.write_var("k", k);
-			sgv.close();
-			sr = Section_Raw(&outfile);
-			delete[] bin;
-			bin = new uint8_t[k / 4 + 1];
-		}
+		uint nb_kmers = seq_size - this->k + 1;
+		uint first_nucl = 0;
+		while (nb_kmers > 0) {
+			uint8_t * to_copy;
+			uint copy_size = min(nb_kmers, this->max_kmerseq);
+			// If sequence < max
+			if (nb_kmers < this->max_kmerseq)
+				to_copy = seq;
+			// Get subsequence if needed
+			else {
+				uint last_nucl = first_nucl + (k - 1) + (copy_size - 1);
+				subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
+				first_nucl = last_nucl + 1;
+				to_copy = sub_seq;
+			}
 
-		// Translate nucleotides
-		brz.translate(kmer, bin);
-		// Translate int values
-		for (int i=data_size-1 ; i>=0 ; i--) {
-			data[i] = data_int & 0xFF;
-			data_int >>= 8;
+			// Write the sequence
+			sr.write_compacted_sequence(to_copy, copy_size, data);
+
+			// reduce the number of remaining kmers
+			nb_kmers -= copy_size;
 		}
-		// Write into the kff file
-		sr.write_compacted_sequence(bin, k, data);
 	}
-
-	delete[] bin;
-	delete[] data;
 	sr.close();
+
+	delete[] sub_seq;
+	delete[] data;
 	outfile.close();
 }
+

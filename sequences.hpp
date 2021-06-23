@@ -35,30 +35,6 @@ public:
   virtual uint next_sequence(uint8_t * & seq, uint8_t * & data) = 0;
 };
 
-/** Read txt sequence file (1 sequence per line)
- */
-class TxtSeqStream : public SequenceStream {
-private:
-  std::fstream fs;
-  Binarizer bz;
-
-  uint buffer_size;
-  uint8_t * buffer;
-
-public:
-  TxtSeqStream(const std::string filename, const uint8_t encoding[4]) 
-      : fs(filename, std::fstream::in)
-      , bz(encoding)
-      , buffer_size(1024)
-      , buffer(new uint8_t[1024])
-  {};
-  ~TxtSeqStream() {
-    this->fs.close();
-    delete[] buffer;
-  }
-  uint next_sequence(uint8_t * & seq, uint8_t * & data);
-};
-
 
 /** Read txt sequence file (1 sequence per line)
  */

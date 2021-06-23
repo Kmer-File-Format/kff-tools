@@ -12,10 +12,13 @@
 class Instr: public KffTool {
 private:
 	std::string input_filename;
-	std::string output_prefix;
-	uint m;
+	std::string output_filename;
+	
+	bool is_counts;
+
 	uint data_size;
-	bool split;
+	uint k;
+	uint max_kmerseq;
 
 	void monofile();
 	void multifile();
