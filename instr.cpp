@@ -145,27 +145,27 @@ void Instr::exec() {
 		// Sequence too small
 		if (seq_size < k)
 			continue;
-
+		
 		uint nb_kmers = seq_size - this->k + 1;
+		// Full sequence copy
+		if (nb_kmers < this->max_kmerseq) {
+			sr.write_compacted_sequence(seq, seq_size, data);
+			continue;
+		}
+
+		// Sequence saved slice per slice
 		uint first_nucl = 0;
 		while (nb_kmers > 0) {
-			uint8_t * to_copy;
 			uint nb_kmer_copied = min(nb_kmers, this->max_kmerseq);
 			uint copy_size = nb_kmer_copied + (k - 1);
-			cout << "copy size " << copy_size << endl;
-			// If sequence < max
-			if (nb_kmers < this->max_kmerseq)
-				to_copy = seq;
-			// Get subsequence if needed
-			else {
-				uint last_nucl = first_nucl + (copy_size - 1);
-				subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
-				first_nucl = last_nucl + 1;
-				to_copy = sub_seq;
-			}
+			
+			uint last_nucl = first_nucl + (copy_size - 1);
+			cout << "substr " << first_nucl << " " << last_nucl << endl;
+			subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
+			first_nucl = last_nucl + 1 - (k - 1);
 
 			// Write the sequence
-			sr.write_compacted_sequence(to_copy, copy_size, data);
+			sr.write_compacted_sequence(sub_seq, copy_size, data);
 
 			// reduce the number of remaining kmers
 			nb_kmers -= nb_kmer_copied;
