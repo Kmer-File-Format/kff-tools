@@ -79,16 +79,22 @@ public:
 		// read next sequence
 		string line;
 		getline(this->fs, line);
-		cout << line << endl;
+		if (line.size() == 0)
+			return 0;
 		// Update buffer
-		uint seq_size = line.size();
+		uint seq_size = 0;
+		if (this->k == 0)
+			seq_size = line.size();
+		else
+			seq_size = this->k;
+		
 		if (seq_size > this->buffer_size * 4) {
 			delete[] this->buffer;
 			this->buffer_size = (seq_size + 3) / 4;
 			this->buffer = new uint8_t[this->buffer_size];
 		}
 		// convert/copy the sequence
-		this->bz.translate(line, this->buffer);
+		this->bz.translate(line.substr(0, seq_size), this->buffer);
 		seq = this->buffer;
 
 		// If counts
@@ -101,7 +107,6 @@ public:
 			}
 		}
 
-		cout << "Seq size " << seq_size << endl << endl;
 		return seq_size;
 	}
 };
@@ -124,9 +129,6 @@ void Instr::exec() {
 	sgv.write_var("max", this->max_kmerseq);
 	sgv.close();
 
-	cout << "k " << k << endl;
-	cout << "max " << max_kmerseq << endl;
-
 	// Open the input seq stream
 	const uint8_t encoding[4] = {0, 1, 3, 2};
 	TxtSeqStream stream(input_filename, encoding);
@@ -148,7 +150,7 @@ void Instr::exec() {
 		
 		uint nb_kmers = seq_size - this->k + 1;
 		// Full sequence copy
-		if (nb_kmers < this->max_kmerseq) {
+		if (nb_kmers <= this->max_kmerseq) {
 			sr.write_compacted_sequence(seq, seq_size, data);
 			continue;
 		}
@@ -160,7 +162,6 @@ void Instr::exec() {
 			uint copy_size = nb_kmer_copied + (k - 1);
 			
 			uint last_nucl = first_nucl + (copy_size - 1);
-			cout << "substr " << first_nucl << " " << last_nucl << endl;
 			subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
 			first_nucl = last_nucl + 1 - (k - 1);
 
