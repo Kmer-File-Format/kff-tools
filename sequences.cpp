@@ -111,8 +111,6 @@ vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint si
 	int prev_pos = k + 2;
 	// Compute the minimizer of each sliding window of size k - m
 	for (uint i=0 ; i<=size-k ; i++) {
-		cout << "i " << i << endl;
-		cout << "test [" << i << ":" << (i+k-m) << "]" << endl;
 		auto smallest = min_element(candidates.begin()+i, candidates.begin()+i+(k-m));
 		int pos = smallest - candidates.begin();
 		// New minimizer ?
