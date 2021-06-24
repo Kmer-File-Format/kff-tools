@@ -79,6 +79,7 @@ public:
 		// read next sequence
 		string line;
 		getline(this->fs, line);
+		cout << line << endl;
 		// Update buffer
 		uint seq_size = line.size();
 		if (seq_size > this->buffer_size * 4) {
@@ -100,6 +101,7 @@ public:
 			}
 		}
 
+		cout << "Seq size " << seq_size << endl << endl;
 		return seq_size;
 	}
 };
@@ -107,10 +109,10 @@ public:
 
 void Instr::exec() {
 	// reset data size to 0 if data are not counts
-	if (not this->is_counts) {
-		this->data_size = 0;
+	if (this->is_counts) {
 		this->max_kmerseq = 1;
-	}
+	} else
+		this->data_size = 0;
 
 	// Open a KFF for output
 	Kff_file outfile(this->output_filename, "w");
@@ -121,6 +123,9 @@ void Instr::exec() {
 	sgv.write_var("ordered", 0);
 	sgv.write_var("max", this->max_kmerseq);
 	sgv.close();
+
+	cout << "k " << k << endl;
+	cout << "max " << max_kmerseq << endl;
 
 	// Open the input seq stream
 	const uint8_t encoding[4] = {0, 1, 3, 2};
@@ -145,13 +150,15 @@ void Instr::exec() {
 		uint first_nucl = 0;
 		while (nb_kmers > 0) {
 			uint8_t * to_copy;
-			uint copy_size = min(nb_kmers, this->max_kmerseq);
+			uint nb_kmer_copied = min(nb_kmers, this->max_kmerseq);
+			uint copy_size = nb_kmer_copied + (k - 1);
+			cout << "copy size " << copy_size << endl;
 			// If sequence < max
 			if (nb_kmers < this->max_kmerseq)
 				to_copy = seq;
 			// Get subsequence if needed
 			else {
-				uint last_nucl = first_nucl + (k - 1) + (copy_size - 1);
+				uint last_nucl = first_nucl + (copy_size - 1);
 				subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
 				first_nucl = last_nucl + 1;
 				to_copy = sub_seq;
@@ -161,7 +168,7 @@ void Instr::exec() {
 			sr.write_compacted_sequence(to_copy, copy_size, data);
 
 			// reduce the number of remaining kmers
-			nb_kmers -= copy_size;
+			nb_kmers -= nb_kmer_copied;
 		}
 	}
 	sr.close();
