@@ -100,7 +100,6 @@ void Bucket::exec() {
 
 
 			// Get the subsequence
-			cout << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
 			subsequence(seq, k - 1 + nb_kmers, subseq, skmer_boundaries.first, skmer_boundaries.second);
 			uint subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
 			// Save the skmer and its related data
