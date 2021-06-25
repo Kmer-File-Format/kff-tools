@@ -104,6 +104,10 @@ vector<uint64_t> compute_mini_candidates(const uint8_t * seq, const uint size, c
 }
 
 vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m) {
+	// uint8_t encoding[] = {0, 1, 3, 2};
+	// Stringifyer strif(encoding);
+	// cout << strif.translate(seq, size) << endl;
+
 	vector<pair<int, uint64_t> > minimizers;
 	// Get all the candidates
 	vector<uint64_t> candidates = compute_mini_candidates(seq, size, k, m);
@@ -111,10 +115,18 @@ vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint si
 	int prev_pos = k + 2;
 	// Compute the minimizer of each sliding window of size k - m
 	for (uint i=0 ; i<=size-k ; i++) {
-		auto smallest = min_element(candidates.begin()+i, candidates.begin()+i+(k-m));
+		auto smallest = min_element(candidates.begin()+i, candidates.begin()+i+(k-m)+1);
 		int pos = smallest - candidates.begin();
 		// New minimizer ?
 		if (pos != prev_pos) {
+			// cout << i << " " << i + k - m + 1 << endl;
+			// for (uint j=0 ; j<pos ; j++)
+			// 	cout << " ";
+			// uint8_t mini_array[2];
+			// mini_array[0] = (*smallest >> 8) & 0xF;
+			// mini_array[1] = *smallest & 0xFF;
+			// cout << strif.translate(mini_array, 6) << endl;
+
 			prev_pos = pos;
 			minimizers.emplace_back(pos, *smallest);
 		}
@@ -131,6 +143,8 @@ std::vector<pair<uint, uint> > compute_skmers(const uint seq_size, const uint k,
 	for (uint i=0 ; i<minimizers.size()-1 ; i++) {
 		pair<int, uint64_t> & current_mini = minimizers[i];
 		pair<int, uint64_t> & next_mini = minimizers[i+1];
+
+		// cout << current_mini.first << ": " << current_mini.second << endl;
 
 		uint end = 0;
 		uint new_begin = 0;
