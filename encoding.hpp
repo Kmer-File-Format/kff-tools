@@ -60,7 +60,7 @@ public:
 	  * the encodings.
 	  * @param nucl_length Length in nucleotides of the sequence.
 	  **/
-	std::string translate(uint8_t * sequence, const size_t nucl_length) const;
+	std::string translate(const uint8_t * sequence, const size_t nucl_length) const;
 };
 
 

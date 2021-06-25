@@ -56,7 +56,7 @@ Stringifyer::Stringifyer(uint8_t encoding[4]) {
 }
 
 
-string Stringifyer::translate(uint8_t * sequence, const size_t nucl_length) const {
+string Stringifyer::translate(const uint8_t * sequence, const size_t nucl_length) const {
 	string result = "";
 	uint byte_length = nucl_length % 4 == 0 ? nucl_length / 4 : nucl_length / 4 + 1;
 
