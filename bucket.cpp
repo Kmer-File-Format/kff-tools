@@ -51,7 +51,6 @@ void Bucket::cli_prepare(CLI::App * app) {
 void Bucket::exec() {
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
-	Stringifyer strif(stream.reader.get_encoding());
 	unordered_map<uint64_t, Section_Minimizer *> buckets;
 
 	uint prev_k = 0;
@@ -99,7 +98,9 @@ void Bucket::exec() {
 			  sm->write_minimizer(subseq);
 			}
 
+
 			// Get the subsequence
+			cout << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
 			subsequence(seq, k - 1 + nb_kmers, subseq, skmer_boundaries.first, skmer_boundaries.second);
 			uint subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
 			// Save the skmer and its related data
@@ -132,4 +133,8 @@ void Bucket::exec() {
 	// Merge all the buckets in one file
 	Merge mg;
 	mg.merge(bucket_names, output_filename);
+
+	for (string & filename : bucket_names) {
+		remove(filename.c_str());
+	}
 }
