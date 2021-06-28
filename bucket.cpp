@@ -52,6 +52,8 @@ void Bucket::exec() {
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
 	unordered_map<uint64_t, Section_Minimizer *> buckets;
+	RevComp rc(stream.reader.get_encoding());
+	Stringifyer strif(stream.reader.get_encoding());
 
 	uint prev_k = 0;
 	uint8_t * subseq = nullptr;
@@ -69,12 +71,14 @@ void Bucket::exec() {
 		}
 
 		// Minimizers finding
-		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m);
+		cout << strif.translate(seq, nb_kmers + k - 1) << endl;
+		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc);
 
 		// Skmer deduction
-		vector<pair<uint, uint> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
+		// vector<pair<uint, uint> > skmers;
+		vector<pair<int, int> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
 		for (uint i=0 ; i<minimizers.size() ; i++) {
-			pair<uint, uint> & skmer_boundaries = skmers[i];
+			pair<int, int> & skmer_boundaries = skmers[i];
 			pair<int, uint64_t> & minimizer = minimizers[i];
 
 			uint64_t mini_val = minimizer.second;
@@ -98,13 +102,28 @@ void Bucket::exec() {
 			  sm->write_minimizer(subseq);
 			}
 
+			uint seq_size = k - 1 + nb_kmers;
+			cout << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
+			uint subseq_size;
+			uint mini_pos = k + 2;
+			// Get the fwd subsequence
+			if (skmer_boundaries.first >= 0) {
+				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
+				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
+				mini_pos = minimizer.first - skmer_boundaries.first;
+			}
+			// Get the rev subsequence
+			else {
+				subseq_size = skmer_boundaries.first - skmer_boundaries.second + 1;
+				subsequence(seq, seq_size, subseq, seq_size + skmer_boundaries.second, seq_size + skmer_boundaries.first);
+				rc.rev_comp(subseq, subseq_size);
+				mini_pos = - (minimizer.first - skmer_boundaries.first);
+			}
 
-			// Get the subsequence
-			subsequence(seq, k - 1 + nb_kmers, subseq, skmer_boundaries.first, skmer_boundaries.second);
-			uint subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
+			cout << strif.translate(subseq, subseq_size) << endl;
 			// Save the skmer and its related data
 			buckets[mini_val]->write_compacted_sequence(
-					subseq, subseq_size, minimizer.first - skmer_boundaries.first,
+					subseq, subseq_size, mini_pos,
 					data + skmer_boundaries.first * data_size
 			);
 		}

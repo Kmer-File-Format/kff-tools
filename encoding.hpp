@@ -36,6 +36,15 @@ public:
 	void translate(uint8_t * sequence, size_t byte_length);
 };
 
+class RevComp {
+public:
+	uint8_t reverse[4];
+	uint8_t translations[256];
+
+	RevComp(const uint8_t encoding[4]);
+
+	void rev_comp(uint8_t * seq, const uint64_t seq_size) const;
+};
 
 /** 
 	* Object used to convert compacted sequences from 2 bits per nucleotide to string.

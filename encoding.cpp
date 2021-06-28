@@ -34,6 +34,18 @@ void Translator::translate(uint8_t * sequence, size_t byte_length) {
 }
 
 
+RevComp::RevComp(const uint8_t encoding[4]) {
+	this->reverse[encoding[0]] = encoding[3];
+	this->reverse[encoding[1]] = encoding[2];
+	this->reverse[encoding[2]] = encoding[1];
+	this->reverse[encoding[3]] = encoding[0];
+}
+
+void RevComp::rev_comp(uint8_t * seq, const uint64_t seq_size) const {
+
+}
+
+
 Stringifyer::Stringifyer(uint8_t encoding[4]) {
 	// Nucleotide translation values
 	string nucl_translation[4];

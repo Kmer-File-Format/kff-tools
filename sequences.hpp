@@ -85,18 +85,19 @@ void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
  * @param m minimizer size max = 31
  * @return vector containing all the hashed m-size windows
  **/
-std::vector<uint64_t> compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m);
+std::vector<std::pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r);
 /** Compute all the minimizers of a sequence.
- * @return All pair minimizer position/
+ * @return All pair minimizer/position (negative positions are shifted by 1 to differentiate
+ * +0 and -0)
  **/
-std::vector<std::pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m);
+std::vector<std::pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r);
 /** Compute all the superkmers
  * @return All the begin/end pair positions
  **/
-std::vector<std::pair<uint, uint> > compute_skmers(const uint seq_size, const uint k, const uint m, std::vector<std::pair<int, uint64_t> > & minimizers);
+std::vector<std::pair<int, int> > compute_skmers(const uint seq_size, const uint k, const uint m, std::vector<std::pair<int, uint64_t> > & minimizers);
 /** Compute all the superkmers
  **/
-std::vector<std::pair<uint, uint> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m);
+std::vector<std::pair<int, int> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r);
 
 /** Search for the minimizer inside of a sequence (forward only)
   * @param seq binarized sequence.
