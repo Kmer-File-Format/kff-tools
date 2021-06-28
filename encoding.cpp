@@ -1,4 +1,5 @@
 #include "encoding.hpp"
+#include "sequences.hpp"
 
 using namespace std;
 
@@ -39,10 +40,31 @@ RevComp::RevComp(const uint8_t encoding[4]) {
 	this->reverse[encoding[1]] = encoding[2];
 	this->reverse[encoding[2]] = encoding[1];
 	this->reverse[encoding[3]] = encoding[0];
+
+	for (uint i=0 ; i<256 ; i++) {
+		uint8_t val = i;
+		uint8_t rc_val = 0;
+
+		for (uint j=0 ; j<4 ; j++) {
+			rc_val <<= 2;
+			rc_val += this->reverse[val & 0b11];
+			val >>= 2;
+		}
+		this->translations[i] = rc_val;
+	}
 }
 
 void RevComp::rev_comp(uint8_t * seq, const uint64_t seq_size) const {
+	uint nb_bytes = (seq_size + 3) / 4;
+	// reverse and translate each byte
+	for (uint byte_idx=0 ; byte_idx<(nb_bytes+1)/2 ; byte_idx++) {
+		uint8_t save = seq[byte_idx];
+		seq[byte_idx] = seq[nb_bytes-1-byte_idx];
+		seq[nb_bytes-1-byte_idx] = save;
+	}
 
+	uint8_t offset = (4 - (seq_size % 4)) % 4;
+	rightshift8(seq, nb_bytes, offset*2);
 }
 
 
