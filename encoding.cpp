@@ -50,6 +50,7 @@ RevComp::RevComp(const uint8_t encoding[4]) {
 			rc_val += this->reverse[val & 0b11];
 			val >>= 2;
 		}
+
 		this->translations[i] = rc_val;
 	}
 }
@@ -58,8 +59,8 @@ void RevComp::rev_comp(uint8_t * seq, const uint64_t seq_size) const {
 	uint nb_bytes = (seq_size + 3) / 4;
 	// reverse and translate each byte
 	for (uint byte_idx=0 ; byte_idx<(nb_bytes+1)/2 ; byte_idx++) {
-		uint8_t save = seq[byte_idx];
-		seq[byte_idx] = seq[nb_bytes-1-byte_idx];
+		uint8_t save = this->translations[seq[byte_idx]];
+		seq[byte_idx] = this->translations[seq[nb_bytes-1-byte_idx]];
 		seq[nb_bytes-1-byte_idx] = save;
 	}
 

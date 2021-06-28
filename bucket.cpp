@@ -64,10 +64,12 @@ void Bucket::exec() {
 	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
 		uint k = stream.reader.get_var("k");
 		uint data_size = stream.reader.get_var("data_size");
+		uint seq_size = k - 1 + nb_kmers;
 		if (k != prev_k) {
 			prev_k = k;
 			delete[] subseq;
 			subseq = new uint8_t[(k * 2 + 3) / 4];
+			memset(subseq, 0, (k * 2 + 3) / 4);
 		}
 
 		// Minimizers finding
@@ -98,7 +100,12 @@ void Bucket::exec() {
 			  Section_Minimizer * sm = new Section_Minimizer(outfile);
 			  buckets[mini_val] = sm;
 			  // Write the minimizer
-			  subsequence(seq, k - 1 + nb_kmers, subseq, minimizer.first, minimizer.first + m - 1);
+			  if (minimizer.first < 0) {
+			  	int mini_pos = seq_size + minimizer.first - m + 1;
+			  	subsequence(seq, seq_size, subseq, mini_pos, mini_pos + m - 1);
+			  } else {
+			  	subsequence(seq, seq_size, subseq, minimizer.first, minimizer.first + m - 1);
+			  }
 			  sm->write_minimizer(subseq);
 			}
 
@@ -109,14 +116,18 @@ void Bucket::exec() {
 			// Get the fwd subsequence
 			if (skmer_boundaries.first >= 0) {
 				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
+				cout << "before " << strif.translate(subseq, subseq_size) << endl;
 				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
+				cout << "after " << strif.translate(subseq, subseq_size) << endl;
 				mini_pos = minimizer.first - skmer_boundaries.first;
 			}
 			// Get the rev subsequence
 			else {
 				subseq_size = skmer_boundaries.first - skmer_boundaries.second + 1;
 				subsequence(seq, seq_size, subseq, seq_size + skmer_boundaries.second, seq_size + skmer_boundaries.first);
+				cout << "before " << strif.translate(subseq, subseq_size) << endl;
 				rc.rev_comp(subseq, subseq_size);
+				cout << "after " << strif.translate(subseq, subseq_size) << endl;
 				mini_pos = - (minimizer.first - skmer_boundaries.first);
 			}
 
