@@ -73,7 +73,6 @@ void Bucket::exec() {
 		}
 
 		// Minimizers finding
-		cout << strif.translate(seq, nb_kmers + k - 1) << endl;
 		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc);
 
 		// Skmer deduction
@@ -103,6 +102,7 @@ void Bucket::exec() {
 			  if (minimizer.first < 0) {
 			  	int mini_pos = seq_size + minimizer.first - m + 1;
 			  	subsequence(seq, seq_size, subseq, mini_pos, mini_pos + m - 1);
+			  	rc.rev_comp(subseq, m);
 			  } else {
 			  	subsequence(seq, seq_size, subseq, minimizer.first, minimizer.first + m - 1);
 			  }
@@ -110,28 +110,22 @@ void Bucket::exec() {
 			}
 
 			uint seq_size = k - 1 + nb_kmers;
-			cout << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
 			uint subseq_size;
 			uint mini_pos = k + 2;
 			// Get the fwd subsequence
 			if (skmer_boundaries.first >= 0) {
 				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
-				cout << "before " << strif.translate(subseq, subseq_size) << endl;
 				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
-				cout << "after " << strif.translate(subseq, subseq_size) << endl;
 				mini_pos = minimizer.first - skmer_boundaries.first;
 			}
 			// Get the rev subsequence
 			else {
 				subseq_size = skmer_boundaries.first - skmer_boundaries.second + 1;
 				subsequence(seq, seq_size, subseq, seq_size + skmer_boundaries.second, seq_size + skmer_boundaries.first);
-				cout << "before " << strif.translate(subseq, subseq_size) << endl;
 				rc.rev_comp(subseq, subseq_size);
-				cout << "after " << strif.translate(subseq, subseq_size) << endl;
 				mini_pos = - (minimizer.first - skmer_boundaries.first);
 			}
 
-			cout << strif.translate(subseq, subseq_size) << endl;
 			// Save the skmer and its related data
 			buckets[mini_val]->write_compacted_sequence(
 					subseq, subseq_size, mini_pos,
