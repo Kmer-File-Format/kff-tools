@@ -32,8 +32,6 @@ Bucket::~Bucket() {
 	delete[] kmer_buffer;
 	delete[] data_buffer;
 	delete[] copy_buffer;
-
-	// TODO: merge
 }
 
 
@@ -73,7 +71,7 @@ void Bucket::exec() {
 		}
 
 		// Minimizers finding
-		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc);
+		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc, singleside);
 
 		// Skmer deduction
 		// vector<pair<uint, uint> > skmers;

@@ -108,7 +108,7 @@ vector<pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, c
 	return candidates;
 }
 
-vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r) {
+vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r, const bool single_side) {
 	vector<pair<int, uint64_t> > minimizers;
 	// Get all the candidates
 	vector<pair<uint64_t, uint64_t> > candidates = compute_mini_candidates(seq, size, k, m, r);
@@ -123,17 +123,19 @@ vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint si
 				return (a.first < b.first);
        }
 		);
-		auto smallest_rev = min_element(
-			candidates.begin()+i,
-			candidates.begin()+i+(k-m)+1,
-			[](pair<uint64_t, uint64_t> & a, pair<uint64_t, uint64_t> & b) {
-				return (a.second < b.second);
-       }
-		);
+		auto smallest_rev = smallest_fwd;
+		if (not single_side)
+			smallest_rev = min_element(
+				candidates.begin()+i,
+				candidates.begin()+i+(k-m)+1,
+				[](pair<uint64_t, uint64_t> & a, pair<uint64_t, uint64_t> & b) {
+					return (a.second < b.second);
+	       }
+			);
 
 		int mini_pos;
 		uint64_t minimizer;
-		if ((*smallest_fwd).first <= (*smallest_rev).second) {
+		if (single_side or (*smallest_fwd).first <= (*smallest_rev).second) {
 			mini_pos = smallest_fwd - candidates.begin();
 			minimizer = (*smallest_fwd).first;
 		} else {
@@ -204,8 +206,8 @@ std::vector<pair<int, int> > compute_skmers(const uint seq_size, const uint k, c
 	return skmers;
 }
 
-std::vector<pair<int, int> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r) {
-	std::vector<std::pair<int, uint64_t> > minimizers = compute_minizers(seq, size, k, m, r);
+std::vector<pair<int, int> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r, const bool single_side) {
+	std::vector<std::pair<int, uint64_t> > minimizers = compute_minizers(seq, size, k, m, r, single_side);
 
 	return compute_skmers(size, k, m, minimizers);
 }
