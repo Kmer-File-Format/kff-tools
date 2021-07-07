@@ -36,6 +36,8 @@ set(SRCS
     validate.cpp
     instr.cpp
     bucket.cpp
+    shuffle.cpp
+    sort.cpp
     )
     
 set(HEADERS
@@ -52,6 +54,8 @@ set(HEADERS
     validate.hpp
     instr.hpp
     bucket.hpp
+    shuffle.hpp
+    sort.hpp
     )
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})

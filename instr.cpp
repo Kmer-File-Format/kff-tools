@@ -60,7 +60,13 @@ public:
       , buffer(new uint8_t[1024])
       , k(0)
       , data_size(0)
-  {};
+  {
+      if (!this->fs.good())
+      {
+          cerr << "Unable to open file: " << filename << endl;
+          throw "Error opening input file";
+      }
+  };
   ~TxtSeqStream() {
     this->fs.close();
     delete[] buffer;
@@ -120,7 +126,7 @@ void Instr::exec() {
 		this->data_size = 0;
 
 	// Open a KFF for output
-	Kff_file outfile(this->output_filename, "w");
+	Kff_file outfile(this->output_filename + ".kff", "w");
 	// Write needed variables
 	Section_GV sgv(&outfile);
 	sgv.write_var("k", this->k);
