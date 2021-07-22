@@ -32,7 +32,7 @@ void Instr::cli_prepare(CLI::App * app) {
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text file with one sequence per line (sequence omitted if its size < k). Empty data is added (size defined by -d option).");
 	input_option->required();
 	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
-	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_filename, "The kff output file prefix. For a single file the name will be <prefix>.kff, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff).");
+	CLI::Option * output_option = subapp->add_option("-o, --outfile", output_filename, "The kff output file name.");
 	output_option->required();
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
 	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
