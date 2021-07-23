@@ -100,18 +100,10 @@ void Merge::merge(vector<string> inputs, string output) {
 					}
 
 					// Verify the presence and value of each variable in output
-					for (auto& tuple : in_sgv.vars) {
-						if (outfile.global_vars.find(tuple.first) == outfile.global_vars.end()
-								or outfile.global_vars[tuple.first] != tuple.second)
-							to_copy.push_back(tuple.first);
-					}
-				}
-				// Create a global variable section if needed
-				if (to_copy.size() > 0) {
 					Section_GV sgv(&outfile);
-					// Write variables
-					for (string s : to_copy)
-						sgv.write_var(s, infile.global_vars[s]);
+					for (auto& tuple : in_sgv.vars) {
+						sgv.write_var(tuple.first, tuple.second);
+					}
 					sgv.close();
 				}
 				break;
