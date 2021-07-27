@@ -12,6 +12,7 @@
 class Outstr: public KffTool {
 private:
 	std::string input_filename;
+	bool revcomp;
 
 public:
 	Outstr();

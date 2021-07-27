@@ -60,6 +60,7 @@ Read a kff file and print to stdout the kmers and data as strings (one kmer per 
 
 Parameters:
 * **-i &lt;input.kff&gt;** \[required\]: File to print.
+* **-c**: Print the encoding lexicagraphic minimal string between each kmer and its reverse complement (can affact the computation time).
 
 Usage:
 ```bash
@@ -113,8 +114,11 @@ Usage:
 
 ## kff-tools compact
 
+TODO
+
 ## kff-tools disjoin
 
+This tool is the opposite of the compact tool.
 Each block in each section is split into one block per kmer.
 The number of kmers inside of each section is preserved.
 The number of blocks per section is increased to 1 block per kmer.
@@ -127,6 +131,7 @@ Usage:
 ```bash
   kff-tools disjoin -i file.kff -o disjoin.kff
 ```
+
 
 
 ## kff-tools translate
