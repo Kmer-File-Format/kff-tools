@@ -90,7 +90,6 @@ class TestSplitMerge(unittest.TestCase):
         split_dir = "split_test/"
         self.assertEqual(0, os.system(f"rm -r {split_dir} ; mkdir {split_dir}"))
         self.assertEqual(0, os.system(f"./kff-tools merge -i {kff_file_1} {kff_file_2} {kff_file_3} -o {merged}"))
-        print(f"./kff-tools split --infile {merged} --outdir {split_dir}")
         self.assertEqual(0, os.system(f"./kff-tools split --infile {merged} --outdir {split_dir}"))
         
 
@@ -121,53 +120,36 @@ class TestSplitMerge(unittest.TestCase):
         os.system(f"rm -r {split_dir} {txt_file_1} {kff_file_1} {txt_file_2} {kff_file_2} {txt_file_3} {kff_file_3}")
 
 
-#   def test_basic_split(self):
-#     print(f"\n-- TestSplitMerge test_basic_split")
-#     # Prepare a file with sections
-#     print(f"1/4 - Generate a kff file from a textual kmer count. Bucket size : 4")
-#     self.assertEqual(0, os.system(f"./kff-tools instr --data-size 2 --mini-size 4 --infile data/{file}_sorted.txt --outprefix data/{file}_instr_b4"))
-#     # Split the file into one file per section
-#     self.assertEqual(0, os.system(f"rm -rf data/{file}_instr_b4/ && mkdir data/{file}_instr_b4/"))
-#     self.assertEqual(0, os.system(f"./kff-tools split --infile data/{file}_instr_b4.kff --outdir data/{file}_instr_b4/"))
-#     # Merge outstrs
-#     print(f"3/4 - outstr each file")
-#     sections = list(os.listdir(f"data/{file}_instr_b4/"))
-#     self.assertEqual(0, os.system(f"touch data/{file}_instr_b4/concat.txt"))
-#     for section_file in sections:
-#       self.assertEqual(0, os.system(f"./kff-tools outstr -i data/{file}_instr_b4/{section_file} >> data/{file}_instr_b4/concat.txt"))
-#     # Sort
-#     print(f"4/4 - Sort and compare output")
-#     self.assertEqual(0, os.system(f"sort data/{file}_instr_b4/concat.txt > data/{file}_instr_b4/concat_sorted.txt"))
-#     self.assertEqual(0, os.system(f"rm data/{file}_instr_b4/concat.txt"))
-#     stream = os.popen(f"diff data/{file}_sorted.txt data/{file}_instr_b4/concat_sorted.txt")
-#     os.system(f"rm -rf data/{file}_instr_b4/")
-#     self.assertEqual(stream.read(), "")
-#     stream.close()
+class TestBucketting(unittest.TestCase):
 
-#   def test_split_merge(self):
-#     print(f"\n-- TestSplitMerge test_split_merge")
-#     # Prepare a file with sections
-#     print(f"1/3 - Generate a kff file from a textual kmer count. Bucket size : 4")
-#     self.assertEqual(0, os.system(f"./kff-tools instr --data-size 2 --mini-size 4 --infile data/{file}_sorted.txt --outprefix data/{file}_instr_b4"))
-#     # Split the file into one file per section
-#     self.assertEqual(0, os.system(f"rm -rf data/{file}_instr_b4/ && mkdir data/{file}_instr_b4/"))
-#     self.assertEqual(0, os.system(f"./kff-tools split --infile data/{file}_instr_b4.kff --outdir data/{file}_instr_b4/"))
-#     # Merge outstrs
-#     print(f"2/3 - Merge splited files")
-#     sections = list(os.listdir(f"data/{file}_instr_b4/"))
-#     sections = [f"data/{file}_instr_b4/{section_file}" for section_file in sections]
-#     self.assertEqual(0, os.system(f"./kff-tools merge -i {' '.join(sections)} -o data/{file}_instr_b4_split_merged.kff"))
-#     self.assertEqual(0, os.system(f"rm -rf data/{file}_instr_b4/"))
-#     # Sort
-#     print(f"3/3 - Sort and compare output")
-#     self.assertEqual(0, os.system(f"./kff-tools outstr -i data/{file}_instr_b4_split_merged.kff > data/{file}_instr_b4_split_merged.txt"))
-#     self.assertEqual(0, os.system(f"rm -rf data/{file}_instr_b4_split_merged.kff"))
-#     self.assertEqual(0, os.system(f"sort data/{file}_instr_b4_split_merged.txt > data/{file}_instr_b4_split_merged_sorted.txt"))
-#     self.assertEqual(0, os.system(f"rm -rf data/{file}_instr_b4_split_merged.txt"))
-#     stream = os.popen(f"diff data/{file}_sorted.txt data/{file}_instr_b4_split_merged_sorted.txt")
-#     os.system(f"rm -rf data/{file}_instr_b4/concat_sorted.txt")
-#     self.assertEqual(stream.read(), "")
-#     stream.close()
+    def test_basic_bucketting(self):
+        print(f"\n-- TestBucketting - basic bucketting")
+        print("  init - generate a random sequence file")
+        txt = f"txt_test.txt"
+        kff_raw = f"kff_raw_test.kff"
+        kff_bucket = f"kff_bucket_test.kff"
+        kg.generate_sequences_file(txt, 100, 32, size_max=42)
+
+        # Prepare a file with sections
+        print(f"  1/3 Generate the kff raw file.")
+        self.assertEqual(0, os.system(f"./kff-tools instr -i {txt} -o {kff_raw} -k 32 -m 11"))
+
+
+        print(f"  2/3 bucket the file")
+        self.assertEqual(0, os.system(f"./kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11"))
+        
+
+        print(f"  3/3 Compare outputs")
+        self.assertEqual(0, os.system(f"./kff-tools outstr -c -i {kff_raw} | sort > {kff_raw}_sorted.txt"))
+        self.assertEqual(0, os.system(f"./kff-tools outstr -c -i {kff_bucket} | sort > {kff_bucket}_sorted.txt"))
+        stream = os.popen(f"diff {kff_raw}_sorted.txt {kff_bucket}_sorted.txt")
+        stream_val = stream.read()
+        stream.close()
+        self.assertEqual(stream_val, "")
+
+
+        print("  clean the test area")
+        os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}*")
 
 
 if __name__ == '__main__':
