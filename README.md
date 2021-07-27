@@ -6,8 +6,13 @@ kff file format is [described here](https://github.com/yoann-dufresne/kmer_file_
 kff-tools is a program containing a set of small programs allowing kff files manipulations.
 Each following part describes one of these tools.
 
+## Install
 
-## kff-tools instr
+    git clone https://github.com/Kmer-File-Format/kff-tools.git --recursive
+    mkdir build && cd build && cmake .. && make -j 4
+
+
+## `kff-tools instr`
 
 Convert a text kmer file or a text sequence file into a kff file. ACTG encoding is used.
 Kmer files must contain 1 kmer per line.
@@ -54,7 +59,7 @@ Usage:
   kff-tools instr -i sequences.txt -o sequences.kff -k 12 -m 256
 ```
 
-## kff-tools outstr
+## `kff-tools outstr`
 
 Read a kff file and print to stdout the kmers and data as strings (one kmer per line)
 
@@ -67,7 +72,7 @@ Usage:
   kff-tools outstr -i file.kff
 ```
 
-## kff-tools validate
+## `kff-tools validate`
 
 Read a kff file and exit raising an error if a file corruption is detected.
 Print details of the file on verbose mode.
@@ -82,7 +87,7 @@ Usage:
 ```
 
 
-## kff-tools split
+## `kff-tools split`
 
 Split a kff file into one kff file per section.
 
@@ -95,7 +100,7 @@ Usage:
   kff-tools split -i to_split.kff -o split_dir/
 ```
 
-## kff-tools merge
+## `kff-tools merge`
 
 Merge a list of kff files into only one.
 The order of the input file will be preserved in the merged output.
@@ -112,29 +117,19 @@ Usage:
 ```
 
 
-## kff-tools compact
+## `kff-tools compact`
 
 TODO
 
-## kff-tools disjoin
+## `kff-tools disjoin`
 
-This tool is the opposite of the compact tool.
 Each block in each section is split into one block per kmer.
 The number of kmers inside of each section is preserved.
 The number of blocks per section is increased to 1 block per kmer.
 
-Parameters:
-* **-i &lt;input.kff&gt;** \[required\]: File to disjoin.
-* **-o &lt;disjoin.kff&gt;** \[required\]: Disjoin output file.
-
-Usage:
-```bash
-  kff-tools disjoin -i file.kff -o disjoin.kff
-```
 
 
-
-## kff-tools translate
+## `kff-tools translate`
 
 Read and rewrite a kff file changing the nucleotide encoding.
 
@@ -149,7 +144,7 @@ Usage:
   kff-tools translate -i to_encode.kff -o encoded.kff -e AGTC
 ```
 
-## kff-tools data-rm
+## `kff-tools data-rm`
 
 Read a kff file and write the same one with a data size of 0.
 It means that all the data are removed and the file only preserve sequences.
@@ -165,8 +160,7 @@ Usage:
 
 
 
-
-# Test the code
+# Testing the code
 
 Run functional tests from the root of the project
 
