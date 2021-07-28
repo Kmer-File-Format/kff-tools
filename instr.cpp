@@ -26,15 +26,15 @@ Instr::Instr() {
 }
 
 void Instr::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("instr", "Convert a text kmer file into one or multuple kff file(s). Instr suppose that data are signed integers (max 64 bits).");
-	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");
-	k_opt->required();
+	this->subapp = app->add_subcommand("instr", "Convert a text kmer file or a text sequence file into a kff file. Kmers or sequences must be 1 per line. In case of kmer file, the counts flag will also translate counts in the text file into the right data format for a kff file.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text file with one sequence per line (sequence omitted if its size < k). Empty data is added (size defined by -d option).");
 	input_option->required();
-	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
-	CLI::Option * output_option = subapp->add_option("-o, --outprefix", output_filename, "The kff output file prefix. For a single file the name will be <prefix>.kff, otherwise, one file per minimizer is created (<prefix>_<minimizer>.kff).");
+	CLI::Option * output_option = subapp->add_option("-o, --outfile", output_filename, "The kff output file name.");
 	output_option->required();
+	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");
+	k_opt->required();
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
+	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
 	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
 }
 
