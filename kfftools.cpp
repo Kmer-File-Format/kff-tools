@@ -14,6 +14,8 @@
 #include "instr.hpp"
 // #include "compact.hpp"
 #include "bucket.hpp"
+#include "shuffle.hpp"
+#include "sort.hpp"
 
 
 using namespace std;
@@ -73,6 +75,8 @@ int main(int argc, char** argv) {
 	tools.push_back(new Validate());
 	tools.push_back(new Instr());
 	tools.push_back(new Bucket());
+	tools.push_back(new Shuffle()); 
+	tools.push_back(new Sort()); 
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
