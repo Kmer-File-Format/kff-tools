@@ -135,10 +135,20 @@ vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint si
 
 		int mini_pos;
 		uint64_t minimizer;
-		if (single_side or (*smallest_fwd).first <= (*smallest_rev).second) {
+		if (single_side or (*smallest_fwd).first < (*smallest_rev).second) {
 			mini_pos = smallest_fwd - candidates.begin();
 			minimizer = (*smallest_fwd).first;
-		} else {
+		} 
+		else if ((*smallest_fwd).first == (*smallest_rev).second) {
+			if (smallest_fwd - smallest_rev <= 0) {
+				mini_pos = smallest_fwd - candidates.begin();
+				minimizer = (*smallest_fwd).first;
+			} else {
+				mini_pos = - (candidates.end() - smallest_rev);
+				minimizer = (*smallest_rev).second;
+			}
+		}
+		else {
 			mini_pos = - (candidates.end() - smallest_rev);
 			minimizer = (*smallest_rev).second;
 		}
@@ -162,6 +172,9 @@ std::vector<pair<int, int> > compute_skmers(const uint seq_size, const uint k, c
 		pair<int, uint64_t> & current_mini = minimizers[i];
 		pair<int, uint64_t> & next_mini = minimizers[i+1];
 
+		// cout << "current_mini " << current_mini.first << " " << current_mini.second << endl;
+		// cout << "next_mini " << next_mini.first << " " << next_mini.second << endl;
+
 
 		uint end = 0;
 		uint new_begin = 0;
@@ -172,12 +185,15 @@ std::vector<pair<int, int> > compute_skmers(const uint seq_size, const uint k, c
 		if (current_mini.first < 0) {
 			is_fwd = false;
 			mini_pos = seq_size + current_mini.first - m + 1;
+			// cout << "absolute mini_pos " << mini_pos << endl;
 		}
 
 		// First minimizer is dominant
 		if (current_mini.second <= next_mini.second) {
+			// cout << "dominant" << endl;
 			end = mini_pos + k - 1;
 			new_begin = mini_pos + 1;
+			// cout << "end " << end << " new_begin " << new_begin << endl;
 		}
 		// Second minimizer is dominant
 		else {

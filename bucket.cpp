@@ -73,12 +73,15 @@ void Bucket::exec() {
 		// Minimizers finding
 		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc, singleside);
 
+		// cout << "nb minimizers " << minimizers.size() << endl;
+
 		// Skmer deduction
 		// vector<pair<uint, uint> > skmers;
 		vector<pair<int, int> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
 		for (uint i=0 ; i<minimizers.size() ; i++) {
 			pair<int, int> & skmer_boundaries = skmers[i];
 			pair<int, uint64_t> & minimizer = minimizers[i];
+			// cout << "sk " << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
 
 			uint64_t mini_val = minimizer.second;
 			// New bucket
@@ -113,6 +116,7 @@ void Bucket::exec() {
 			// Get the fwd subsequence
 			if (skmer_boundaries.first >= 0) {
 				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
+				// cout << seq_size << " " << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
 				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
 				mini_pos = minimizer.first - skmer_boundaries.first;
 			}

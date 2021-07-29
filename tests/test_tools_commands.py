@@ -117,7 +117,7 @@ class TestSplitMerge(unittest.TestCase):
 
 
         print("  clean the test area")
-        os.system(f"rm -r {split_dir} {txt_file_1} {kff_file_1} {txt_file_2} {kff_file_2} {txt_file_3} {kff_file_3}")
+        os.system(f"rm -r {merged} {split_dir} {txt_file_1} {kff_file_1} {txt_file_2} {kff_file_2} {txt_file_3} {kff_file_3}")
 
 
 class TestBucketting(unittest.TestCase):
