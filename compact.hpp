@@ -26,6 +26,8 @@ public:
 	  * @return Name of the file containing the result.
 	  */
 	void exec();
+	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
+	void greedy_compact(std::vector<std::vector<uint8_t *> > & kmers, Section_Minimizer & sm);
 };
 
 #endif

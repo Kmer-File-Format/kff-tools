@@ -17,22 +17,10 @@ using namespace std;
 Compact::Compact() {
 	input_filename = "";
 	output_filename = "";
-	split = false;
-	m = 0;
-
-	load_mem_size = 1;
-	loading_memory = new uint8_t[load_mem_size];
-	kmer_buffer = new uint8_t[1];
-	skmer_buffer = new uint8_t[1];
-	data_buffer = new uint8_t[1];
 }
 
 
 Compact::~Compact() {
-	delete[] loading_memory;
-	delete[] kmer_buffer;
-	delete[] skmer_buffer;
-	delete[] data_buffer;
 }
 
 
@@ -45,7 +33,7 @@ void Compact::cli_prepare(CLI::App * app) {
 }
 
 
-void Compact::compact() {
+void Compact::exec() {
 	Kff_file infile(input_filename, "r");
 	Kff_file outfile(output_filename, "w");
 
@@ -53,30 +41,41 @@ void Compact::compact() {
 	// TODO: Set the flags
 	// TODO: Write header
 
-	while (input_file.fs.tellp() != size - 3) {
+	// Compute file size
+	long current_pos = infile.fs.tellp();
+	infile.fs.seekg(0, infile.fs.end);
+	long file_size = infile.fs.tellp();
+	infile.fs.seekp(current_pos);
+
+	while (infile.fs.tellp() != file_size - 3) {
 		char section_type = infile.read_section_type();
 
 		if (section_type == 'v') {
-			Section_GV sgv(&infile);
-			sgv.close();
+			Section_GV isgv(&infile);
+			Section_GV osgv(&outfile);
+			for (auto & p : isgv.vars)
+				osgv.write_var(p.first, p.second);
+			isgv.close();
+			osgv.close();
 		}
 		else if (section_type == 'i') {
-
+			Section_Index si(&infile);
+			si.close();
 		}
 		else if (section_type == 'r') {
-
+			Section_Raw sr(&infile);
+			sr.close();
 		}
 		else if (section_type == 'm') {
 			uint k = outfile.global_vars["k"];
 			uint m = outfile.global_vars["m"];
-			uint data_size = outfile.global_vars["data_size"];
 
 			// Rewrite a value section if max is not sufficently large
 			if (outfile.global_vars["max"] < (k-m) * 2) {
-				map<string, uint64_t> values(outfile.global_vars);
+				unordered_map<string, uint64_t> values(outfile.global_vars);
 				Section_GV sgv(&outfile);
 
-				for (pair<string, uint64_t> & p : values)
+				for (auto & p : values)
 					if (p.first != "max")
 						sgv.write_var(p.first, p.second);
 				sgv.write_var("max", (k-m)*2);
@@ -95,11 +94,12 @@ void Compact::compact() {
 	outfile.close();
 }
 
-void Compact::compact_section(const Section_Minimizer & ism, Kff_file & outfile) {
+void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	// General variables
 	uint k = outfile.global_vars["k"];
 	uint m = outfile.global_vars["m"];
 	uint data_size = outfile.global_vars["data_size"];
+	uint kmer_bytes = (k - m + 3) / 4;
 
 	// Buffers
 	uint8_t * seq_buffer = new uint8_t[(2 * k + 3) / 4];
@@ -107,24 +107,53 @@ void Compact::compact_section(const Section_Minimizer & ism, Kff_file & outfile)
 	uint64_t mini_pos;
 
 	// Kmer storing space
-	uint kmer_buffer_size = 10000;
+	uint kmer_buffer_size = 1 << 15;
 	uint next_free = 0;
-	uint8_t * kmers = malloc(10000);
-	vector<vector<uint8_t *> > kmers_per_index;
+	uint8_t * kmers = (uint8_t *)malloc(kmer_buffer_size);
+	vector<vector<uint8_t *> > kmers_per_index(k-m+1);
 
 	// 1 - Load the input section
 	for (uint n=0 ; n<ism.nb_blocks ; n++) {
-		uint nb_kmers = read_compacted_sequence_without_mini(
+		// Read sequence
+		uint nb_kmers = ism.read_compacted_sequence_without_mini(
 			seq_buffer, data_buffer, mini_pos);
+
+		// Add kmer by index
+		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
+			uint kmer_pos = k - m - mini_pos + kmer_idx;
+
+			// Realloc if needed
+			if (kmer_buffer_size - next_free < kmer_bytes + data_size) {
+				kmer_buffer_size *= 2;
+				kmers = (uint8_t *) realloc((void *)kmers, kmer_buffer_size);
+			}
+
+			// Copy kmer sequence
+			subsequence(seq_buffer, k - m + nb_kmers - 1, kmers + next_free, kmer_idx, kmer_idx + k - m - 1);
+			// Copy data array
+			memcpy(kmers + next_free + kmer_bytes, data_buffer + kmer_idx * data_size, data_size);
+			// Update
+			kmers_per_index[kmer_pos].push_back(kmers + next_free);
+			next_free += kmer_bytes + data_size;
+		}
 	}
 
-	free(kmers);
-
 	// 2 - Compact kmers
-
+	Section_Minimizer osm(&outfile);
+	osm.write_minimizer(ism.minimizer);
+	this->greedy_compact(kmers_per_index, osm);
+	osm.close();
 
 	// Cleaning
+	free(kmers);
 	delete[] seq_buffer;
 	delete[] data_buffer;
+}
+
+void Compact::greedy_compact(vector<vector<uint8_t *> > & kmers, Section_Minimizer & sm) {
+	uint k=10;
+	uint m=3;
+	for (uint i=0 ; i<(k-m+1) ; i++)
+		cout << i << " -> " << kmers[i].size() << endl;
 }
 

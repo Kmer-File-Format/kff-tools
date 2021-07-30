@@ -36,6 +36,7 @@ set(SRCS
     validate.cpp
     instr.cpp
     bucket.cpp
+    compact.cpp
     shuffle.cpp
     sort.cpp
     )
@@ -54,6 +55,7 @@ set(HEADERS
     validate.hpp
     instr.hpp
     bucket.hpp
+    compact.hpp
     shuffle.hpp
     sort.hpp
     )
