@@ -82,29 +82,52 @@ void Merge::merge(vector<string> inputs, string output) {
 				// Write the variables that change from previous sections (possibly sections from other input files)
 				case 'v':
 				{
-					// Read the values
-					Section_GV in_sgv(&infile);
+					unordered_map<string, uint64_t> variables;
 
-					// Discard footers
-					if (in_sgv.vars.find("footer_size") != in_sgv.vars.end()) {
-						for (auto& tuple : in_sgv.vars) {
-							if (tuple.first != "footer_size" and tuple.first != "first_index") {
-								if (footer_values.find(tuple.first) == footer_values.end())
-									footer_values[tuple.first] = tuple.second;
-								else
-									// Sum up the common footer values
-									footer_values[tuple.first] += tuple.second;
-							}
+					// Read variables
+					while (section_type == 'v') {
+						Section_GV sgv(&infile);
+
+						// Is it a footer ?
+						if (sgv.vars.find("footer_size") != sgv.vars.end()) {
+							for (auto& tuple : sgv.vars)
+								if (tuple.first != "footer_size" and tuple.first != "first_index") {
+									if (footer_values.find(tuple.first) == footer_values.end())
+										footer_values[tuple.first] = tuple.second;
+									else
+										// Sum up the common footer values
+										footer_values[tuple.first] += tuple.second;
+								}
+							break;
 						}
-						break;
+						// Not a footer
+						for (auto & p : sgv.vars)
+							variables[p.first] = p.second;
+						sgv.close();
+
+						// Update section_type
+						section_type = infile.read_section_type();
 					}
 
-					// Verify the presence and value of each variable in output
-					Section_GV sgv(&outfile);
-					for (auto& tuple : in_sgv.vars) {
-						sgv.write_var(tuple.first, tuple.second);
+					// Does it need a rewrite ?
+					bool v_section_needed = false;
+					for (auto & p : variables) {
+						if (outfile.global_vars.find(p.first) == outfile.global_vars.end()
+								or outfile.global_vars[p.first] != p.second) {
+							v_section_needed = true;
+							break;
+						}
 					}
-					sgv.close();
+
+					// cout << "V needed ?"
+					// Rewrite
+					if (v_section_needed) {
+						Section_GV sgv(&outfile);
+						for (auto & p : variables) {
+							sgv.write_var(p.first, p.second);
+						}
+						sgv.close();
+					}
 				}
 				break;
 
