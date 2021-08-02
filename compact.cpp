@@ -139,9 +139,11 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	}
 
 	// 2 - Compact kmers
+	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index, k, m);
+
 	Section_Minimizer osm(&outfile);
 	osm.write_minimizer(ism.minimizer);
-	this->greedy_compact(kmers_per_index, osm);
+	// TODO: Write compaction from to_compact
 	osm.close();
 
 	// Cleaning
@@ -150,10 +152,68 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	delete[] data_buffer;
 }
 
-void Compact::greedy_compact(vector<vector<uint8_t *> > & kmers, Section_Minimizer & sm) {
-	uint k=10;
-	uint m=3;
-	for (uint i=0 ; i<(k-m+1) ; i++)
-		cout << i << " -> " << kmers[i].size() << endl;
+vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8_t *> > & kmers, const uint k, const uint m) {
+	uint nb_kmers = k - m + 1;
+	vector<pair<uint8_t *, uint8_t *> > assembly;
+	uint8_t encoding[] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
+
+	// Index kmers from the 0th set
+	for (uint8_t * kmer : kmers[0])
+		assembly.emplace_back(nullptr, kmer);
+
+	for (uint i=0 ; i<nb_kmers-1 ; i++) {
+		// Index kmers in ith set
+		unordered_map<uint64_t, vector<uint8_t *> > index;
+		
+		for (uint8_t * kmer : kmers[i]) {
+			// Get the suffix
+			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 1, nb_kmers-1);
+			// Add a new vector for this value
+			if (index.find(val) == index.end())
+				index[val] = vector<uint8_t *>();
+			// Add the kmer to the value list
+			index[val].push_back(kmer);
+		}
+
+		// link kmers from (i+1)th set to ith kmers.
+		for (uint8_t * kmer : kmers[i+1]) {
+			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 0, nb_kmers-2);
+
+			if (index.find(val) == index.end()) {
+				// No kmer available for matching
+				assembly.emplace_back(nullptr, kmer);
+			} else {
+				bool chaining_found = false;
+				uint candidate_pos = 0;
+				// verify complete matching for candidates kmers
+				for (uint8_t * candidate : index[val]) {
+					// If the kmers can be assembled
+					if (sequence_compare(
+								kmer, nb_kmers-1, 0, nb_kmers-2,
+								candidate, nb_kmers-1, 1, nb_kmers-1
+							) == 0) {
+						// Update status
+						chaining_found = true;
+						assembly.emplace_back(kmer, candidate);
+
+						cout << strif.translate(kmer, nb_kmers-1) << " -> " << strif.translate(candidate, nb_kmers-1) << endl;
+
+						// remove candidate from list
+						index[val].erase(index[val].begin()+candidate_pos);
+						// Quit candidate searching
+						break;
+					}
+
+					candidate_pos += 1;
+				}
+				// If no assembly possible, create a new superkmer
+				if (not chaining_found)
+					assembly.emplace_back(nullptr, kmer);
+			}
+		}
+	}
+
+	return assembly;
 }
 

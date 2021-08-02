@@ -73,6 +73,43 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
+int sequence_compare(const uint8_t * seq1, const uint seq1_size,
+											const uint seq1_start, const uint seq1_stop,
+											const uint8_t * seq2, const uint seq2_size,
+											const uint seq2_start, const uint seq2_stop) {
+	// If inequal size
+	if (seq1_stop - seq1_start != seq2_stop - seq2_start)
+		return (seq1_stop - seq1_start) < (seq2_stop - seq2_start) ? -1 : 1;
+
+	// Extraction of subsequences
+	uint subseq_size = seq1_stop - seq1_start + 1;
+	uint subseq_bytes = (subseq_size + 3) / 4;
+	uint8_t * subseq1 = new uint8_t[subseq_bytes];
+	subsequence(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
+	uint8_t * subseq2 = new uint8_t[subseq_bytes];
+	subsequence(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
+
+	// comparison of the subsequences (same size)
+	uint return_val = 0;
+	// First byte
+	uint offset = (4 - (subseq_size % 4)) % 4;
+	uint mask = (1 << (2 * (4 - offset))) - 1;
+	if ((subseq1[0] & mask) != (subseq2[0] & mask))
+		return_val = (subseq1[0] & mask) < (subseq2[0] & mask) ? -1 : 1;
+
+	// All following bytes
+	for (uint b=1 ; b<subseq_bytes and return_val==0 ; b++) {
+		if (subseq1[b] != subseq2[b]) {
+			return_val = subseq1[b] < subseq2[b] ? -1 : 1;
+		}
+	}
+
+	delete[] subseq1;
+	delete[] subseq2;
+	return return_val;
+}
+
+
 vector<pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r) {
 	vector<pair<uint64_t, uint64_t> > candidates;//(size - m + 1);
 
@@ -290,6 +327,36 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size) {
 	}
 
 	return val;
+}
+
+
+uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uint end_nucl) {
+	// Trunkate too long sequences
+	if (end_nucl - start_nucl + 1 > 32)
+		start_nucl = end_nucl - 31;
+
+	// Determine boundary bytes
+	uint seq_offset = seq_size % 4;
+	uint first_sub_byte = (seq_offset + start_nucl) / 4;
+	uint last_sub_byte = (seq_offset + end_nucl) / 4;
+
+	// First byte integration
+	uint mask = (1 << (2 * (4 - ((seq_offset + start_nucl) % 4)))) - 1;
+	uint sub_val = seq[first_sub_byte] & mask;
+
+	// Middle bytes
+	for (uint b=first_sub_byte+1 ; b<last_sub_byte ; b++) {
+		sub_val <<= 8;
+		sub_val += seq[b];
+	}
+
+	// End byte
+	uint last_shift = (seq_size - end_nucl - 1) % 4;
+	uint8_t end_byte = seq[last_sub_byte] >> (2 * last_shift);
+	sub_val <<= 2 * last_shift;
+	sub_val += end_byte;
+
+	return sub_val;
 }
 
 

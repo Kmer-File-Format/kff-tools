@@ -27,7 +27,7 @@ public:
 	  */
 	void exec();
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
-	void greedy_compact(std::vector<std::vector<uint8_t *> > & kmers, Section_Minimizer & sm);
+	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<uint8_t *> > & kmers, const uint k, const uint m);
 };
 
 #endif

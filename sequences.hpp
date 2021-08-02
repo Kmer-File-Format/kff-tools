@@ -60,6 +60,17 @@ public:
 void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extracted, const uint begin_nucl, const uint end_nucl);
 
 
+/** Compare two subsequences. -1 if the first one is smaller in alpha order +1 is the second one
+  * 0 if equals
+  * 
+  * 
+  */
+int sequence_compare(const uint8_t * seq1, const uint seq1_size,
+                      const uint seq1_start, const uint seq1_stop,
+                      const uint8_t * seq2, const uint seq2_size,
+                      const uint seq2_start, const uint seq2_stop);
+
+
 /** Translate a sequence to an 64 bits integer. If the sequence length is more than 32, then only
 	* the last 32 nucleotides are used for the conversion.
   *
@@ -67,6 +78,18 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
   * @param seq_size Size in nucleotides of the sequence
   */
 uint64_t seq_to_uint(const uint8_t * seq, uint seq_size);
+
+/** Translate a subsequence into a 64 bits integer. If the sequence size > 32, then the 32 suffix
+  * of the sequence is used.
+  * 
+  * @param seq The sequence sur translate
+  * @param seq_size The number of nucleotides in the sequence
+  * @param start_nucl First nucletide index of the target subsequence
+  * @param end_nucl Last nucleotide of the subsequence to translate
+  * 
+  * @return Translate subsequence
+  */
+uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uint end_nucl);
 
 /** Translate a binarized uint sequence into an binarized sequence array.
   * @param seq Sequence stored in a uint (ie max 32 nucleotides)
