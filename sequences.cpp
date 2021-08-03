@@ -140,7 +140,6 @@ vector<pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, c
 		current_rev_value = (current_rev_value >> 2) + (r.reverse[nucl] << (2 * (m - 1)));
 		candidates.emplace_back(current_value, current_rev_value);
 	}
-	// exit(0);
 
 	return candidates;
 }
