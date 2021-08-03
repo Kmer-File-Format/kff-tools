@@ -336,13 +336,13 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 		start_nucl = end_nucl - 31;
 
 	// Determine boundary bytes
-	uint seq_offset = seq_size % 4;
+	uint seq_offset = (4 - (seq_size % 4)) % 4;
 	uint first_sub_byte = (seq_offset + start_nucl) / 4;
 	uint last_sub_byte = (seq_offset + end_nucl) / 4;
 
 	// First byte integration
 	uint mask = (1 << (2 * (4 - ((seq_offset + start_nucl) % 4)))) - 1;
-	uint sub_val = seq[first_sub_byte] & mask;
+	uint64_t sub_val = seq[first_sub_byte] & mask;
 
 	// Middle bytes
 	for (uint b=first_sub_byte+1 ; b<last_sub_byte ; b++) {
@@ -353,7 +353,7 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 	// End byte
 	uint last_shift = (seq_size - end_nucl - 1) % 4;
 	uint8_t end_byte = seq[last_sub_byte] >> (2 * last_shift);
-	sub_val <<= 2 * last_shift;
+	sub_val <<= 2 * (4 - last_shift);
 	sub_val += end_byte;
 
 	return sub_val;

@@ -28,6 +28,7 @@ public:
 	void exec();
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
 	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<uint8_t *> > & kmers, const uint k, const uint m);
+	std::vector<std::vector<uint8_t *> > pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact);
 };
 
 #endif
