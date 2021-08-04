@@ -86,35 +86,15 @@ Usage:
   kff-tools validate -i file.kff -v
 ```
 
+## `kff-tools bucket`
 
-## `kff-tools split`
+A tool that split each raw section into multiple minimizer sections.
+Each section contains only kmers sharing the same minimizer (ie the same substring of size m minimizing the encoding order).
 
-Split a kff file into one kff file per section.
-
-Parameters:
-* **-i &lt;input.kff&gt;** \[required\]: Input file to split.
-* **-o &lt;path&gt;**: Directory where the split output files are written (Default ./).
-
-Usage:
-```bash
-  kff-tools split -i to_split.kff -o split_dir/
-```
-
-## `kff-tools merge`
-
-Merge a list of kff files into only one.
-The order of the input file will be preserved in the merged output.
-
-Parameters:
-* **-i &lt;input1.kff&gt; &lt;input2.kff&gt; ...** \[required\]: Input file list to merge.
-All the files must share the same encoding.
-If not, please first translate them (you can use the translate subprogram of kff-tools).
-* **-o &lt;output.kff&gt;** \[required\]: Name of the merged kff file.
-
-Usage:
-```bash
-  kff-tools merge -i to_merge_1.kff to_merge_2.kff to_merge_3.kff -o merged.kff
-```
+* **-i &lt;input.kff&gt;** \[required\]: File to bucketize.
+* **-o &lt;output.kff&gt;** \[required\]: A file containing only minimizer sections (no raw). Each previous raw section is splitted into on minimizer section per bucket.
+* **-m minimizer_size** \[required\]: The size of the minimizer to use.
+* **-s**: Do not search for the minimizer on the reverse complements.
 
 
 ## `kff-tools compact`
@@ -147,6 +127,35 @@ Parameters:
 Usage:
 ```bash
   kff-tools disjoin -i input.kff -o disjoin.kff
+```
+
+## `kff-tools split`
+
+Split a kff file into one kff file per section.
+
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: Input file to split.
+* **-o &lt;path&gt;**: Directory where the split output files are written (Default ./).
+
+Usage:
+```bash
+  kff-tools split -i to_split.kff -o split_dir/
+```
+
+## `kff-tools merge`
+
+Merge a list of kff files into only one.
+The order of the input file will be preserved in the merged output.
+
+Parameters:
+* **-i &lt;input1.kff&gt; &lt;input2.kff&gt; ...** \[required\]: Input file list to merge.
+All the files must share the same encoding.
+If not, please first translate them (you can use the translate subprogram of kff-tools).
+* **-o &lt;output.kff&gt;** \[required\]: Name of the merged kff file.
+
+Usage:
+```bash
+  kff-tools merge -i to_merge_1.kff to_merge_2.kff to_merge_3.kff -o merged.kff
 ```
 
 ## `kff-tools translate`
