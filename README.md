@@ -119,15 +119,35 @@ Usage:
 
 ## `kff-tools compact`
 
-TODO
+Compact kmers into super-kmers (group of overlapping kmers sharing a minimizer).
+One block per super-kmer generated is written.
+Only the kmers inside of minimizer sections are compacted.
+Each minimizer section is compacted separatly.
+The compaction is linear in time and needs an amount of memory proportional to the largest minimizer section (larger in terms of number of kmers).
+
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: File to compact.
+* **-o &lt;output.kff&gt;** \[required\]: Compacted file.
+
+Usage:
+```bash
+  kff-tools compact -i to_compact.kff -o compacted.kff
+```
 
 ## `kff-tools disjoin`
 
-Each block in each section is split into one block per kmer.
+The disjoin tool is the opposite of the compact tool.
+Each block containing a sequence of n kmers will be splitted in n blocks of 1 kmer.
 The number of kmers inside of each section is preserved.
-The number of blocks per section is increased to 1 block per kmer.
 
+Parameters:
+* **-i &lt;input.kff&gt;** \[required\]: Input kff file.
+* **-o &lt;output.kff&gt;** \[required\]: Dijoint file..
 
+Usage:
+```bash
+  kff-tools disjoin -i input.kff -o disjoin.kff
+```
 
 ## `kff-tools translate`
 
