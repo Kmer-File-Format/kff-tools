@@ -37,9 +37,16 @@ void Compact::exec() {
 	Kff_file infile(input_filename, "r");
 	Kff_file outfile(output_filename, "w");
 
-	// TODO: Write encoding
-	// TODO: Set the flags
-	// TODO: Write header
+	outfile.write_encoding(infile.encoding);
+	
+	outfile.set_uniqueness(infile.uniqueness);
+	outfile.set_canonicity(infile.canonicity);
+	
+	// Metadata transfer
+  uint8_t * metadata = new uint8_t[infile.metadata_size];
+  infile.read_metadata(metadata);
+  outfile.write_metadata(infile.metadata_size, metadata);
+  delete[] metadata;
 
 	// Compute file size
 	long current_pos = infile.fs.tellp();
