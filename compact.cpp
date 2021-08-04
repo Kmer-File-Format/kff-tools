@@ -137,13 +137,13 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 			memcpy(kmers + next_free + kmer_bytes, data_buffer + kmer_idx * data_size, data_size);
 			// Write mini position
 			uint kmer_mini_pos = mini_pos - kmer_idx;
-			for (int b=mini_pos_size-1 ; b>0 ; b--) {
+			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
 				*(kmers + next_free + kmer_bytes + data_size + b) = kmer_mini_pos & 0xFF;
 				kmer_mini_pos >>= 8;
 			}
 			// Update
 			kmers_per_index[kmer_pos].push_back(kmers + next_free);
-			next_free += kmer_bytes + data_size;
+			next_free += kmer_bytes + data_size + mini_pos_size;
 		}
 	}
 
@@ -281,12 +281,15 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 
 		// Get the skmer minimizer position
 		uint mini_pos = 0;
-		uint8_t * mini_pos_pointer = path[0] + max_skmer_bytes + data_size;
+		uint8_t * mini_pos_pointer = path[0] + kmer_bytes + data_size;
+		cout << "mini pos array  ";
 		for (uint b=0 ; b<mini_pos_size ; b++) {
+			cout << (uint)(*mini_pos_pointer) << " ";
 			mini_pos <<= 8;
 			mini_pos += *mini_pos_pointer;
 			mini_pos_pointer += 1;
 		}
+		cout << endl;
 
 		// Usefull variables
 		uint skmer_size = k - m - 1 + path.size();

@@ -163,6 +163,10 @@ void Validate::exec() {
 					uint64_t mini_pos;
 					uint nb_kmers = sm.read_compacted_sequence_without_mini(seq_bytes, data_bytes, mini_pos);
 
+					if (mini_pos > k - m + nb_kmers) {
+						cerr << "* minimizer position out of sequence. position=" << mini_pos << " , skmer_size=" <<  (k-m+nb_kmers) << endl;
+					}
+
 					if (verbose) {
 						cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << endl;
 						string seq = strif.translate(seq_bytes, k - m + nb_kmers - 1);
