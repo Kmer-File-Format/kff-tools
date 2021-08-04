@@ -89,6 +89,9 @@ void Bucket::exec() {
 				// Create the file
 				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(mini_val) + ".kff", "w");
 				outfile->write_encoding(stream.reader.get_encoding());
+				outfile->set_uniqueness(stream.reader.file->uniqueness);
+				outfile->set_canonicity(stream.reader.file->canonicity);
+
 				// Usefull values
 				Section_GV sgv(outfile);
 			  sgv.write_var("k", k);
