@@ -1,5 +1,5 @@
 #include "CLI11.hpp"
-#include "kff-cpp-api/kff_io.hpp"
+#include "kff_io.hpp"
 
 
 #ifndef KFF_TOOLS

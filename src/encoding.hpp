@@ -76,6 +76,7 @@ public:
 class Binarizer {
 private:
 	std::map<std::string, uint8_t> lookup;
+	std::map<char, uint8_t> multi_lookup[4];
 
 public:
 	/**

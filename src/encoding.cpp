@@ -115,48 +115,80 @@ string Stringifyer::translate(const uint8_t * sequence, const size_t nucl_length
 
 
 Binarizer::Binarizer(const uint8_t encoding[4]) {
-	string l = "A";
-	this->lookup[l] = 0 | (encoding[0] & 0b11);
-	l = "C";
-	this->lookup[l] = 0 | (encoding[1] & 0b11);
-	l = "G";
-	this->lookup[l] = 0 | (encoding[2] & 0b11);
-	l = "T";
-	this->lookup[l] = 0 | (encoding[3] & 0b11);
-
-	const string letters[] = {"A", "C", "G", "T"};
-	// First letter
-	for (string letter1 : letters) {
-		// Second letter
-		for (string letter2 : letters) {
-			this->lookup[letter1 + letter2] = (lookup[letter1] << 2) | lookup[letter2];
-			// Third letter
-			for (string letter3 : letters) {
-				this->lookup[letter1 + letter2 + letter3] = (lookup[letter1] << 4) | (lookup[letter2] << 2) | lookup[letter3];
-				// Last letter
-				for (string letter4: letters) {
-					this->lookup[letter1 + letter2 + letter3 + letter4] = (lookup[letter1] << 6) | (lookup[letter2] << 4) | (lookup[letter3] << 2) | lookup[letter4];
-				}
-			}
-		}
+	for (uint pos=0 ; pos<4 ; pos++) {
+		this->multi_lookup[pos]['A'] = (encoding[0] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['a'] = (encoding[0] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['C'] = (encoding[1] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['c'] = (encoding[1] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['G'] = (encoding[2] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['g'] = (encoding[2] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['T'] = (encoding[3] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos]['t'] = (encoding[3] & 0b11) << (6 - 2 * pos);
 	}
+
+	// string l = "A";
+	// this->lookup[l] = 0 | (encoding[0] & 0b11);
+	// l = "C";
+	// this->lookup[l] = 0 | (encoding[1] & 0b11);
+	// l = "G";
+	// this->lookup[l] = 0 | (encoding[2] & 0b11);
+	// l = "T";
+	// this->lookup[l] = 0 | (encoding[3] & 0b11);
+
+	// const string letters[] = {"A", "C", "G", "T"};
+	// // First letter
+	// for (string letter1 : letters) {
+	// 	// Second letter
+	// 	for (string letter2 : letters) {
+	// 		this->lookup[letter1 + letter2] = (lookup[letter1] << 2) | lookup[letter2];
+	// 		// Third letter
+	// 		for (string letter3 : letters) {
+	// 			this->lookup[letter1 + letter2 + letter3] = (lookup[letter1] << 4) | (lookup[letter2] << 2) | lookup[letter3];
+	// 			// Last letter
+	// 			for (string letter4: letters) {
+	// 				this->lookup[letter1 + letter2 + letter3 + letter4] = (lookup[letter1] << 6) | (lookup[letter2] << 4) | (lookup[letter3] << 2) | lookup[letter4];
+	// 			}
+	// 		}
+	// 	}
+	// }
 }
 
 
 void Binarizer::translate(std::string sequence, uint8_t * binarized) {
-	uint k = sequence.length();
-	uint truncated = k % 4;
-	uint remaining_bytes = k / 4;
+	uint s = sequence.length();
+	uint bytes_needed = (s + 3) / 4;
 
-	uint off_byte = 0;
-	if (truncated > 0) {
-		string prefix = sequence.substr(0, truncated);
-		binarized[0] = this->lookup[prefix];
-		off_byte = 1;
+
+	// First Byte
+	binarized[0] = 0;
+	for (uint p=(4-(s%4))%4, n=0 ; p<4 ; p++, n++) {
+		binarized[0] |= this->multi_lookup[p][sequence[n]];
 	}
 
-	for (uint i=0 ; i<remaining_bytes ; i++) {
-		string slice = sequence.substr(truncated + i * 4, 4);
-		binarized[i + off_byte] = this->lookup[slice];
+	// Following bytes
+	uint offset = ((s-1) % 4) + 1;
+	for (uint b=1 ; b<bytes_needed ; b++) {
+		binarized[b] = this->multi_lookup[0][sequence[offset + 4 * (b-1)]];
+		binarized[b] |= this->multi_lookup[1][sequence[offset + 4 * (b-1) + 1]];
+		binarized[b] |= this->multi_lookup[2][sequence[offset + 4 * (b-1) + 2]];
+		binarized[b] |= this->multi_lookup[3][sequence[offset + 4 * (b-1) + 3]];
 	}
 }
+
+// void Binarizer::translate(std::string sequence, uint8_t * binarized) {
+// 	uint k = sequence.length();
+// 	uint truncated = k % 4;
+// 	uint remaining_bytes = k / 4;
+
+// 	uint off_byte = 0;
+// 	if (truncated > 0) {
+// 		string prefix = sequence.substr(0, truncated);
+// 		binarized[0] = this->lookup[prefix];
+// 		off_byte = 1;
+// 	}
+
+// 	for (uint i=0 ; i<remaining_bytes ; i++) {
+// 		string slice = sequence.substr(truncated + i * 4, 4);
+// 		binarized[i + off_byte] = this->lookup[slice];
+// 	}
+// }

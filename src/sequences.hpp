@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "encoding.hpp"
-#include "kff-cpp-api/kff_io.hpp"
+#include "kff_io.hpp"
 
 /* TO READ BEFORE ANY USAGE !!
 

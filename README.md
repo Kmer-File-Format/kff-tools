@@ -196,3 +196,9 @@ Run functional tests from the root of the project
 ```bash
   python3 -m unittest discover -s tests/
 ```
+
+Run unit tests from the root of the project
+
+```bash
+  ./tests/tests
+```

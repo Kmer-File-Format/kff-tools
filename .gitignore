@@ -40,6 +40,10 @@
 # python
 **/__pycache__/
 
+# performances tests
+**/perf.data*
+debug.sh
+
 # project related
 data/
 kff-tools
