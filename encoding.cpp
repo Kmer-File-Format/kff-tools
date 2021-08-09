@@ -143,10 +143,9 @@ Binarizer::Binarizer(const uint8_t encoding[4]) {
 }
 
 
-void Binarizer::translate(std::string sequence, uint8_t * binarized) {
-	uint k = sequence.length();
-	uint truncated = k % 4;
-	uint remaining_bytes = k / 4;
+void Binarizer::translate(std::string sequence, uint seq_size, uint8_t * binarized) {
+	uint truncated = seq_size % 4;
+	uint remaining_bytes = seq_size / 4;
 
 	uint off_byte = 0;
 	if (truncated > 0) {

@@ -20,6 +20,9 @@ private:
 	uint k;
 	uint max_kmerseq;
 
+	char delimiter;
+  char data_delimiter;
+
 	void monofile();
 	void multifile();
 

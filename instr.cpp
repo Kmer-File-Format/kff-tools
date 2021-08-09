@@ -5,6 +5,7 @@
 #include <queue>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 
 #include "instr.hpp"
 #include "encoding.hpp"
@@ -23,10 +24,12 @@ Instr::Instr() {
 	is_counts = false;
 	k = 0;
 	max_kmerseq = 255;
+	delimiter = ' ';
+	data_delimiter = ',';
 }
 
 void Instr::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("instr", "Convert a text kmer file or a text sequence file into a kff file. Kmers or sequences must be 1 per line. In case of kmer file, the counts flag will also translate counts in the text file into the right data format for a kff file.");
+	this->subapp = app->add_subcommand("instr", "Convert a text kmer file or a text sequence file into a kff file. Kmers or sequences must be 1 per line. If data size is more than 0, then the delimiters are used to split each line.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text file with one sequence per line (sequence omitted if its size < k). Empty data is added (size defined by -d option).");
 	input_option->required();
 	CLI::Option * output_option = subapp->add_option("-o, --outfile", output_filename, "The kff output file name.");
@@ -35,6 +38,8 @@ void Instr::cli_prepare(CLI::App * app) {
 	k_opt->required();
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
 	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
+	subapp->add_option("--delimiter", delimiter, "Character used as a delimiter between the sequence and the data (default ' ').");
+	subapp->add_option("--data-delimiter", data_delimiter, "Character used as a delimiter between two kmers data from the same sequence (default ',').");
 	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
 }
 
@@ -47,28 +52,31 @@ private:
   Binarizer bz;
 
   uint buffer_size;
-  uint8_t * buffer;
+  uint8_t * seq_buffer;
+  uint8_t * data_buffer;
 
   uint k;
   uint data_size;
 
+  char delimiter;
+  char data_delimiter;
+
 public:
-  TxtSeqStream(const std::string filename, const uint8_t encoding[4]) 
+  TxtSeqStream(const std::string filename, const uint8_t encoding[4], uint k, uint data_size, char delim, char data_delim) 
       : fs(filename, std::fstream::in)
       , bz(encoding)
       , buffer_size(1024)
-      , buffer(new uint8_t[1024])
-      , k(0)
-      , data_size(0)
+      , seq_buffer(new uint8_t[1024])
+      , data_buffer(new uint8_t[(1024 * 4 - k + 1	) * data_size])
+      , k(k)
+      , data_size(data_size)
+      , delimiter(delim)
+      , data_delimiter(data_delim)
   {};
   ~TxtSeqStream() {
     this->fs.close();
-    delete[] buffer;
-  }
-
-  void set_counts(uint k, uint data_size) {
-  	this->k = k;
-  	this->data_size = data_size;
+    delete[] this->seq_buffer;
+    delete[] this->data_buffer;
   }
   
   uint next_sequence(uint8_t * & seq, uint8_t * & data) {
@@ -81,26 +89,30 @@ public:
 		getline(this->fs, line);
 		if (line.size() == 0)
 			return 0;
-		// Update buffer
-		uint seq_size = 0;
-		if (this->k == 0)
+
+		// Get the split limit
+		size_t seq_size = line.find(this->delimiter);
+		if (seq_size == string::npos)
 			seq_size = line.size();
-		else
-			seq_size = this->k;
-		
+
+		// Update buffers
 		if (seq_size > this->buffer_size * 4) {
-			delete[] this->buffer;
+			delete[] this->seq_buffer;
 			this->buffer_size = (seq_size + 3) / 4;
-			this->buffer = new uint8_t[this->buffer_size];
+			this->seq_buffer = new uint8_t[this->buffer_size];
+
+			delete[] this->data_buffer;
+			this->data_buffer = new uint8_t[(seq_size - k + 1) * this->data_size];
 		}
 		// convert/copy the sequence
-		this->bz.translate(line.substr(0, seq_size), this->buffer);
-		seq = this->buffer;
+		this->bz.translate(line, seq_size, this->seq_buffer);
+		seq = this->seq_buffer;
 
 		// If counts
-		if (this->k > 0) {
-			string str_count = line.substr(k+1);
-			unsigned long count = stoul(str_count);
+		if (this->data_size > 0) {
+			char * str_data = (char *)line.c_str() + seq_size + 1;
+
+			unsigned long count = strtoul(str_data, &str_data, 10);
 			for (uint i=0 ; i<this->data_size ; i++) {
 				data[data_size-1-i] = (uint8_t)count & 0xFF;
 				count >>= 8;
@@ -131,9 +143,7 @@ void Instr::exec() {
 
 	// Open the input seq stream
 	const uint8_t encoding[4] = {0, 1, 3, 2};
-	TxtSeqStream stream(input_filename, encoding);
-	if (this->is_counts)
-		stream.set_counts(this->k, this->data_size);
+	TxtSeqStream stream(input_filename, encoding, this->k, this->data_size, this->delimiter, this->data_delimiter);
 
 	// Write the sequences inside of a raw section
 	Section_Raw sr(&outfile);
