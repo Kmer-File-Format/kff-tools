@@ -198,7 +198,7 @@ class TestCompaction(unittest.TestCase):
 
 
         print("  clean the test area")
-        os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}* {kff_compacted}*")
+        os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}* {kff_compacted}* {kff_disjoin}")
 
 
 if __name__ == '__main__':
