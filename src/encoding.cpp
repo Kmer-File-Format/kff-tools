@@ -154,19 +154,17 @@ Binarizer::Binarizer(const uint8_t encoding[4]) {
 }
 
 
-void Binarizer::translate(std::string sequence, uint8_t * binarized) {
-	uint s = sequence.length();
-	uint bytes_needed = (s + 3) / 4;
-
+void Binarizer::translate(std::string sequence, uint seq_size, uint8_t * binarized) {
+	uint bytes_needed = (seq_size + 3) / 4;
 
 	// First Byte
 	binarized[0] = 0;
-	for (uint p=(4-(s%4))%4, n=0 ; p<4 ; p++, n++) {
+	for (uint p=(4-(seq_size%4))%4, n=0 ; p<4 ; p++, n++) {
 		binarized[0] |= this->multi_lookup[p][sequence[n]];
 	}
 
 	// Following bytes
-	uint offset = ((s-1) % 4) + 1;
+	uint offset = ((seq_size-1) % 4) + 1;
 	for (uint b=1 ; b<bytes_needed ; b++) {
 		binarized[b] = this->multi_lookup[0][sequence[offset + 4 * (b-1)]];
 		binarized[b] |= this->multi_lookup[1][sequence[offset + 4 * (b-1) + 1]];
@@ -174,6 +172,40 @@ void Binarizer::translate(std::string sequence, uint8_t * binarized) {
 		binarized[b] |= this->multi_lookup[3][sequence[offset + 4 * (b-1) + 3]];
 	}
 }
+
+
+// <<<<<<< HEAD:src/encoding.cpp
+// void Binarizer::translate(std::string sequence, uint8_t * binarized) {
+// 	uint s = sequence.length();
+// 	uint bytes_needed = (s + 3) / 4;
+
+
+// 	// First Byte
+// 	binarized[0] = 0;
+// 	for (uint p=(4-(s%4))%4, n=0 ; p<4 ; p++, n++) {
+// 		binarized[0] |= this->multi_lookup[p][sequence[n]];
+// =======
+// void Binarizer::translate(std::string sequence, uint seq_size, uint8_t * binarized) {
+// 	uint truncated = seq_size % 4;
+// 	uint remaining_bytes = seq_size / 4;
+
+// 	uint off_byte = 0;
+// 	if (truncated > 0) {
+// 		string prefix = sequence.substr(0, truncated);
+// 		binarized[0] = this->lookup[prefix];
+// 		off_byte = 1;
+// >>>>>>> main:encoding.cpp
+// 	}
+
+// 	// Following bytes
+// 	uint offset = ((s-1) % 4) + 1;
+// 	for (uint b=1 ; b<bytes_needed ; b++) {
+// 		binarized[b] = this->multi_lookup[0][sequence[offset + 4 * (b-1)]];
+// 		binarized[b] |= this->multi_lookup[1][sequence[offset + 4 * (b-1) + 1]];
+// 		binarized[b] |= this->multi_lookup[2][sequence[offset + 4 * (b-1) + 2]];
+// 		binarized[b] |= this->multi_lookup[3][sequence[offset + 4 * (b-1) + 3]];
+// 	}
+// }
 
 // void Binarizer::translate(std::string sequence, uint8_t * binarized) {
 // 	uint k = sequence.length();

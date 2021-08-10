@@ -19,28 +19,28 @@ const lest::test module[] = {
             {
                 std::string nucleotides("CATTAGCA");
                 uint8_t bin[2];
-                bz.translate(nucleotides, bin);
+                bz.translate(nucleotides, 8, bin);
 
                 EXPECT( (uint)bin[0] == (uint)0b01001010 );
                 EXPECT( (uint)bin[1] == (uint)0b00110100 );
 
 
                 nucleotides = "TCGTACG";
-                bz.translate(nucleotides, bin);
+                bz.translate(nucleotides, 7, bin);
                 
                 EXPECT( (uint)bin[0] == (uint)0b100111 );
                 EXPECT( (uint)bin[1] == (uint)0b10000111 );
 
 
                 nucleotides = "CGTACG";
-                bz.translate(nucleotides, bin);
+                bz.translate(nucleotides, 6, bin);
                 
                 EXPECT( (uint)bin[0] == (uint)0b0111 );
                 EXPECT( (uint)bin[1] == (uint)0b10000111 );
 
 
                 nucleotides = "GTACG";
-                bz.translate(nucleotides, bin);
+                bz.translate(nucleotides, 5, bin);
                 
                 EXPECT( (uint)bin[0] == (uint)0b11 );
                 EXPECT( (uint)bin[1] == (uint)0b10000111 );

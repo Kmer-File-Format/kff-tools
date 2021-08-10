@@ -93,7 +93,7 @@ public:
 		* @param binarized array where the binary version is stored.
 		* The space must be allocated outside of the function.
 		*/
-	void translate(std::string sequence, uint8_t * binarized);
+	void translate(std::string sequence, uint seq_size, uint8_t * binarized);
 };
 
 #endif

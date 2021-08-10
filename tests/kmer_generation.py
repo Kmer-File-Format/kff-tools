@@ -10,10 +10,17 @@ def generate_sequences(nb_seq, size_min, size_max=0):
         yield ''.join(random.choice(nucleotides) for __ in range(random.randint(size_min, size_max)))
 
 
-def generate_sequences_file(filename, nb_seq, size_min, size_max=0):
+def generate_counts(n, max_val):
+    return [str(random.randint(1, max_val)) for _ in range(n)]
+
+
+def generate_sequences_file(filename, nb_seq, size_min, size_max=0, max_count=0):
     with open(filename, "w") as fp:
         for seq in generate_sequences(nb_seq, size_min, size_max):
-            fp.write(f"{seq}\n")
+            if max_count == 0:
+                fp.write(f"{seq}\n")
+            else:
+                fp.write(f"{seq} {','.join(generate_counts(len(seq) - size_min + 1, max_count))}\n")
 
 
 def generate_random_kmers_file(filename, nb_kmers, k, max_count=0, overlapping=False):
@@ -43,3 +50,5 @@ def generate_random_kmers_file(filename, nb_kmers, k, max_count=0, overlapping=F
 
 
 
+if __name__ == "__main__":
+    generate_sequences_file("mytest.txt", 10, 32, 39, 255);
