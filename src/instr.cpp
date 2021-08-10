@@ -23,8 +23,8 @@ Instr::Instr() {
 	data_size = 0;
 	k = 0;
 	max_kmerseq = 255;
-	delimiter = ' ';
-	data_delimiter = ',';
+	delimiter = " ";
+	data_delimiter = ",";
 }
 
 void Instr::cli_prepare(CLI::App * app) {
@@ -36,8 +36,8 @@ void Instr::cli_prepare(CLI::App * app) {
 	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");
 	k_opt->required();
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
-	subapp->add_option("--delimiter", delimiter, "Character used as a delimiter between the sequence and the data (default ' ').");
-	subapp->add_option("--data-delimiter", data_delimiter, "Character used as a delimiter between two kmers data from the same sequence (default ',').");
+	subapp->add_option("--delimiter", this->delimiter, "Character used as a delimiter between the sequence and the data (default ' ').");
+	subapp->add_option("--data-delimiter", this->data_delimiter, "Character used as a delimiter between two kmers data from the same sequence (default ',').");
 	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
 }
 
@@ -55,12 +55,13 @@ private:
 
   uint k;
   uint data_size;
+  bool data_present;
 
-  char delimiter;
-  char data_delimiter;
+  string delimiter;
+  string data_delimiter;
 
 public:
-  TxtSeqStream(const std::string filename, const uint8_t encoding[4], uint k, uint data_size, char delim, char data_delim) 
+  TxtSeqStream(const std::string filename, const uint8_t encoding[4], uint k, uint data_size, string delim, string data_delim) 
       : fs(filename, std::fstream::in)
       , bz(encoding)
       , buffer_size(1024)
@@ -76,8 +77,8 @@ public:
     delete[] this->seq_buffer;
     delete[] this->data_buffer;
   }
-  
-  uint next_sequence(uint8_t * & seq, uint8_t * & data) {
+
+	uint next_sequence(uint8_t * & seq, uint8_t * & data) {
 		// Verify stream integrity
 		if (not this->fs)
 			return 0;
@@ -89,9 +90,17 @@ public:
 			return 0;
 
 		// Get the split limit
-		size_t seq_size = line.find(this->delimiter);
-		if (seq_size == string::npos)
+		size_t seq_size = 0;
+		if (this->data_size == 0)
 			seq_size = line.size();
+		else {
+			seq_size = line.find(this->delimiter);
+			if (seq_size == string::npos) {
+				cerr << "Delimiter not found in" << endl << "\t" << line << endl;
+				exit(1);
+			}
+		}
+
 		uint nb_kmers = seq_size - k + 1;
 
 		// Update buffers
@@ -126,6 +135,7 @@ public:
 };
 
 
+
 void Instr::exec() {
 	// Open a KFF for output
 	Kff_file outfile(this->output_filename, "w");
@@ -158,24 +168,23 @@ void Instr::exec() {
 		// Full sequence copy
 		if (nb_kmers <= this->max_kmerseq) {
 			sr.write_compacted_sequence(seq, seq_size, data);
-			continue;
-		}
+		} else {
+			// Sequence saved slice per slice
+			uint first_nucl = 0;
+			while (nb_kmers > 0) {
+				uint nb_kmer_copied = min(nb_kmers, this->max_kmerseq);
+				uint copy_size = nb_kmer_copied + (k - 1);
+				
+				uint last_nucl = first_nucl + (copy_size - 1);
+				subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
+				first_nucl = last_nucl + 1 - (k - 1);
 
-		// Sequence saved slice per slice
-		uint first_nucl = 0;
-		while (nb_kmers > 0) {
-			uint nb_kmer_copied = min(nb_kmers, this->max_kmerseq);
-			uint copy_size = nb_kmer_copied + (k - 1);
-			
-			uint last_nucl = first_nucl + (copy_size - 1);
-			subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
-			first_nucl = last_nucl + 1 - (k - 1);
+				// Write the sequence
+				sr.write_compacted_sequence(sub_seq, copy_size, data);
 
-			// Write the sequence
-			sr.write_compacted_sequence(sub_seq, copy_size, data);
-
-			// reduce the number of remaining kmers
-			nb_kmers -= nb_kmer_copied;
+				// reduce the number of remaining kmers
+				nb_kmers -= nb_kmer_copied;
+			}
 		}
 	}
 	sr.close();
@@ -184,4 +193,72 @@ void Instr::exec() {
 	delete[] data;
 	outfile.close();
 }
+
+
+// void Instr::exec() {
+// 	// reset data size to 0 if data are not counts
+// 	if (this->is_counts) {
+// 		this->max_kmerseq = 1;
+// 	} else
+// 		this->data_size = 0;
+
+// 	// Open a KFF for output
+// 	Kff_file outfile(this->output_filename, "w");
+// 	// Write needed variables
+// 	Section_GV sgv(&outfile);
+// 	sgv.write_var("k", this->k);
+// 	sgv.write_var("data_size", this->data_size);
+// 	sgv.write_var("ordered", 0);
+// 	sgv.write_var("max", this->max_kmerseq);
+// 	sgv.close();
+
+// 	// Open the input seq stream
+// 	const uint8_t encoding[4] = {0, 1, 3, 2};
+// 	TxtSeqStream stream(input_filename, encoding);
+// 	if (this->is_counts)
+// 		stream.set_counts(this->k, this->data_size);
+
+// 	// Write the sequences inside of a raw section
+// 	Section_Raw sr(&outfile);
+
+// 	uint8_t * seq;
+// 	uint8_t * sub_seq = new uint8_t[(max_kmerseq + 3) / 4];
+// 	uint8_t * data = new uint8_t[data_size];
+// 	uint seq_size = 0;
+// 	// read the next line from the txt file
+// 	while ((seq_size = stream.next_sequence(seq, data)) > 0) {
+// 		// Sequence too small
+// 		if (seq_size < k)
+// 			continue;
+		
+// 		uint nb_kmers = seq_size - this->k + 1;
+// 		// Full sequence copy
+// 		if (nb_kmers <= this->max_kmerseq) {
+// 			sr.write_compacted_sequence(seq, seq_size, data);
+// 			continue;
+// 		}
+
+// 		// Sequence saved slice per slice
+// 		uint first_nucl = 0;
+// 		while (nb_kmers > 0) {
+// 			uint nb_kmer_copied = min(nb_kmers, this->max_kmerseq);
+// 			uint copy_size = nb_kmer_copied + (k - 1);
+			
+// 			uint last_nucl = first_nucl + (copy_size - 1);
+// 			subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
+// 			first_nucl = last_nucl + 1 - (k - 1);
+
+// 			// Write the sequence
+// 			sr.write_compacted_sequence(sub_seq, copy_size, data);
+
+// 			// reduce the number of remaining kmers
+// 			nb_kmers -= nb_kmer_copied;
+// 		}
+// 	}
+// 	sr.close();
+
+// 	delete[] sub_seq;
+// 	delete[] data;
+// 	outfile.close();
+// }
 
