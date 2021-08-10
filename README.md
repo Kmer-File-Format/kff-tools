@@ -200,5 +200,5 @@ Run functional tests from the root of the project
 Run unit tests from the root of the project
 
 ```bash
-  ./tests/tests
+  ./bin/tests
 ```
