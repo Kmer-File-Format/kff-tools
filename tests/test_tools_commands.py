@@ -9,56 +9,67 @@ file = "ecoli_count_dsk"
 
 
 class TestInOut(unittest.TestCase):
-  def test_raw_sections(self):
-    print("\n-- TestInOut test_raw_section")
-    for k in range(12, 16):
-        # Generate random kmer
-        print(f"Generate a random {k}-mers file.")
-        txt_file = f"inout_raw_k{k}_test.txt"
-        kg.generate_random_kmers_file(txt_file, 100, k, max_count=512, overlapping=True)
+    def test_raw_sections(self):
+        print("\n-- TestInOut test_raw_section")
+        for k in range(12, 16):
+            # Generate random kmer
+            print(f"Generate a random {k}-mers file.")
+            txt_file = f"inout_raw_k{k}_test.txt"
+            kg.generate_random_kmers_file(txt_file, 100, k, max_count=511, overlapping=True)
 
-        # Generate a kff file from a textual kmer count
-        print("  1/3 Generate a kff file from a textual kmer count")
-        kff_file = f"inout_raw_k{k}_test.kff"
-        self.assertEqual(0, os.system(f"./kff-tools instr --kmer-size {k} --data-size 2 --infile {txt_file} --outfile {kff_file} --counts"))
+            # Generate a kff file from a textual kmer count
+            print("  1/3 Generate a kff file from a textual kmer count")
+            kff_file = f"inout_raw_k{k}_test.kff"
+            self.assertEqual(0, os.system(f"./kff-tools instr --kmer-size {k} --data-size 2 --infile {txt_file} --outfile {kff_file}"))
 
-        # Regenerate a textual file from the kff
-        print("  2/3 Regenerate a txt file from the kff")
-        txt_out_file = f"inout_final_k{k}_test.kff"
-        self.assertEqual(0, os.system(f"./kff-tools outstr --infile {kff_file} > {txt_out_file}"))
+            # Regenerate a textual file from the kff
+            print("  2/3 Regenerate a txt file from the kff")
+            txt_out_file = f"inout_final_k{k}_test.kff"
+            self.assertEqual(0, os.system(f"./kff-tools outstr --infile {kff_file} > {txt_out_file}"))
 
-        # Compate the original file to the final translated file
-        print("  3/3 Compare initial and final txt files")
-        stream = os.popen(f"diff {txt_file} {txt_out_file}")
-        self.assertEqual(stream.read(), "")
+            # Compate the original file to the final translated file
+            print("  3/3 Compare initial and final txt files")
+            stream = os.popen(f"diff {txt_file} {txt_out_file}")
+            self.assertEqual(stream.read(), "")
+            stream.close()
+
+            print("  Clean the directory")
+            self.assertEqual(0, os.system(f"rm {txt_file} {kff_file} {txt_out_file}"))
+
+    def test_data_sequences(self):
+        print("\n-- TestInOut test_data_sequences")
+        # Create a test file
+        print("Generate a data sequence test file")
+        seqfilename = "seqfile_test.txt";
+        with open(seqfilename, "w") as seqfile:
+            seqfile.write("AGTTCT 12,3\n")
+            seqfile.write("GAGCT 4\n")
+            seqfile.write("TCTTACC 1,2,7\n")
+
+        compfilename = "compfile_test.txt"
+        with open(compfilename, "w") as compfile:
+            compfile.write("AGTTC 12\nGTTCT 3\n")
+            compfile.write("GAGCT 4\n")
+            compfile.write("TCTTA 1\nCTTAC 2\nTTACC 7\n")
+
+        # Convert file into kff
+        print("1/3 Generate a kff file from the txt")
+        kff_file = seqfilename[:-4] + ".kff"
+        print(kff_file)
+        self.assertEqual(0, os.system(f"./kff-tools instr --kmer-size 5 --data-size 1 --infile {seqfilename} --outfile {kff_file}"))
+
+        print("2/3 Output the kff file as kmer list")
+        outfile = seqfilename + ".out"
+        self.assertEqual(0, os.system(f"./kff-tools outstr --infile {kff_file} > {outfile}"))
+
+        print("3/3 Check the kmers")
+        stream = os.popen(f"diff {compfilename} {outfile}")
+        diff = stream.read()
         stream.close()
+        self.assertEqual(diff, "")
 
         print("  Clean the directory")
-        self.assertEqual(0, os.system(f"rm {txt_file} {kff_file} {txt_out_file}"))
-
-  # def test_bucketized(self):
-  #   bucket_size = [4]
-  #   for size in bucket_size:
-  #     print(f"\n-- TestInOut test_bucketized_{size}")
-  #     # Generate a kff file from a textual kmer count bucketing the kmers using a minimizer of size 4
-  #     print(f"1/4 - Generate a kff file from a textual kmer count. Bucket size : {size}")
-  #     self.assertEqual(0, os.system(f"./kff-tools instr --data-size 2 --mini-size {size} --infile data/{file}_sorted.txt --outprefix data/{file}_instr_b{size}"))
-  #     # Regenerate a textual file from the kff
-  #     print("2/4 - Regenerate a txt file from the kff")
-  #     self.assertEqual(0, os.system(f"./kff-tools outstr --infile data/{file}_instr_b{size}.kff > data/{file}_instr_b{size}_outstr.txt"))
-  #     self.assertEqual(0, os.system(f"rm data/{file}_instr_b4.kff"))
-  #     # Sort the regenerated file to match the original order
-  #     print("3/4 - Sort final output to match original file")
-  #     self.assertEqual(0, os.system(f"sort data/{file}_instr_b{size}_outstr.txt > data/{file}_instr_b{size}_outstr_sorted.txt"))
-  #     self.assertEqual(0, os.system(f"rm data/{file}_instr_b{size}_outstr.txt"))
-  #     # Compare initial and final files
-  #     print("4/4 - Compare initial and final txt files")
-  #     stream = os.popen(f"diff data/{file}_sorted.txt data/{file}_instr_b{size}_outstr_sorted.txt")
-  #     os.system(f"rm data/{file}_instr_b{size}_outstr_sorted.txt")
-  #     content = stream.read()
-  #     stream.close()
-  #     self.assertEqual(content, "")
-
+        self.assertEqual(0, os.system(f"rm {seqfilename} {kff_file} {outfile} {compfilename}"))
 
 
 class TestSplitMerge(unittest.TestCase):
@@ -82,7 +93,7 @@ class TestSplitMerge(unittest.TestCase):
         # Read 1 kmer per line
         self.assertEqual(0, os.system(f"./kff-tools instr -i {txt_file_2} -o {kff_file_2} -k 17"))
         # Read 1 kmer per line with its counts (up to 255)
-        self.assertEqual(0, os.system(f"./kff-tools instr -i {txt_file_3} -o {kff_file_3} -k 33 -c -d 2"))
+        self.assertEqual(0, os.system(f"./kff-tools instr -i {txt_file_3} -o {kff_file_3} -k 33 -d 2"))
 
 
         print(f"  2/3 Merge files and split it again")
