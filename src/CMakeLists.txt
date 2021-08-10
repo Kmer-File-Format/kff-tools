@@ -12,8 +12,8 @@ set(CMAKE_CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Ofast -fno-omit-frame-pointer")
 set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
 
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-include_directories(${MyProject_SOURCE_DIR}/kff-cpp-api/)
+include_directories(${CMAKE_BINARY_DIR})
+include_directories(${CMAKE_BINARY_DIR}/kff-cpp-api/)
 
 set(SRCS
     sequences.cpp
@@ -51,6 +51,7 @@ set(HEADERS
     shuffle.hpp
     sort.hpp
     )
+
 # add the executable
 add_executable(kff-tools ${SRCS} ${HEADERS})
 
