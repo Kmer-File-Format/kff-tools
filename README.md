@@ -28,14 +28,14 @@ Example (k=3):
   ACCT   # contains the 2 kmers ACC and CCT
   TGC
 ```
-The counts flag can be added for kmer files.
-It allows counts at the end of each line after any 1 char separator.
-If the c flag is activated, do not forget to set the data size sufficiently large.
-Example:
+If data_size is non 0, then instr is looking for n integers at the end of the line (n: the number of kmer in the sequence).
+The sequence and the data are separated by a one char delimiter (default ' ').
+kmer data are separated by another one char delimiter (default ',').
+Example (k=3):
 ```
-  ACC 12
+  ACCC 12,31
   CCT 1
-  GTA 42
+  GTAA 42,3
 ```
 
 Parameters:

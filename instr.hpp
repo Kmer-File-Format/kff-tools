@@ -13,8 +13,6 @@ class Instr: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
-	
-	bool is_counts;
 
 	uint data_size;
 	uint k;

@@ -21,7 +21,6 @@ Instr::Instr() {
 	input_filename = "";
 	output_filename = "";
 	data_size = 0;
-	is_counts = false;
 	k = 0;
 	max_kmerseq = 255;
 	delimiter = ' ';
@@ -37,7 +36,6 @@ void Instr::cli_prepare(CLI::App * app) {
 	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");
 	k_opt->required();
 	subapp->add_option("-d, --data-size", data_size, "Data size in Bytes (Default 0, max 8).");
-	subapp->add_flag("-c, --counts", is_counts, "Tell instr to consider the input file as count list. One kmer and one count per line are expected (separeted by any char delimiter).");
 	subapp->add_option("--delimiter", delimiter, "Character used as a delimiter between the sequence and the data (default ' ').");
 	subapp->add_option("--data-delimiter", data_delimiter, "Character used as a delimiter between two kmers data from the same sequence (default ',').");
 	subapp->add_option("-m, --max-kmer-seq", max_kmerseq, "The maximum number of kmer that can be inside of sequence in the output (default 255).");
@@ -94,6 +92,7 @@ public:
 		size_t seq_size = line.find(this->delimiter);
 		if (seq_size == string::npos)
 			seq_size = line.size();
+		uint nb_kmers = seq_size - k + 1;
 
 		// Update buffers
 		if (seq_size > this->buffer_size * 4) {
@@ -112,10 +111,13 @@ public:
 		if (this->data_size > 0) {
 			char * str_data = (char *)line.c_str() + seq_size + 1;
 
-			unsigned long count = strtoul(str_data, &str_data, 10);
-			for (uint i=0 ; i<this->data_size ; i++) {
-				data[data_size-1-i] = (uint8_t)count & 0xFF;
-				count >>= 8;
+			for (uint i=0 ; i<nb_kmers ; i++) {
+				unsigned long count = strtoul(str_data, &str_data, 10);
+				str_data += 1;
+				for (uint d=0 ; d<this->data_size ; d++) {
+					data[data_size * i + (data_size-1-d)] = (uint8_t)count & 0xFF;
+					count >>= 8;
+				}
 			}
 		}
 
@@ -125,12 +127,6 @@ public:
 
 
 void Instr::exec() {
-	// reset data size to 0 if data are not counts
-	if (this->is_counts) {
-		this->max_kmerseq = 1;
-	} else
-		this->data_size = 0;
-
 	// Open a KFF for output
 	Kff_file outfile(this->output_filename, "w");
 	// Write needed variables
