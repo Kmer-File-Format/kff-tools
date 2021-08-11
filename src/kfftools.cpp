@@ -64,6 +64,8 @@ KffTool * parse_args(int argc, char** argv, vector<KffTool *> tools) {
 
 
 int main(int argc, char** argv) {
+	ios_base::sync_with_stdio(false);
+	
 	// Prepare tools
 	vector<KffTool *> tools;
 	tools.push_back(new Split());
