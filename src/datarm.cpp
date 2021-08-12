@@ -35,11 +35,6 @@ void DataRm::exec() {
 	outfile.write_metadata(infile.metadata_size, metadata);
 	delete[] metadata;
 
-	long current_pos = infile.fs.tellp();
-	infile.fs.seekg(0, infile.fs.end);
-	long size = infile.fs.tellp();
-	infile.fs.seekp(current_pos);
-
 	// Prepare sequence buffer
 	uint8_t * nucleotides = new uint8_t[1];
 	uint8_t * data = new uint8_t[1];
@@ -47,7 +42,7 @@ void DataRm::exec() {
 
 	// Read and write section per section
 	char section_type = infile.read_section_type();
-	while (infile.fs.tellp() != size - 3) {
+	while (infile.tellp() != infile.end_position) {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables

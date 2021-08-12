@@ -24,7 +24,7 @@ void Merge::cli_prepare(CLI::App * app) {
 void Merge::merge(vector<string> inputs, string output) {
 	// Useful variables
 	const long buffer_size = 1048576; // 1 MB
-	char buffer[1048576];
+	uint8_t buffer[1048576];
 	uint8_t global_encoding[4];
 
 	// Read the encoding of the first file and push it as outcoding
@@ -66,15 +66,10 @@ void Merge::merge(vector<string> inputs, string output) {
 			}
 		}
 
-		long current_pos = infile.fs.tellp();
-		infile.fs.seekg(0, infile.fs.end);
-		long filesize = infile.fs.tellp();
-		infile.fs.seekp(current_pos);
-
 		// NB: Automatic jump over metadata due to API
 		// Read section by section
 		char section_type = infile.read_section_type();
-		while(infile.fs.tellp() != filesize - 3) {
+		while(infile.tellp() != infile.end_position) {
 			vector<string> to_copy;
 			long size, end_byte, begin_byte;
 
@@ -135,18 +130,18 @@ void Merge::merge(vector<string> inputs, string output) {
 				case 'r':
 				case 'm':
 				// Analyse the section size
-				begin_byte = infile.fs.tellp();
+				begin_byte = infile.tellp();
 				infile.jump_next_section();
-				end_byte = infile.fs.tellp();
+				end_byte = infile.tellp();
 				size = end_byte - begin_byte;
-				infile.fs.seekp(begin_byte);
+				infile.jump(-size);
 
 				// Read from input and write into output
 				while (size > 0) {
 					size_t size_to_copy = size > buffer_size ? buffer_size : size;
 
-					infile.fs.read(buffer, size_to_copy);
-					outfile.fs.write(buffer, size_to_copy);
+					infile.read(buffer, size_to_copy);
+					outfile.write(buffer, size_to_copy);
 
 					size -= size_to_copy;
 				}
@@ -155,29 +150,29 @@ void Merge::merge(vector<string> inputs, string output) {
 				// read section and compute its size
 				Section_Index si(&infile);
 				si.close();
-				long file_size = infile.fs.tellp() - si.beginning - 8l;
-				infile.fs.seekp(si.beginning);
+				long file_size = infile.tellp() - si.beginning - 8l;
+				infile.jump(-file_size - 8);
 
 				// Save the position in the file for later chaining
-				long i_position = outfile.fs.tellp();
+				long i_position = outfile.tellp();
 				size = file_size;
 				// Copy section (except the chaining part)
 				// Read from input and write into output
 				while (size > 0) {
 					size_t size_to_copy = size > buffer_size ? buffer_size : size;
 
-					infile.fs.read(buffer, size_to_copy);
-					outfile.fs.write(buffer, size_to_copy);
+					infile.read(buffer, size_to_copy);
+					outfile.write(buffer, size_to_copy);
 
 					size -= size_to_copy;
 				}
 				// Jump over the last value of infile
-				infile.fs.seekp(infile.fs.tellp() + 8l);
+				infile.jump(8);
 				// Chain the section and save its position
 				long i_relative = last_index - (i_position + file_size + 8l);
 				for (uint i=0 ; i<8 ; i++) {
-					char val = (char)(i_relative >> (56 - 8 * i));
-					outfile.fs.write(&val, 1);
+					uint8_t val = (uint8_t)(i_relative >> (56 - 8 * i));
+					outfile.write(&val, 1);
 				}
 				// write_value(last_index, outfile.fs);
 				last_index = i_position;

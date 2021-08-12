@@ -37,12 +37,6 @@ void Disjoin::exec() {
 	outfile.write_metadata(infile.metadata_size, metadata);
 	delete[] metadata;
 
-	// Compute file size
-	long current_pos = infile.fs.tellp();
-	infile.fs.seekg(0, infile.fs.end);
-	long size = infile.fs.tellp();
-	infile.fs.seekp(current_pos);
-
 	// Prepare sequence buffer
 	uint8_t * nucleotide_shifts[4];
 	for (uint i=0 ; i<4 ; i++)
@@ -52,7 +46,7 @@ void Disjoin::exec() {
 
 	// Read and write section per section
 	char section_type = infile.read_section_type();
-	while (infile.fs.tellp() != size - 3) {
+	while (infile.tellp() != infile.end_position) {
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables

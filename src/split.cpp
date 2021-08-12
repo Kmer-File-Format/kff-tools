@@ -26,18 +26,12 @@ void Split::exec() {
 	uint8_t * input_metadata = new uint8_t[input_file.metadata_size];
 	input_file.read_metadata(input_metadata);
 
-	// Compute file size
-	long current_pos = input_file.fs.tellp();
-	input_file.fs.seekg(0, input_file.fs.end);
-	long size = input_file.fs.tellp();
-	input_file.fs.seekp(current_pos);
-
 	long buffer_size = 1048576; // 1 MB
-	char buffer[1048576];
+	uint8_t buffer[1048576];
 
 	uint idx = 0;
 	char section_type = input_file.read_section_type();
-	while (input_file.fs.tellp() != size - 3) {
+	while (input_file.tellp() != input_file.end_position) {
 		if (section_type == 'v') {
 			Section_GV sgv(&input_file);
 		} else if (section_type == 'i') {
@@ -66,26 +60,26 @@ void Split::exec() {
 			sgv.close();
 
 			// Register the next section
-			long pos = output_file.fs.tellp();
+			long pos = output_file.tellp();
 			output_file.section_positions[pos] = section_type;
 
 			// Analyse the section size
-			auto begin_byte = input_file.fs.tellp();
+			auto begin_byte = input_file.tellp();
 			if (not input_file.jump_next_section()) {
 				cerr << "Error inside of the input file." << endl;
 				cerr << "Impossible to jump over the section " << section_type << endl;
 				exit(1);
 			}
-			auto end_byte = input_file.fs.tellp();
+			auto end_byte = input_file.tellp();
 			long size = end_byte - begin_byte;
-			input_file.fs.seekp(begin_byte);
+			input_file.jump(-size);
 
 			// Read from input and write into output
 			while (size > 0) {
 				size_t to_copy = size > buffer_size ? buffer_size : size;
 
-				input_file.fs.read(buffer, to_copy);
-				output_file.fs.write(buffer, to_copy);
+				input_file.read(buffer, to_copy);
+				output_file.write(buffer, to_copy);
 
 				size -= to_copy;
 			}

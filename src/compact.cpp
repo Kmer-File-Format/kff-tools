@@ -48,13 +48,7 @@ void Compact::exec() {
   outfile.write_metadata(infile.metadata_size, metadata);
   delete[] metadata;
 
-	// Compute file size
-	long current_pos = infile.fs.tellp();
-	infile.fs.seekg(0, infile.fs.end);
-	long file_size = infile.fs.tellp();
-	infile.fs.seekp(current_pos);
-
-	while (infile.fs.tellp() != file_size - 3) {
+	while (infile.tellp() != infile.end_position) {
 		char section_type = infile.read_section_type();
 
 		if (section_type == 'v') {

@@ -33,6 +33,7 @@ void Validate::exec() {
 			cout << "-> KFF file version " << (uint)infile.major_version << "." << (uint)infile.minor_version << endl;
 			cout << "-> Encoding: A=" << (uint)infile.encoding[0] << " C=" << (uint)infile.encoding[1] << " G=" << (uint)infile.encoding[2] << " T=" << (uint)infile.encoding[3] << endl;
 
+
 			// Metadata
 			cout << "-> Metadata (" << ((uint)infile.metadata_size) << "B)" << endl;
 			uint8_t * metadata = new uint8_t[infile.metadata_size];
@@ -49,13 +50,8 @@ void Validate::exec() {
 			cout << endl;
 		}
 
-		long current_pos = infile.fs.tellp();
-		infile.fs.seekg(0, infile.fs.end);
-		long last_pos = infile.fs.tellp();
-		infile.fs.seekg(current_pos, infile.fs.beg);
-
 		char section_type = infile.read_section_type();
-		while(infile.fs.tellp() < last_pos - 3) {
+		while(infile.tellp() < infile.end_position) {
 			if (verbose)
 				cout << "=== Section " << section_type << " ===" << endl;
 
@@ -76,14 +72,16 @@ void Validate::exec() {
 			// Index section
 			else if (section_type == 'i') {
 				Section_Index si(&infile);
-				cout << "Start Byte " << si.beginning << endl;
-				long end_byte = si.beginning + 17 + 9 * si.index.size();
-				cout << "Section\trelative\tabsolute" << endl;
-				for (const auto & pair : si.index) {
-					cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+				if (this->verbose) {
+					cout << "Start Byte " << si.beginning << endl;
+					long end_byte = si.beginning + 17 + 9 * si.index.size();
+					cout << "Section\trelative\tabsolute" << endl;
+					for (const auto & pair : si.index) {
+						cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+					}
+					cout << "Next index position " << si.next_index << endl;
 				}
 				si.close();
-				cout << "Next index position " << si.next_index << endl;
 			}
 			// Raw sequence section
 			else if (section_type == 'r') {
@@ -103,7 +101,7 @@ void Validate::exec() {
 				uint8_t * data_bytes = new uint8_t[data_size * max];
 
 				for (uint i=0 ; i<sr.nb_blocks ; i++) {
-					if (infile.fs.eof()) {
+					if (infile.tellp() >= infile.end_position) {
 						cerr << "/!\\ End of the file reached before the end of the section." << endl;
 						exit(1);
 					}
@@ -156,7 +154,7 @@ void Validate::exec() {
 				uint8_t * data_bytes = new uint8_t[data_size * max];
 
 				for (uint i=0 ; i<sm.nb_blocks ; i++) {
-					if (infile.fs.eof()) {
+					if (infile.tellp() >= infile.end_position) {
 						cerr << "/!\\ End of the file reached before the end of the section." << endl;
 						exit(1);
 					}
@@ -201,13 +199,12 @@ void Validate::exec() {
 			section_type = infile.read_section_type();
 		}
 
-		char a=0,b=0,c=0;
-		infile.fs >> a >> b >> c;
-		if (a != 'K' or b !='F' or c!='F')
+		char kff[3];
+		infile.read((uint8_t *)kff, 3);
+		if (kff[0] != 'K' or kff[1] != 'F' or kff[2] !='F')
 			cout << "No KFF signature found at the end of the file. The file must be corrupted." << endl;
-		infile.fs.get();
 
-		if (not infile.fs.eof()) {
+		if (infile.tellp() < infile.end_position + 3) {
 			cout << "/!\\ Remaining bytes at the end of the file !" << endl;
 		}
 		infile.close();
