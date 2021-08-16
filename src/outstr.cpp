@@ -79,12 +79,12 @@ void Outstr::exec() {
 	while (reader.next_kmer(nucleotides, data)) {
 
 		if (not revcomp) {
-			cout << strif.translate(nucleotides, reader.get_var("k")) << " ";
-			cout << format_data(data, reader.get_var("data_size")) << '\n';
+			cout << strif.translate(nucleotides, reader.k) << " ";
+			cout << format_data(data, reader.data_size) << '\n';
 		} else {
 			// Change the size of rev comp datastruct if k changes
-			if (reader.get_var("k") != k) {
-				k = reader.get_var("k");
+			if (reader.k != k) {
+				k = reader.k;
 				delete[] rc_copy;
 				rc_copy = new uint8_t[(k+3) / 4];
 			}
@@ -95,10 +95,10 @@ void Outstr::exec() {
 
 			if (inf_eq(nucleotides, rc_copy, k)) {
 				cout << strif.translate(nucleotides, k) << " ";
-				cout << format_data(data, reader.get_var("data_size")) << '\n';
+				cout << format_data(data, reader.data_size) << '\n';
 			} else {
 				cout << strif.translate(rc_copy, k) << " ";
-				cout << format_data(data, reader.get_var("data_size")) << '\n';
+				cout << format_data(data, reader.data_size) << '\n';
 			}
 		}
 	}
