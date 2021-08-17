@@ -128,9 +128,16 @@ void Sort::sort(string input, string output) {
                         int seq_len = k + nb_kmers - 1;
                         //cerr << "Read seq of length: " << seq_len << " data size: " << data_size*nb_kmers << endl;
                         vector<uint8_t> seq_vec(&seq_bytes[0],&seq_bytes[seq_len/4+1]);
-                        vector<uint8_t> data_vec(&data_bytes[0],&data_bytes[data_size*nb_kmers]);
-                        //cerr << "Converted to pair of lengths " << seq_vec.size() << " / " << data_vec.size() << endl;
-                        everything.push_back(make_pair(seq_vec,data_vec));
+                        if (data_size > 0) {
+	                        vector<uint8_t> data_vec(&data_bytes[0],&data_bytes[data_size*nb_kmers]);
+	                        everything.push_back(make_pair(seq_vec,data_vec));
+	                    } else if (nb_kmers < 256) {
+	                    	vector<uint8_t> data_vec(1, (uint8_t)nb_kmers);
+	                        everything.push_back(make_pair(seq_vec,data_vec));
+	                    } else {
+	                    	cerr << "Not implemented for large sequences " << endl;
+	                    	exit(1);
+	                    }
                     }
 
                     // Sort the vector
@@ -141,7 +148,11 @@ void Sort::sort(string input, string output) {
                     // Write the vector to out block
                     for (pair<vector<uint8_t>,vector<uint8_t>> elt : everything)
                     {
-                        int nb_kmers =  elt.second.size() / data_size;
+                        int nb_kmers = 0;
+                        if (data_size > 0)
+                        	nb_kmers = elt.second.size() / data_size;
+                        else
+	                        nb_kmers = elt.second[0];
                         //cerr << "Writing seq of length: " << k + nb_kmers - 1 << " data size: " << elt.second.size() << endl;
                         out_section.write_compacted_sequence(
                                 elt.first.data(),
@@ -150,6 +161,10 @@ void Sort::sort(string input, string output) {
                     }
                     in_section.close();
                     out_section.close();
+
+                    delete[] seq_bytes;
+                    delete[] data_bytes;
+
                     break;
                 }
 
