@@ -44,6 +44,7 @@ public:
 	RevComp(const uint8_t encoding[4]);
 
 	void rev_comp(uint8_t * seq, const uint64_t seq_size) const;
+	void rev_data(uint8_t * data, const uint64_t data_size, const uint64_t nb_kmers) const;
 };
 
 /** 

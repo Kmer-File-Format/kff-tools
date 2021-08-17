@@ -69,6 +69,18 @@ void RevComp::rev_comp(uint8_t * seq, const uint64_t seq_size) const {
 }
 
 
+void RevComp::rev_data(uint8_t * data, const uint64_t data_size, const uint64_t nb_kmers) const {
+	for (uint idx=0 ; idx<nb_kmers/2 ; idx++) {
+		uint rev_idx = nb_kmers - 1 - idx;
+		for (uint data_idx=0 ; data_idx<data_size ; data_idx++) {
+			uint8_t save = data[idx * data_size + data_idx];
+			data[idx * data_size + data_idx] = data[rev_idx * data_size + data_idx];
+			data[rev_idx * data_size + data_idx] = save;
+		}
+	}
+}
+
+
 Stringifyer::Stringifyer(uint8_t encoding[4]) {
 	// Nucleotide translation values
 	string nucl_translation[4];
