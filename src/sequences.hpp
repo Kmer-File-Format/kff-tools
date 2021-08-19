@@ -101,6 +101,12 @@ void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
 // ----- Minimizer search related functions -----
 
+typedef struct {
+  uint64_t start_position;
+  uint64_t stop_position;
+  int64_t minimizer_position;
+  uint64_t minimizer;
+} skmer;
 
 class MinimizerSearcher {
 public:
@@ -110,11 +116,13 @@ public:
   bool single_side;
   std::vector<uint64_t> mini_buffer;
   std::vector<int64_t> mini_pos;
+  std::vector<std::pair<uint64_t, uint64_t> > skmers;
   RevComp rc;
   MinimizerSearcher(const uint k, const uint m, const uint max_seq_size, const bool single_side, const uint8_t encoding[4])
           : k(k), m(m), max_seq_size(max_seq_size), single_side(single_side)
           , mini_buffer((max_seq_size - m + 1) * 2, 0)
           , mini_pos(max_seq_size - k + 1, 0)
+          , skmers()
           , rc(encoding)
   {};
 
@@ -133,6 +141,22 @@ public:
    * @param nb_kmers The number of kmers inside the sequence
    **/
   void compute_minimizers(const uint nb_kmers);
+  /** Compute the boundaries of the superkmer on the fwd strand
+   * 
+   * @param nb_kmers Number of kmers in the sequence
+   **/
+  void compute_skmers(const uint nb_kmers);
+
+  /** Get a vector of all the skmers in a sequence.
+   * All the other methods of this class are called by this function.
+   * No precomputation needed.
+   * 
+   * @param seq Sequence to analyse
+   * @param seq_size Sequence size in nucleotides.
+   * 
+   * @return A vector containing object of type skmer.
+   **/
+  std::vector<skmer> get_skmers(const uint8_t * seq, const uint seq_size);
 };
 
 /** Compute all the candidates hash values of the sequence and return them into a vactor.

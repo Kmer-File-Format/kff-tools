@@ -65,6 +65,41 @@ const lest::test module[] = {
                     EXPECT( ms.mini_pos[idx] == awaited_pos[idx]);
                 }
             }
+
+            SECTION( "Skmer borders computation" )
+            {
+                cout << "\t\tSkmers delimitations" << endl;
+                                     //   ATT  ATT  TTG   
+                pair<uint64_t, uint64_t> awaited_skmers[] = {make_pair(0, k), make_pair(2, k+1)};
+
+                ms.compute_candidates(bin, seq.length());
+                ms.compute_minimizers(seq_nb_kmers);
+                ms.compute_skmers(seq_nb_kmers);
+
+                EXPECT( ms.skmers.size() == 2u );
+
+                for (uint idx=0 ; idx<ms.skmers.size() ; idx++) {
+                    EXPECT( ms.skmers[idx] == awaited_skmers[idx]);
+                }
+            }
+
+            SECTION( "Skmer get" )
+            {
+                cout << "\t\tSkmers list" << endl;
+
+                skmer awaited_skmers[] = {{0, k, 1, 0b001010}, {2, k+1, 2, 0b101011}};
+                vector<skmer> skmers = ms.get_skmers(bin, seq.length());
+
+                EXPECT( skmers.size() == 2u );
+
+                for (uint idx=0 ; idx<skmers.size() ; idx++) {
+                    EXPECT( skmers[idx].start_position == awaited_skmers[idx].start_position);
+                    EXPECT( skmers[idx].stop_position == awaited_skmers[idx].stop_position);
+                    EXPECT( skmers[idx].minimizer_position == awaited_skmers[idx].minimizer_position);
+                    EXPECT( skmers[idx].minimizer == awaited_skmers[idx].minimizer);
+                }
+            }
+
             cout << "\t\tOK" << endl;
         }
         cout << endl;
@@ -121,6 +156,24 @@ const lest::test module[] = {
                     EXPECT( ms.mini_pos[idx] == awaited_pos[idx]);
                 }
             }
+
+            SECTION( "Skmer get" )
+            {
+                cout << "\t\tSkmers list" << endl;
+
+                skmer awaited_skmers[] = {{0, k, -2, 0b000010}, {2, k+1, -3, 0b010000}};
+                vector<skmer> skmers = ms.get_skmers(bin, seq.length());
+
+                EXPECT( skmers.size() == 2u );
+
+                for (uint idx=0 ; idx<skmers.size() ; idx++) {
+                    EXPECT( skmers[idx].start_position == awaited_skmers[idx].start_position);
+                    EXPECT( skmers[idx].stop_position == awaited_skmers[idx].stop_position);
+                    EXPECT( skmers[idx].minimizer_position == awaited_skmers[idx].minimizer_position);
+                    EXPECT( skmers[idx].minimizer == awaited_skmers[idx].minimizer);
+                }
+            }
+
             cout << "\t\tOK" << endl;
         }
 

@@ -211,6 +211,45 @@ void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
 	}
 }
 
+void MinimizerSearcher::compute_skmers(const uint nb_kmers) {
+	this->skmers.clear();
+
+	uint last_mini_start = 0;
+	for (uint idx=1 ; idx<nb_kmers ; idx++) {
+		if (this->mini_pos[idx] != this->mini_pos[last_mini_start]) {
+			this->skmers.emplace_back(last_mini_start, idx - 1 + this->k - 1);
+			last_mini_start = idx;
+		}
+	}
+	this->skmers.emplace_back(last_mini_start, nb_kmers - 1 + this->k - 1);
+}
+
+
+vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_size) {
+	this->compute_candidates(seq, seq_size);
+	uint nb_kmers = seq_size - k + 1;
+	this->compute_minimizers(nb_kmers);
+	this->compute_skmers(nb_kmers);
+
+	vector<skmer> skmers(this->skmers.size(), {0,0,0,0});
+
+	for (uint sk_idx=0 ; sk_idx<this->skmers.size() ; sk_idx++) {
+		uint64_t start = this->skmers[sk_idx].first;
+		skmers[sk_idx].start_position = start;
+  	skmers[sk_idx].stop_position = this->skmers[sk_idx].second;
+  	int64_t mini_pos = this->mini_pos[start];
+  	skmers[sk_idx].minimizer_position = mini_pos;
+  	if (mini_pos >= 0)
+	  	skmers[sk_idx].minimizer = this->mini_buffer[mini_pos];
+	  else {
+	  	mini_pos = - mini_pos - 1;
+	  	skmers[sk_idx].minimizer = this->mini_buffer[this->mini_buffer.size() / 2 + mini_pos];
+	  }
+	}
+
+	return skmers;
+}
+
 
 vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r, const bool single_side) {
 	vector<pair<int, uint64_t> > minimizers;
