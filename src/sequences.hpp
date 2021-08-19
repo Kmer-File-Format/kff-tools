@@ -101,6 +101,40 @@ void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
 // ----- Minimizer search related functions -----
 
+
+class MinimizerSearcher {
+public:
+  uint k;
+  uint m;
+  uint max_seq_size;
+  bool single_side;
+  std::vector<uint64_t> mini_buffer;
+  std::vector<int64_t> mini_pos;
+  RevComp rc;
+  MinimizerSearcher(const uint k, const uint m, const uint max_seq_size, const bool single_side, const uint8_t encoding[4])
+          : k(k), m(m), max_seq_size(max_seq_size), single_side(single_side)
+          , mini_buffer((max_seq_size - m + 1) * 2, 0)
+          , mini_pos(max_seq_size - k + 1, 0)
+          , rc(encoding)
+  {};
+
+  /** Fill the first half of the mini_buffer with m-mers candidates for the fwd.
+   * Same with the second half and the candidates from the rev-comp.
+   * 
+   * @param seq Binarized sequence
+   * @param seq_size Sequence size
+   **/
+  void compute_candidates(const uint8_t * seq, const uint seq_size);
+  /** Fill the mini_pos vector with one sequence position per kmer.
+   * Positive/zero number mean on forward, negative on reverse (complement a 1 to remove ambiguity of +0 and -0).
+   * 1 means that the minimizer starts at position 1 on the forward sequence.
+   * -3 means that the mini starts at position 2 (comp a 1) on the sequence and have to be reverse complemented.
+   * 
+   * @param nb_kmers The number of kmers inside the sequence
+   **/
+  void compute_minimizers(const uint nb_kmers);
+};
+
 /** Compute all the candidates hash values of the sequence and return them into a vactor.
  * @param seq binarized sequence
  * @param size seq size in nucleotides
