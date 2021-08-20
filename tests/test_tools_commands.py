@@ -140,6 +140,7 @@ class TestBucketting(unittest.TestCase):
         kff_raw = f"kff_raw_test.kff"
         kff_bucket = f"kff_bucket_test.kff"
         kg.generate_sequences_file(txt, 100, 32, size_max=42)
+        # kg.generate_sequences_file(txt, 1, 32, size_max=32)
 
         # Prepare a file with sections
         print(f"  1/3 Generate the kff raw file.")
@@ -147,6 +148,7 @@ class TestBucketting(unittest.TestCase):
 
 
         print(f"  2/3 bucket the file")
+        print(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11")
         self.assertEqual(0, os.system(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11"))
         
 

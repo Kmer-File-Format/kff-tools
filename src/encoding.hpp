@@ -45,6 +45,10 @@ public:
 
 	void rev_comp(uint8_t * seq, const uint64_t seq_size) const;
 	void rev_data(uint8_t * data, const uint64_t data_size, const uint64_t nb_kmers) const;
+
+	static uint rev_position(const uint fwd_pos, const uint seq_size) {
+		return seq_size - fwd_pos - 1;
+	}
 };
 
 /** 
