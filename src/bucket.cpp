@@ -54,9 +54,6 @@ void Bucket::exec() {
 
 
 	unordered_map<uint64_t, Kff_file *> opened_files;
-	unordered_map<uint64_t, uint64_t> opened_file_counts;
-	queue<uint64_t> mini_fifo;
-	const uint opened_limit = 1000;
 
 	RevComp rc(stream.reader.get_encoding());
 	Stringifyer strif(stream.reader.get_encoding());
@@ -67,6 +64,11 @@ void Bucket::exec() {
 	uint8_t * seq;
 	uint8_t * data;
 	uint nb_kmers;
+
+
+	// Minimizers finding
+	Minimizer_Creator * mc = new Minimizer_Creator(0, 0, rc);
+
 	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
 		uint k = stream.reader.k;
 		uint data_size = stream.reader.data_size;
@@ -76,44 +78,22 @@ void Bucket::exec() {
 			delete[] subseq;
 			subseq = new uint8_t[(k * 2 + 3) / 4];
 			memset(subseq, 0, (k * 2 + 3) / 4);
+			delete mc;
+			mc = new Minimizer_Creator(k, m, rc);
 		}
 
-		// Minimizers finding
-		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc, singleside);
+		
 
-		// cout << "nb minimizers " << minimizers.size() << endl;
+		vector<pair<int, uint64_t> > minimizers = mc->compute_minizers(seq, nb_kmers + k - 1, singleside);
 
 		// Skmer deduction
 		// vector<pair<uint, uint> > skmers;
-		vector<pair<int, int> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
+		vector<pair<int, int> > skmers = mc->compute_skmers(nb_kmers + k - 1, minimizers);
 		for (uint i=0 ; i<minimizers.size() ; i++) {
 			pair<int, int> & skmer_boundaries = skmers[i];
 			pair<int, uint64_t> & minimizer = minimizers[i];
 			
 			uint64_t mini_val = minimizer.second;
-
-			// Limit the number of simultaneously opened bucket files
-			while (opened_file_counts.size() == opened_limit) {
-				uint64_t front_mini = mini_fifo.front();
-				mini_fifo.pop();
-
-				if (opened_file_counts[front_mini] == 1) {
-					opened_file_counts.erase(front_mini);
-					opened_files[front_mini]->tmp_close();
-				} else {
-					opened_file_counts[front_mini] -= 1;
-				}
-			}
-			
-			// Save the minimizer usage
-			if (mini_fifo.size() == 0 or mini_fifo.back() != mini_val) {
-				mini_fifo.push(mini_val);
-				// Register file usage
-				if (opened_file_counts.find(mini_val) == opened_file_counts.end()) {
-					opened_file_counts[mini_val] = 0;
-				}
-				opened_file_counts[mini_val] += 1;
-			}
 
 			// New bucket
 			if (buckets.find(mini_val) == buckets.end()) {
@@ -183,7 +163,7 @@ void Bucket::exec() {
 		sm->close();
 		delete sm;
 
-		outfile->close();
+		outfile->close(false);
 		delete outfile;
 	}
 
@@ -197,9 +177,9 @@ void Bucket::exec() {
 
 	// Merge all the buckets in one file
 	Merge mg;
-	mg.merge(bucket_names, output_filename);
+	// mg.merge(bucket_names, output_filename);
 
-	for (string & filename : bucket_names) {
-		remove(filename.c_str());
-	}
+	// for (string & filename : bucket_names) {
+	// 	remove(filename.c_str());
+	// }
 }

@@ -110,8 +110,38 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 }
 
 
-vector<pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r) {
-	vector<pair<uint64_t, uint64_t> > candidates;//(size - m + 1);
+Minimizer_Creator::Minimizer_Creator(const uint64_t k, const uint64_t m, RevComp & rc)
+										: k(k)
+										, m(m)
+										, r(rc)
+{
+	this->candidate_vector_size = 1;
+	this->candidates_fwd = new uint64_t[1];
+  this->candidates_rev = new uint64_t[1];
+};
+
+
+Minimizer_Creator::~Minimizer_Creator() {
+	delete[] this->candidates_fwd;
+	delete[] this->candidates_rev;
+}
+
+
+void Minimizer_Creator::shift4_compute_mini_candidates(const uint8_t * seq, const uint size) {
+	uint64_t tmp_mini_candidates[128];
+
+	exit(0);
+}
+
+void Minimizer_Creator::naive_compute_mini_candidates(const uint8_t * seq, const uint size) {
+	if (size > this->candidate_vector_size) {
+		delete[] this->candidates_fwd;
+		delete[] this->candidates_rev;
+
+		this->candidate_vector_size = size;
+		this->candidates_fwd = new uint64_t[size];
+		this->candidates_rev = new uint64_t[size];
+	}
 
 	uint offset = (4 - (size % 4)) % 4;
 	uint64_t current_value = 0;
@@ -138,55 +168,50 @@ vector<pair<uint64_t, uint64_t> > compute_mini_candidates(const uint8_t * seq, c
 		uint nucl = (seq[byte_idx] >> (nucl_shift * 2)) & 0b11;
 		current_value = ((current_value << 2) + nucl) & m_mask;
 		current_rev_value = (current_rev_value >> 2) + (r.reverse[nucl] << (2 * (m - 1)));
-		candidates.emplace_back(current_value, current_rev_value);
+		this->candidates_fwd[i - m + 1] = current_value;
+		this->candidates_rev[i - m + 1] = current_rev_value;
 	}
 
-	return candidates;
+	this->shift4_compute_mini_candidates(seq, size);
 }
 
-vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r, const bool single_side) {
+vector<pair<int, uint64_t> > Minimizer_Creator::compute_minizers(const uint8_t * seq, const uint size, const bool single_side) {
 	vector<pair<int, uint64_t> > minimizers;
 	// Get all the candidates
-	vector<pair<uint64_t, uint64_t> > candidates = compute_mini_candidates(seq, size, k, m, r);
+	this->naive_compute_mini_candidates(seq, size);
 
 	int prev_pos = k + 2;
 	// Compute the minimizer of each sliding window of size k - m
 	for (uint i=0 ; i<=size-k ; i++) {
 		auto smallest_fwd = min_element(
-			candidates.begin() + i,
-			candidates.begin()+i+(k-m)+1,
-			[](pair<uint64_t, uint64_t> & a, pair<uint64_t, uint64_t> & b) {
-				return (a.first < b.first);
-       }
+			this->candidates_fwd + i,
+			this->candidates_fwd + i + (k - m) + 1
 		);
 		auto smallest_rev = smallest_fwd;
 		if (not single_side)
 			smallest_rev = min_element(
-				candidates.begin()+i,
-				candidates.begin()+i+(k-m)+1,
-				[](pair<uint64_t, uint64_t> & a, pair<uint64_t, uint64_t> & b) {
-					return (a.second < b.second);
-	       }
+				this->candidates_rev + i,
+				this->candidates_rev + i + (k - m) + 1
 			);
 
 		int mini_pos;
 		uint64_t minimizer;
-		if (single_side or (*smallest_fwd).first < (*smallest_rev).second) {
-			mini_pos = smallest_fwd - candidates.begin();
-			minimizer = (*smallest_fwd).first;
+		if (single_side or *smallest_fwd < *smallest_rev) {
+			mini_pos = smallest_fwd - this->candidates_fwd;
+			minimizer = *smallest_fwd;
 		} 
-		else if ((*smallest_fwd).first == (*smallest_rev).second) {
+		else if (*smallest_fwd == *smallest_rev) {
 			if (smallest_fwd - smallest_rev <= 0) {
-				mini_pos = smallest_fwd - candidates.begin();
-				minimizer = (*smallest_fwd).first;
+				mini_pos = smallest_fwd - this->candidates_fwd;
+				minimizer = *smallest_fwd;
 			} else {
-				mini_pos = - (candidates.end() - smallest_rev);
-				minimizer = (*smallest_rev).second;
+				mini_pos = - (this->candidates_rev - smallest_rev);
+				minimizer = *smallest_rev;
 			}
 		}
 		else {
-			mini_pos = - (candidates.end() - smallest_rev);
-			minimizer = (*smallest_rev).second;
+			mini_pos = - (this->candidates_rev - smallest_rev);
+			minimizer = *smallest_rev;
 		}
 
 		// New minimizer ?
@@ -199,7 +224,7 @@ vector<pair<int, uint64_t> > compute_minizers(const uint8_t * seq, const uint si
 	return minimizers;
 }
 
-std::vector<pair<int, int> > compute_skmers(const uint seq_size, const uint k, const uint m, std::vector<std::pair<int, uint64_t> > & minimizers) {
+std::vector<pair<int, int> > Minimizer_Creator::compute_skmers(const uint seq_size, std::vector<std::pair<int, uint64_t> > & minimizers) {
 	// Superkmer list
 	vector<pair<int, int> > skmers;
 
@@ -258,51 +283,10 @@ std::vector<pair<int, int> > compute_skmers(const uint seq_size, const uint k, c
 	return skmers;
 }
 
-std::vector<pair<int, int> > compute_skmers(const uint8_t * seq, const uint size, const uint k, const uint m, const RevComp & r, const bool single_side) {
-	std::vector<std::pair<int, uint64_t> > minimizers = compute_minizers(seq, size, k, m, r, single_side);
+std::vector<pair<int, int> > Minimizer_Creator::compute_skmers(const uint8_t * seq, const uint size,  const bool single_side) {
+	std::vector<std::pair<int, uint64_t> > minimizers = compute_minizers(seq, size, single_side);
 
-	return compute_skmers(size, k, m, minimizers);
-}
-
-
-void search_mini(uint8_t * seq, const uint size, const uint m, uint & minimizer, uint & minimizer_position) {
-	// Datastructure prepare
-	uint k_bytes = (size + 3) / 4;
-	uint m_bytes = (m + 3) / 4;
-	uint8_t * bin_copy = new uint8_t[k_bytes];
-	// Mask to cover all the minimizer bytes except the highest one
-	uint low_mask = (1 << (8 * (m_bytes - 1))) - 1;
-	// Mask to cover usefull bits of the higher byte of the minimizer
-	uint high_mask = (1 << (2 * (((m-1) % 4) + 1))) - 1;
-
-
-	// Minimizer prepare (Do not use memcpy for endianess problems !!)
-	minimizer = 0;
-	for (uint i=0 ; i<m_bytes-1 ; i++) {
-		minimizer += ((uint)seq[k_bytes - 1 - i]) << (8 * i);
-	}
-	minimizer += ((uint)seq[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-	uint mini_candidate = minimizer;
-
-	// Forward search
-	memcpy(bin_copy, seq, k_bytes);
-	for (int m_idx=size-m ; m_idx>=0 ; m_idx--) {
-		// Update minimizer
-		if (mini_candidate <= minimizer) {
-			minimizer = mini_candidate;
-			minimizer_position = m_idx;
-		}
-
-		// Shift everything
-		rightshift8(bin_copy, k_bytes, 2);
-		mini_candidate >>= 2;
-		// remove first byte
-		mini_candidate &= low_mask;
-		// Update first byte
-		mini_candidate += ((uint)bin_copy[k_bytes - 1 - (m_bytes - 1)] & high_mask) << (8 * (m_bytes - 1));
-	}
-
-	delete[] bin_copy;
+	return compute_skmers(size, minimizers);
 }
 
 
