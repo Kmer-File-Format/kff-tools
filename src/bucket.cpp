@@ -56,16 +56,9 @@ void Bucket::exec() {
 
 
 	unordered_map<uint64_t, Kff_file *> opened_files;
-	unordered_map<uint64_t, uint64_t> opened_file_counts;
-	queue<uint64_t> mini_fifo;
-	struct rlimit nb_file_descriptors;
-	getrlimit(RLIMIT_NOFILE, &nb_file_descriptors);
-
-	const uint opened_limit = nb_file_descriptors.rlim_cur - 50;
 
 	RevComp rc(stream.reader.get_encoding());
 	uint max_seq_size = stream.reader.k - 1 +  stream.reader.get_var("max");
-	MinimizerSearcher ms(stream.reader.k, this->m, max_seq_size, this->singleside, stream.reader.get_encoding());
 
 	uint prev_k = 0;
 	uint8_t * subseq = nullptr;
@@ -76,6 +69,11 @@ void Bucket::exec() {
 	uint8_t * rev_comp = new uint8_t[(max_seq_size + 3) / 4];
 	
 	uint nb_kmers;
+
+
+	// Minimizers finding
+	Minimizer_Creator * mc = new Minimizer_Creator(0, 0, rc);
+
 	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
 		uint k = stream.reader.k;
 		uint data_size = stream.reader.data_size;
@@ -85,51 +83,25 @@ void Bucket::exec() {
 			delete[] subseq;
 			subseq = new uint8_t[(k * 2 + 3) / 4];
 			memset(subseq, 0, (k * 2 + 3) / 4);
+			delete mc;
+			mc = new Minimizer_Creator(k, m, rc);
 		}
+		
 
-		// Reverse complement
-		if (not this->singleside) {
-			memcpy(rev_comp, seq, (seq_size + 3) / 4);
-			rc.rev_comp(rev_comp, seq_size);
-		}
-
-		// TODO : What to do if k of max change ?
-
-		// Get superkmers
-		const vector<skmer> & skmers = ms.get_skmers(seq, seq_size);
-		// cout << "NEW SEQUENCE" << endl;
+		vector<pair<int, uint64_t> > minimizers = mc->compute_minimizers(seq, nb_kmers + k - 1, singleside);
 
 		// Skmer deduction
-		for (const skmer & skmer : skmers) {
-			uint64_t mini_val = skmer.minimizer;
-
-			// Limit the number of simultaneously opened bucket files
-			while (opened_file_counts.size() == opened_limit) {
-				uint64_t front_mini = mini_fifo.front();
-				mini_fifo.pop();
-
-				if (opened_file_counts[front_mini] == 1) {
-					opened_file_counts.erase(front_mini);
-					opened_files[front_mini]->tmp_close();
-				} else {
-					opened_file_counts[front_mini] -= 1;
-				}
-			}
+		// vector<pair<uint, uint> > skmers;
+		vector<pair<int, int> > skmers = mc->compute_skmers(nb_kmers + k - 1, minimizers);
+		for (uint i=0 ; i<minimizers.size() ; i++) {
+			pair<int, int> & skmer_boundaries = skmers[i];
+			pair<int, uint64_t> & minimizer = minimizers[i];
 			
-			// Save the minimizer usage
-			if (mini_fifo.size() == 0 or mini_fifo.back() != mini_val) {
-				mini_fifo.push(mini_val);
-				// Register file usage
-				if (opened_file_counts.find(mini_val) == opened_file_counts.end()) {
-					opened_file_counts[mini_val] = 0;
-				}
-				opened_file_counts[mini_val] += 1;
-			}
+			uint64_t mini_val = minimizer.second;
 
 			// New bucket
 			if (buckets.find(mini_val) == buckets.end()) {
 				// Create the file
-				// cout << output_filename + "_" + to_string(mini_val) + ".kff" << endl;
 				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(mini_val) + ".kff", "w");
 				opened_files[mini_val] = outfile;
 				outfile->write_encoding(stream.reader.get_encoding());
@@ -147,39 +119,43 @@ void Bucket::exec() {
 			  Section_Minimizer * sm = new Section_Minimizer(outfile);
 			  buckets[mini_val] = sm;
 			  // Write the minimizer
-			  if (skmer.minimizer_position < 0) {
-			  	int abs_mini_pos = -skmer.minimizer_position - 1;
-			  	uint start = RevComp::rev_position(abs_mini_pos + m - 1, seq_size);
-			  	uint stop = RevComp::rev_position(abs_mini_pos, seq_size);
-			  	subsequence(rev_comp, seq_size, subseq, start, stop);
+			  if (minimizer.first < 0) {
+			  	int mini_pos = seq_size + minimizer.first - m + 1;
+			  	subsequence(seq, seq_size, subseq, mini_pos, mini_pos + m - 1);
+			  	rc.rev_comp(subseq, m);
 			  } else {
-			  	subsequence(seq, seq_size, subseq, skmer.minimizer_position, skmer.minimizer_position + m - 1);
+			  	subsequence(seq, seq_size, subseq, minimizer.first, minimizer.first + m - 1);
 			  }
 			  sm->write_minimizer(subseq);
 			}
 
 			uint seq_size = k - 1 + nb_kmers;
+			uint subseq_size;
 			uint mini_pos = k + 2;
+			uint first_kmer = 0;
 			// Get the fwd subsequence
-			if (skmer.minimizer_position >= 0) {
-				subsequence(seq, seq_size, subseq, skmer.start_position, skmer.stop_position);
-				mini_pos = skmer.minimizer_position - skmer.start_position;
+			if (skmer_boundaries.first >= 0) {
+				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
+				// cout << seq_size << " " << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
+				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
+				mini_pos = minimizer.first - skmer_boundaries.first;
+				first_kmer = skmer_boundaries.first;
 			}
 			// Get the rev subsequence
 			else {
-				uint start = RevComp::rev_position(skmer.stop_position, seq_size);
-			  uint stop = RevComp::rev_position(skmer.start_position, seq_size);
-				subsequence(rev_comp, seq_size, subseq, start, stop);
-				// cout << "reverse " << skmer.minimizer_position << " " << start << " " << stop << endl;
-				mini_pos = RevComp::rev_position(-skmer.minimizer_position - 1 + m - 1, seq_size) - start;
-				// cout << mini_pos << endl;
-				uint sub_nb_kmer = skmer.stop_position - skmer.start_position + 1 - k;
-				rc.rev_data(data + skmer.start_position * data_size, data_size, sub_nb_kmer);
+				subseq_size = skmer_boundaries.first - skmer_boundaries.second + 1;
+				subsequence(seq, seq_size, subseq, seq_size + skmer_boundaries.second, seq_size + skmer_boundaries.first);
+				rc.rev_comp(subseq, subseq_size);
+				mini_pos = - (minimizer.first - skmer_boundaries.first);
+				// Reverse data
+				first_kmer = seq_size + skmer_boundaries.second;
+				rc.rev_data(data + first_kmer * data_size, data_size, subseq_size - k + 1);
 			}
 
+			// Save the skmer and its related data
 			buckets[mini_val]->write_compacted_sequence(
-					subseq, skmer.stop_position - skmer.start_position + 1, mini_pos,
-					data + skmer.start_position * data_size
+					subseq, subseq_size, mini_pos,
+					data + first_kmer * data_size
 			);
 		}
 	}
@@ -194,24 +170,24 @@ void Bucket::exec() {
 
 	for (auto& it: opened_files) {
 		Kff_file * outfile = it.second;
-		outfile->close();
-		delete outfile;
+		outfile->close(false);
 	}
 
 	delete[] subseq;
 	delete[] rev_comp;
 
 	// Prepare bucket merging
-	vector<string> bucket_names;
-	for (const pair<uint64_t, Section_Minimizer *> & bucket : buckets)
-		bucket_names.push_back(output_filename + "_" + to_string(bucket.first) + ".kff");
-	sort(bucket_names.begin(), bucket_names.end());
+	vector<Kff_file *> files;
+	files.reserve(opened_files.size());
+	for(auto & kv : opened_files) {
+		kv.second->open("r");
+    files.push_back(kv.second);
+	}
 
 	// Merge all the buckets in one file
 	Merge mg;
-	mg.merge(bucket_names, output_filename);
+	mg.merge(files, output_filename);
 
-	for (string & filename : bucket_names) {
-		remove(filename.c_str());
-	}
+	for (Kff_file * file : files)
+		delete file;
 }
