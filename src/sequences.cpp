@@ -130,6 +130,41 @@ Minimizer_Creator::~Minimizer_Creator() {
 void Minimizer_Creator::shift4_compute_mini_candidates(const uint8_t * seq, const uint size) {
 	uint64_t tmp_mini_candidates[128];
 
+	uint8_t encoding[] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
+	cout << strif.translate(seq, size) << " " << endl;
+
+	uint8_t * shift_buffer;
+	uint64_t seq_bytes = (size + 3) / 4;
+	uint64_t left_missing_bytes = 8 - (m + 3) / 4;
+	uint64_t buffer_size = seq_bytes + left_missing_bytes;
+	cout << "buffer size " << buffer_size << endl;
+	shift_buffer = new uint8_t[buffer_size];
+	memset(shift_buffer, 0, buffer_size);
+
+	// Copy the sequence into the buffer
+	memcpy(shift_buffer + left_missing_bytes, seq, seq_bytes);
+
+	uint64_t nb_mini_candidates = size - this->m + 1;
+	uint64_t mini_mask = (1 << (2 * this->m)) - 1;
+	cout << "mask " << mini_mask << endl;
+	// Read initialy aligned candidates
+	for (int64_t m_idx= nb_mini_candidates-1 ; m_idx>=0 ; m_idx -= 4) {
+		cout << "m_idx " << m_idx << " nb_mini_candidates " << nb_mini_candidates << endl;
+		uint64_t right_m_idx = nb_mini_candidates - 1 - m_idx;
+		cout << "right idx " << right_m_idx << endl;
+		cout << "position " << buffer_size - 8 - right_m_idx/4 << endl;
+		uint8_t * buffer_position = shift_buffer + buffer_size - 8 - right_m_idx/4;
+		cout << (uint64_t)*(buffer_position+7) << endl;
+		uint64_t candidate = (*((uint64_t *)buffer_position)) & mini_mask;
+		cout << m_idx << ": " << candidate << " " << this->candidates_fwd[m_idx] << endl;
+	}
+
+	for (uint shift=2 ; shift<8 ; shift += 2) {
+		// Shift the array
+		// Read aligned candidates
+	}
+
 	exit(0);
 }
 
@@ -172,7 +207,7 @@ void Minimizer_Creator::naive_compute_mini_candidates(const uint8_t * seq, const
 		this->candidates_rev[i - m + 1] = current_rev_value;
 	}
 
-	this->shift4_compute_mini_candidates(seq, size);
+	//this->shift4_compute_mini_candidates(seq, size);
 }
 
 vector<pair<int, uint64_t> > Minimizer_Creator::compute_minizers(const uint8_t * seq, const uint size, const bool single_side) {

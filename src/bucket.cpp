@@ -164,22 +164,22 @@ void Bucket::exec() {
 		delete sm;
 
 		outfile->close(false);
-		delete outfile;
 	}
 
 	delete[] subseq;
 
 	// Prepare bucket merging
-	vector<string> bucket_names;
-	for (const pair<uint64_t, Section_Minimizer *> & bucket : buckets)
-		bucket_names.push_back(output_filename + "_" + to_string(bucket.first) + ".kff");
-	sort(bucket_names.begin(), bucket_names.end());
+	vector<Kff_file *> files;
+	files.reserve(opened_files.size());
+	for(auto & kv : opened_files) {
+		kv.second->open("r");
+    files.push_back(kv.second);
+	}
 
 	// Merge all the buckets in one file
 	Merge mg;
-	// mg.merge(bucket_names, output_filename);
+	mg.merge(files, output_filename);
 
-	// for (string & filename : bucket_names) {
-	// 	remove(filename.c_str());
-	// }
+	for (Kff_file * file : files)
+		delete file;
 }
