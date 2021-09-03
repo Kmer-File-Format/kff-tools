@@ -9,12 +9,10 @@
 #include "kff_io.hpp"
 
 /* TO READ BEFORE ANY USAGE !!
-
 This file provide function for dna sequences represented as a uint8_t array.
 The arrays are big endian represented.
 The begining of the prefix is present at the byte 0.
 Byte 0 also have useless bits at the begining if the sequence size is not 4 divisable.
-
 */
 
 #ifndef SEQ_H
@@ -72,7 +70,7 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 
 
 /** Translate a sequence to an 64 bits integer. If the sequence length is more than 32, then only
-	* the last 32 nucleotides are used for the conversion.
+  * the last 32 nucleotides are used for the conversion.
   *
   * @param seq A nucleotide sequence to translate
   * @param seq_size Size in nucleotides of the sequence
@@ -101,43 +99,65 @@ void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
 // ----- Minimizer search related functions -----
 
-class Minimizer_Creator {
-private:
-  uint64_t candidate_vector_size;
+typedef struct {
+  uint64_t start_position;
+  uint64_t stop_position;
+  int64_t minimizer_position;
+  uint64_t minimizer;
+} skmer;
+
+class MinimizerSearcher {
 public:
-  uint64_t k;
-  uint64_t m;
-  RevComp r;
+  uint k;
+  uint m;
+  uint max_seq_size;
+  bool single_side;
+  std::vector<uint64_t> mini_buffer;
+  std::vector<int64_t> mini_pos;
+  std::vector<std::pair<uint64_t, uint64_t> > skmers;
+  RevComp rc;
+  MinimizerSearcher(const uint k, const uint m, const uint8_t encoding[4], const uint max_seq_size = 0, const bool single_side = false)
+          : k(k), m(m), max_seq_size(max_seq_size), single_side(single_side)
+          , mini_buffer(max_seq_size < m - 1 ? 0 : (max_seq_size - m + 1) * 2, 0)
+          , mini_pos(max_seq_size < k - 1 ? 0 : max_seq_size - k + 1, 0)
+          , skmers()
+          , rc(encoding)
+  {};
 
-  uint64_t * candidates_fwd;
-  uint64_t * candidates_rev;
+  /** Fill the first half of the mini_buffer with m-mers candidates for the fwd.
+   * Same with the second half and the candidates from the rev-comp.
+   * 
+   * @param seq Binarized sequence
+   * @param seq_size Sequence size
+   **/
+  void compute_candidates(const uint8_t * seq, const uint seq_size);
+  /** Fill the mini_pos vector with one sequence position per kmer.
+   * Positive/zero number mean on forward, negative on reverse (complement a 1 to remove ambiguity of +0 and -0).
+   * 1 means that the minimizer starts at position 1 on the forward sequence.
+   * -3 means that the mini starts at position 2 (comp a 1) on the sequence and have to be reverse complemented.
+   * 
+   * @param nb_kmers The number of kmers inside the sequence
+   **/
+  void compute_minimizers(const uint nb_kmers);
+  /** Compute the boundaries of the superkmer on the fwd strand
+   * 
+   * @param nb_kmers Number of kmers in the sequence
+   **/
+  void compute_skmers(const uint nb_kmers);
 
-  Minimizer_Creator(const uint64_t k, const uint64_t m, RevComp & rc);
-  ~Minimizer_Creator();
-
-
-  void shift4_compute_mini_candidates(const uint8_t * seq, const uint size);
-  /** Compute all the candidates hash values of the sequence and return them into a vactor.
-   * @param seq binarized sequence
-   * @param size seq size in nucleotides
-   * @param k kmer size
-   * @param m minimizer size max = 31
-   * @return vector containing all the hashed m-size windows
+  /** Get a vector of all the skmers in a sequence.
+   * All the other methods of this class are called by this function.
+   * No precomputation needed.
+   * 
+   * @param seq Sequence to analyse
+   * @param seq_size Sequence size in nucleotides.
+   * 
+   * @return A vector containing object of type skmer.
    **/
-  void naive_compute_mini_candidates(const uint8_t * seq, const uint size);
-  /** Compute all the minimizers of a sequence.
-   * @return All pair minimizer/position (negative positions are shifted by 1 to differentiate
-   * +0 and -0)
-   **/
-  std::vector<std::pair<int, uint64_t> > compute_minimizers(const uint8_t * seq, const uint size, const bool single_side);
-  /** Compute all the superkmers
-   * @return All the begin/end pair positions
-   **/
-  std::vector<std::pair<int, int> > compute_skmers(const uint seq_size, std::vector<std::pair<int, uint64_t> > & minimizers);
-  /** Compute all the superkmers
-   **/
-  std::vector<std::pair<int, int> > compute_skmers(const uint8_t * seq, const uint size, const bool single_side);
+  std::vector<skmer> get_skmers(const uint8_t * seq, const uint seq_size);
 };
+
+
 
 
 // ----- Usefull binary functions -----

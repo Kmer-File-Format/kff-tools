@@ -23,7 +23,7 @@ const lest::test module[] = {
             uint max_nb_mmers = max_seq_size - m + 1;
             uint max_nb_kmers = max_seq_size - k + 1;
 
-            MinimizerSearcher ms(k, m, max_seq_size, single_side, encoding);
+            MinimizerSearcher ms(k, m, encoding, max_seq_size, single_side);
             Binarizer bz(encoding);
             
             string seq("CATTGCA");
@@ -114,7 +114,7 @@ const lest::test module[] = {
             uint max_nb_mmers = max_seq_size - m + 1;
             uint max_nb_kmers = max_seq_size - k + 1;
 
-            MinimizerSearcher ms(k, m, max_seq_size, single_side, encoding);
+            MinimizerSearcher ms(k, m, encoding, max_seq_size, single_side);
             Binarizer bz(encoding);
             
             string seq("CATTGCA");
