@@ -4,6 +4,7 @@
 #include <utility>
 #include <unordered_map>
 #include <algorithm>
+#include <queue>
 
 #include "bucket.hpp"
 #include "sequences.hpp"
@@ -46,10 +47,15 @@ void Bucket::cli_prepare(CLI::App * app) {
 	subapp->add_flag("-s, --single-side", singleside, "Look for the minimizer only on the forward strand.");
 }
 
+
 void Bucket::exec() {
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
 	unordered_map<uint64_t, Section_Minimizer *> buckets;
+
+
+	unordered_map<uint64_t, Kff_file *> opened_files;
+
 	RevComp rc(stream.reader.get_encoding());
 	Stringifyer strif(stream.reader.get_encoding());
 
@@ -59,35 +65,33 @@ void Bucket::exec() {
 	uint8_t * seq;
 	uint8_t * data;
 	uint nb_kmers;
+
+
+	// Minimizers finding
+	// Minimizer_Creator * mc = new Minimizer_Creator(0, 0, rc);
+	MinimizerSearcher * ms = new MinimizerSearcher(0, m, stream.reader.get_encoding());
+
 	while((nb_kmers = stream.next_sequence(seq, data)) != 0) {
-		uint k = stream.reader.get_var("k");
-		uint data_size = stream.reader.get_var("data_size");
+		uint k = stream.reader.k;
+		uint data_size = stream.reader.data_size;
 		uint seq_size = k - 1 + nb_kmers;
 		if (k != prev_k) {
 			prev_k = k;
 			delete[] subseq;
 			subseq = new uint8_t[(k * 2 + 3) / 4];
 			memset(subseq, 0, (k * 2 + 3) / 4);
+			delete ms;
+			ms = new MinimizerSearcher(k, m, stream.reader.get_encoding());
 		}
 
-		// Minimizers finding
-		vector<pair<int, uint64_t> > minimizers = compute_minizers(seq, nb_kmers + k - 1, k, m, rc, singleside);
-
-		// cout << "nb minimizers " << minimizers.size() << endl;
-
 		// Skmer deduction
-		// vector<pair<uint, uint> > skmers;
-		vector<pair<int, int> > skmers = compute_skmers(nb_kmers + k - 1, k, m, minimizers);
-		for (uint i=0 ; i<minimizers.size() ; i++) {
-			pair<int, int> & skmer_boundaries = skmers[i];
-			pair<int, uint64_t> & minimizer = minimizers[i];
-			// cout << "sk " << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
-
-			uint64_t mini_val = minimizer.second;
+		vector<skmer> skmers = ms->get_skmers(seq, seq_size);
+		for (skmer sk : skmers) {
 			// New bucket
-			if (buckets.find(mini_val) == buckets.end()) {
+			if (buckets.find(sk.minimizer) == buckets.end()) {
 				// Create the file
-				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(mini_val) + ".kff", "w");
+				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(sk.minimizer) + ".kff", "w");
+				opened_files[sk.minimizer] = outfile;
 				outfile->write_encoding(stream.reader.get_encoding());
 				outfile->set_uniqueness(stream.reader.file->uniqueness);
 				outfile->set_canonicity(stream.reader.file->canonicity);
@@ -101,43 +105,43 @@ void Bucket::exec() {
 			  sgv.close();
 			  // Create the bucket by itself
 			  Section_Minimizer * sm = new Section_Minimizer(outfile);
-			  buckets[mini_val] = sm;
+			  buckets[sk.minimizer] = sm;
 			  // Write the minimizer
-			  if (minimizer.first < 0) {
-			  	int mini_pos = seq_size + minimizer.first - m + 1;
+			  if (sk.minimizer_position < 0) {
+			  	int mini_pos = - sk.minimizer_position - 1;
 			  	subsequence(seq, seq_size, subseq, mini_pos, mini_pos + m - 1);
 			  	rc.rev_comp(subseq, m);
 			  } else {
-			  	subsequence(seq, seq_size, subseq, minimizer.first, minimizer.first + m - 1);
+			  	subsequence(seq, seq_size, subseq, sk.minimizer_position, sk.minimizer_position + m - 1);
 			  }
 			  sm->write_minimizer(subseq);
 			}
 
 			uint seq_size = k - 1 + nb_kmers;
-			uint subseq_size;
 			uint mini_pos = k + 2;
-			// Get the fwd subsequence
-			if (skmer_boundaries.first >= 0) {
-				subseq_size = skmer_boundaries.second - skmer_boundaries.first + 1;
-				// cout << seq_size << " " << skmer_boundaries.first << " " << skmer_boundaries.second << endl;
-				subsequence(seq, seq_size, subseq, skmer_boundaries.first, skmer_boundaries.second);
-				mini_pos = minimizer.first - skmer_boundaries.first;
+			// Get the subsequence
+			subsequence(seq, seq_size, subseq, sk.start_position, sk.stop_position);
+			uint subseq_size = sk.stop_position - sk.start_position + 1;
+			if (sk.minimizer_position >= 0) {
+				mini_pos = sk.minimizer_position - sk.start_position;
 			}
 			// Get the rev subsequence
 			else {
-				subseq_size = skmer_boundaries.first - skmer_boundaries.second + 1;
-				subsequence(seq, seq_size, subseq, seq_size + skmer_boundaries.second, seq_size + skmer_boundaries.first);
 				rc.rev_comp(subseq, subseq_size);
-				mini_pos = - (minimizer.first - skmer_boundaries.first);
+				mini_pos = sk.stop_position + sk.minimizer_position - m + 2;
+				// Reverse data
+				rc.rev_data(data + sk.start_position * data_size, data_size, subseq_size - k + 1);
 			}
 
 			// Save the skmer and its related data
-			buckets[mini_val]->write_compacted_sequence(
+			buckets[sk.minimizer]->write_compacted_sequence(
 					subseq, subseq_size, mini_pos,
-					data + skmer_boundaries.first * data_size
+					data + sk.start_position * data_size
 			);
 		}
 	}
+
+	delete ms;
 
 	// Close all the buckets
 	for (auto& it: buckets) {
@@ -146,23 +150,24 @@ void Bucket::exec() {
 		sm->close();
 		delete sm;
 
-		outfile->close();
-		delete outfile;
+		outfile->close(false);
 	}
 
 	delete[] subseq;
 
 	// Prepare bucket merging
-	vector<string> bucket_names;
-	for (const pair<uint64_t, Section_Minimizer *> & bucket : buckets)
-		bucket_names.push_back(output_filename + "_" + to_string(bucket.first) + ".kff");
-	sort(bucket_names.begin(), bucket_names.end());
+	vector<Kff_file *> files;
+	files.reserve(opened_files.size());
+	for(auto & kv : opened_files) {
+		// cout << kv.second->filename << endl;
+		kv.second->open("r");
+    files.push_back(kv.second);
+	}
 
 	// Merge all the buckets in one file
 	Merge mg;
-	mg.merge(bucket_names, output_filename);
+	mg.merge(files, output_filename);
 
-	for (string & filename : bucket_names) {
-		remove(filename.c_str());
-	}
+	for (Kff_file * file : files)
+		delete file;
 }

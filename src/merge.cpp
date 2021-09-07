@@ -13,26 +13,39 @@ Merge::Merge() {
 
 void Merge::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("merge", "Merge a list of kff files into one. All the files must have the same encoding.");
-	CLI::Option * input_option = subapp->add_option("-i, --inputs", input_filenames, "A list of input file names. The order of the file list will be preserved in the output file.");
-	input_option->required();
+
+	CLI::Option_group * group = subapp->add_option_group("input", "different ways to pass inputs to the merge command");
+	CLI::Option * input_option = group->add_option("-i, --inputs", input_filenames, "A list of input file names. The order of the file list will be preserved in the output file.");
 	input_option->expected(2, -1);
+	group->add_option("-f, --input-filelist", input_filelist, "A file containing the list of input file names. The order of the file list will be preserved in the output file.");
+	group->required();
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff file where all the input will be merged");
 	out_option->required();
 }
 
-void Merge::merge(vector<string> inputs, string output) {
+void Merge::merge(const vector<string> inputs, string output) {
+	vector<Kff_file *> files;
+	files.reserve(inputs.size());
+	for(auto & input : inputs) {
+    files.push_back(new Kff_file(input, "r"));  
+	}
+
+	this->merge(files, output);
+
+	files.clear();
+}
+
+void Merge::merge(const vector<Kff_file *> & files, string output) {
 	// Useful variables
 	const long buffer_size = 1048576; // 1 MB
 	uint8_t buffer[1048576];
 	uint8_t global_encoding[4];
 
 	// Read the encoding of the first file and push it as outcoding
-	Kff_file infile(inputs[0], "r");
 	for (uint i=0 ; i<4 ; i++)
-		global_encoding[i] = infile.encoding[i];
-	infile.close();
-
+		global_encoding[i] = files[0]->encoding[i];
+	
 	// Write header of the output
 	Kff_file outfile(output, "w");
 	outfile.set_indexation(false);
@@ -52,14 +65,11 @@ void Merge::merge(vector<string> inputs, string output) {
 	map<string, uint64_t> footer_values;
 
 	// Append each file one by one
-	for (string in_filename : inputs) {
-		// Open the file
-		Kff_file infile(in_filename, "r");
-
+	for (Kff_file * infile : files) {
 		// Encoding verification
 		for (uint i=0 ; i<4 ; i++) {
-			if (infile.encoding[i] != global_encoding[i]) {
-				cerr << "Wrong encoding for file " << in_filename << endl;
+			if (infile->encoding[i] != global_encoding[i]) {
+				cerr << "Wrong encoding for file " << infile->filename << endl;
 				cerr << "Its nucleotide encoding is different from previous kff files." << endl;
 				cerr << "Please first use 'kff-tools translate' to have the same encoding" << endl;
 				exit(1);
@@ -68,8 +78,8 @@ void Merge::merge(vector<string> inputs, string output) {
 
 		// NB: Automatic jump over metadata due to API
 		// Read section by section
-		char section_type = infile.read_section_type();
-		while(infile.tellp() != infile.end_position) {
+		char section_type = infile->read_section_type();
+		while(infile->tellp() != infile->end_position) {
 			vector<string> to_copy;
 			long size, end_byte, begin_byte;
 
@@ -81,7 +91,7 @@ void Merge::merge(vector<string> inputs, string output) {
 
 					// Read variables
 					while (section_type == 'v') {
-						Section_GV sgv(&infile);
+						Section_GV sgv(infile);
 
 						// Is it a footer ?
 						if (sgv.vars.find("footer_size") != sgv.vars.end()) {
@@ -101,7 +111,7 @@ void Merge::merge(vector<string> inputs, string output) {
 						sgv.close();
 
 						// Update section_type
-						section_type = infile.read_section_type();
+						section_type = infile->read_section_type();
 					}
 
 					// Does it need a rewrite ?
@@ -130,17 +140,17 @@ void Merge::merge(vector<string> inputs, string output) {
 				case 'r':
 				case 'm':
 				// Analyse the section size
-				begin_byte = infile.tellp();
-				infile.jump_next_section();
-				end_byte = infile.tellp();
+				begin_byte = infile->tellp();
+				infile->jump_next_section();
+				end_byte = infile->tellp();
 				size = end_byte - begin_byte;
-				infile.jump(-size);
+				infile->jump(-size);
 
 				// Read from input and write into output
 				while (size > 0) {
 					size_t size_to_copy = size > buffer_size ? buffer_size : size;
 
-					infile.read(buffer, size_to_copy);
+					infile->read(buffer, size_to_copy);
 					outfile.write(buffer, size_to_copy);
 
 					size -= size_to_copy;
@@ -148,10 +158,10 @@ void Merge::merge(vector<string> inputs, string output) {
 				break;
 				case 'i': {
 				// read section and compute its size
-				Section_Index si(&infile);
+				Section_Index si(infile);
 				si.close();
-				long file_size = infile.tellp() - si.beginning - 8l;
-				infile.jump(-file_size - 8);
+				long file_size = infile->tellp() - si.beginning - 8l;
+				infile->jump(-file_size - 8);
 
 				// Save the position in the file for later chaining
 				long i_position = outfile.tellp();
@@ -161,13 +171,13 @@ void Merge::merge(vector<string> inputs, string output) {
 				while (size > 0) {
 					size_t size_to_copy = size > buffer_size ? buffer_size : size;
 
-					infile.read(buffer, size_to_copy);
+					infile->read(buffer, size_to_copy);
 					outfile.write(buffer, size_to_copy);
 
 					size -= size_to_copy;
 				}
 				// Jump over the last value of infile
-				infile.jump(8);
+				infile->jump(8);
 				// Chain the section and save its position
 				long i_relative = last_index - (i_position + file_size + 8l);
 				for (uint i=0 ; i<8 ; i++) {
@@ -179,15 +189,15 @@ void Merge::merge(vector<string> inputs, string output) {
 				} break;
 
 				default:
-					cerr << "Unknown section type " << section_type << " in file " << in_filename << endl;
+					cerr << "Unknown section type " << section_type << " in file " << infile->filename << endl;
 					exit(2);
 			}
 
 			// Prepare next section
-			section_type = infile.read_section_type();
+			section_type = infile->read_section_type();
 		}
 
-		infile.close();
+		infile->close();
 	}
 
 	// Write footer
@@ -209,5 +219,18 @@ void Merge::merge(vector<string> inputs, string output) {
 }
 
 void Merge::exec() {
+	if (this->input_filenames.size() == 0) {
+		if (this->input_filelist.length() == 0) {
+			cerr << "No file as input" << endl;
+			exit(1);
+		}
+
+		ifstream is(this->input_filelist);
+		string line;
+		while(getline(is, line)) {
+			this->input_filenames.push_back(line);
+		}
+	}
+
 	this->merge(input_filenames, output_filename);
 }

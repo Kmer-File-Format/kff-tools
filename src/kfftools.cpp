@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <sys/resource.h>
 
 #include "kfftools.hpp"
 #include "CLI11.hpp"
@@ -62,11 +63,18 @@ KffTool * parse_args(int argc, char** argv, vector<KffTool *> tools) {
 	return nullptr;
 }
 
-
 int main(int argc, char** argv) {
+	// --- System calls for optimization ---
+	// Remove interactive synchronization for speedup I/O
 	ios_base::sync_with_stdio(false);
+	// Raise the number of simultaneous file descriptors to maximum	
+	struct rlimit nb_file_descriptors;
+	getrlimit(RLIMIT_NOFILE, &nb_file_descriptors);
+	nb_file_descriptors.rlim_cur = nb_file_descriptors.rlim_max;
+	setrlimit(RLIMIT_NOFILE, &nb_file_descriptors); 
 	
-	// Prepare tools
+
+	// --- Prepare tools ---
 	vector<KffTool *> tools;
 	tools.push_back(new Split());
 	tools.push_back(new Merge());

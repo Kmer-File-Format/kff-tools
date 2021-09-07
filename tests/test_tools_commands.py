@@ -131,6 +131,69 @@ class TestSplitMerge(unittest.TestCase):
         os.system(f"rm -r {merged} {split_dir} {txt_file_1} {kff_file_1} {txt_file_2} {kff_file_2} {txt_file_3} {kff_file_3}")
 
 
+    def test_merge_split_file(self):
+        print(f"\n-- TestMergeSplit test_merge_split")
+        print("  init - generate 3 random kmer files")
+        txt_file_1 = f"txt1_test.txt"
+        kff_file_1 = f"txt1_test.kff"
+        txt_file_2 = f"txt2_test.txt"
+        kff_file_2 = f"txt2_test.kff"
+        txt_file_3 = f"txt3_test.txt"
+        kff_file_3 = f"txt3_test.kff"
+        kg.generate_sequences_file(txt_file_1, 100, 32, size_max=42)
+        kg.generate_random_kmers_file(txt_file_2, 100, 17)
+        kg.generate_random_kmers_file(txt_file_3, 100, 33, max_count=511, overlapping=False)
+
+        # Prepare a file with sections
+        print(f"  1/3 Generate kff files from txts.")
+        self.assertEqual(0, os.system(f"./bin/kff-tools instr -i {txt_file_1} -o {kff_file_1} -k 32 -m 11"))
+        # Read 1 kmer per line
+        self.assertEqual(0, os.system(f"./bin/kff-tools instr -i {txt_file_2} -o {kff_file_2} -k 17"))
+        # Read 1 kmer per line with its counts (up to 255)
+        self.assertEqual(0, os.system(f"./bin/kff-tools instr -i {txt_file_3} -o {kff_file_3} -k 33 -d 2"))
+
+        filelist = "filelist_test.txt"
+        with open(filelist, "w") as fp:
+            print(kff_file_1, file=fp)
+            print(kff_file_2, file=fp)
+            print(kff_file_3, file=fp)
+
+
+        print(f"  2/3 Merge files and split it again")
+        merged = "merged_raw_test.kff"
+        split_dir = "split_test/"
+        self.assertEqual(0, os.system(f"rm -r {split_dir} ; mkdir {split_dir}"))
+        self.assertEqual(0, os.system(f"valgrind ./bin/kff-tools merge -f {filelist} -o {merged}"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools split --infile {merged} --outdir {split_dir}"))
+        
+
+        print(f"  3/3 Compare outputs")
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {kff_file_1} > {split_dir}/{txt_file_1}_original"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {split_dir}/r_0.kff > {split_dir}/{txt_file_1}_split"))
+        stream = os.popen(f"diff {split_dir}/{txt_file_1}_original {split_dir}/{txt_file_1}_split")
+        stream_val = stream.read()
+        stream.close()
+        self.assertEqual(stream_val, "")
+
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {kff_file_2} > {split_dir}/{txt_file_2}_original"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {split_dir}/r_1.kff > {split_dir}/{txt_file_2}_split"))
+        stream = os.popen(f"diff {split_dir}/{txt_file_2}_original {split_dir}/{txt_file_2}_split")
+        stream_val = stream.read()
+        stream.close()
+        self.assertEqual(stream_val, "")
+
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {kff_file_3} > {split_dir}/{txt_file_3}_original"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -i {split_dir}/r_2.kff > {split_dir}/{txt_file_3}_split"))
+        stream = os.popen(f"diff {split_dir}/{txt_file_3}_original {split_dir}/{txt_file_3}_split")
+        stream_val = stream.read()
+        stream.close()
+        self.assertEqual(stream_val, "")
+
+
+        print("  clean the test area")
+        os.system(f"rm -r {merged} {split_dir} {txt_file_1} {kff_file_1} {txt_file_2} {kff_file_2} {txt_file_3} {kff_file_3} {filelist}")
+
+
 class TestBucketting(unittest.TestCase):
 
     def test_basic_bucketting(self):
@@ -140,6 +203,7 @@ class TestBucketting(unittest.TestCase):
         kff_raw = f"kff_raw_test.kff"
         kff_bucket = f"kff_bucket_test.kff"
         kg.generate_sequences_file(txt, 100, 32, size_max=42)
+        # kg.generate_sequences_file(txt, 1, 32, size_max=32)
 
         # Prepare a file with sections
         print(f"  1/3 Generate the kff raw file.")
@@ -147,6 +211,7 @@ class TestBucketting(unittest.TestCase):
 
 
         print(f"  2/3 bucket the file")
+        print(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11")
         self.assertEqual(0, os.system(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11"))
         
 

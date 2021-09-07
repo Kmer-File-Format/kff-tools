@@ -107,6 +107,11 @@ void Validate::exec() {
 					}
 					uint nb_kmers = sr.read_compacted_sequence(seq_bytes, data_bytes);
 
+					if (nb_kmers == 0) {
+						cerr << "Block containing 0 kmer detected." << endl;
+						exit(1);
+					}
+
 					if (verbose) {
 						cout << "* Number of kmers: " << nb_kmers << endl;
 						cout << strif.translate(seq_bytes, k + nb_kmers - 1) << endl;
@@ -160,6 +165,11 @@ void Validate::exec() {
 					}
 					uint64_t mini_pos;
 					uint nb_kmers = sm.read_compacted_sequence_without_mini(seq_bytes, data_bytes, mini_pos);
+
+					if (nb_kmers == 0) {
+						cerr << "Block containing 0 kmer detected." << endl;
+						exit(1);
+					}
 
 					if (mini_pos > k - m + nb_kmers) {
 						cerr << "* minimizer position out of sequence. position=" << mini_pos << " , skmer_size=" <<  (k-m+nb_kmers) << endl;

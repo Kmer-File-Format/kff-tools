@@ -19,6 +19,7 @@ include_directories(${CMAKE_BINARY_DIR}/src/)
 set(SRCS
     main.cpp
     encoding_test.cpp
+    sequence_test.cpp
     ../src/sequences.cpp
     ../src/encoding.cpp
     )

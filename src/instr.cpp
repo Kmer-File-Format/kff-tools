@@ -156,7 +156,7 @@ void Instr::exec() {
 
 	uint8_t * seq;
 	uint8_t * sub_seq = new uint8_t[(max_kmerseq + 3) / 4];
-	uint8_t * data = new uint8_t[data_size];
+	uint8_t * data = new uint8_t[data_size * max_kmerseq];
 	uint seq_size = 0;
 	// read the next line from the txt file
 	while ((seq_size = stream.next_sequence(seq, data)) > 0) {

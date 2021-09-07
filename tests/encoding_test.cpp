@@ -6,10 +6,12 @@
 #include "../src/encoding.hpp"
 
 
+using namespace std;
 
 const lest::test module[] = {
 
     CASE("A binarizer can translate strings of different sizes") {
+        cout << "Test Binarizer" << endl;
 
         SETUP( "Binarizer on basic encoding" ) {
             uint8_t encoding[] = {0, 1, 3, 2};
@@ -45,6 +47,8 @@ const lest::test module[] = {
                 EXPECT( (uint)bin[0] == (uint)0b11 );
                 EXPECT( (uint)bin[1] == (uint)0b10000111 );
             }
+
+            cout << "OK" << endl;
         }
     }
 };
