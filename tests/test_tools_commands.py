@@ -162,8 +162,8 @@ class TestSplitMerge(unittest.TestCase):
         print(f"  2/3 Merge files and split it again")
         merged = "merged_raw_test.kff"
         split_dir = "split_test/"
-        self.assertEqual(0, os.system(f"rm -r {split_dir} ; mkdir {split_dir}"))
-        self.assertEqual(0, os.system(f"valgrind ./bin/kff-tools merge -f {filelist} -o {merged}"))
+        self.assertEqual(0, os.system(f"rm -rf {split_dir} ; mkdir {split_dir}"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools merge -f {filelist} -o {merged}"))
         self.assertEqual(0, os.system(f"./bin/kff-tools split --infile {merged} --outdir {split_dir}"))
         
 
