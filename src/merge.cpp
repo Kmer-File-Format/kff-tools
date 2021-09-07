@@ -13,9 +13,12 @@ Merge::Merge() {
 
 void Merge::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("merge", "Merge a list of kff files into one. All the files must have the same encoding.");
-	CLI::Option * input_option = subapp->add_option("-i, --inputs", input_filenames, "A list of input file names. The order of the file list will be preserved in the output file.");
-	input_option->required();
+
+	CLI::Option_group * group = subapp->add_option_group("input", "different ways to pass inputs to the merge command");
+	CLI::Option * input_option = group->add_option("-i, --inputs", input_filenames, "A list of input file names. The order of the file list will be preserved in the output file.");
 	input_option->expected(2, -1);
+	group->add_option("-f, --input-filelist", input_filelist, "A file containing the list of input file names. The order of the file list will be preserved in the output file.");
+	group->required();
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff file where all the input will be merged");
 	out_option->required();
@@ -27,12 +30,12 @@ void Merge::merge(const vector<string> inputs, string output) {
 	for(auto & input : inputs) {
     files.push_back(new Kff_file(input, "r"));  
 	}
+	cout << "opened" << endl;
 
 	this->merge(files, output);
+	cout << "merged" << endl;
 
-	for(auto & file : files) {
-	  delete file;  
-	}
+	files.clear();
 }
 
 void Merge::merge(const vector<Kff_file *> & files, string output) {
@@ -218,5 +221,18 @@ void Merge::merge(const vector<Kff_file *> & files, string output) {
 }
 
 void Merge::exec() {
+	if (this->input_filenames.size() == 0) {
+		if (this->input_filelist.length() == 0) {
+			cerr << "No file as input" << endl;
+			exit(1);
+		}
+
+		ifstream is(this->input_filelist);
+		string line;
+		while(getline(is, line)) {
+			this->input_filenames.push_back(line);
+		}
+	}
+
 	this->merge(input_filenames, output_filename);
 }

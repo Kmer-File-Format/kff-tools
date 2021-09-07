@@ -12,6 +12,7 @@
 class Merge: public KffTool {
 private:
 	std::vector<std::string> input_filenames;
+	std::string input_filelist;
 	std::string output_filename;
 
 public:
