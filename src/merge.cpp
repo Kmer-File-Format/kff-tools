@@ -30,10 +30,8 @@ void Merge::merge(const vector<string> inputs, string output) {
 	for(auto & input : inputs) {
     files.push_back(new Kff_file(input, "r"));  
 	}
-	cout << "opened" << endl;
 
 	this->merge(files, output);
-	cout << "merged" << endl;
 
 	files.clear();
 }

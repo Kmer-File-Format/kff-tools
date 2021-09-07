@@ -47,6 +47,7 @@ void Bucket::cli_prepare(CLI::App * app) {
 	subapp->add_flag("-s, --single-side", singleside, "Look for the minimizer only on the forward strand.");
 }
 
+
 void Bucket::exec() {
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
@@ -85,7 +86,7 @@ void Bucket::exec() {
 
 		// Skmer deduction
 		vector<skmer> skmers = ms->get_skmers(seq, seq_size);
-		for (const skmer & sk : skmers) {
+		for (skmer sk : skmers) {
 			// New bucket
 			if (buckets.find(sk.minimizer) == buckets.end()) {
 				// Create the file
