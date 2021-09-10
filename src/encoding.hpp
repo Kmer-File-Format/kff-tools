@@ -75,6 +75,7 @@ public:
 	  * @param nucl_length Length in nucleotides of the sequence.
 	  **/
 	std::string translate(const uint8_t * sequence, const size_t nucl_length) const;
+	std::string translate(uint64_t sequence, const size_t nucl_length) const;
 };
 
 

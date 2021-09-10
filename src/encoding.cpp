@@ -125,6 +125,19 @@ string Stringifyer::translate(const uint8_t * sequence, const size_t nucl_length
 }
 
 
+string Stringifyer::translate(uint64_t sequence, const size_t nucl_length) const {
+	uint8_t bytes[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	for (uint length=0 ; length*4<nucl_length ;	 length++) {
+		bytes[7 - length] = sequence & 0xFF;
+		sequence >>= 8;
+	}
+
+	uint64_t nb_bytes = (nucl_length + 3) / 4;
+
+	return this->translate(bytes + 8 - nb_bytes, nucl_length);
+}
+
+
 
 Binarizer::Binarizer(const uint8_t encoding[4]) {
 	for (uint pos=0 ; pos<4 ; pos++) {

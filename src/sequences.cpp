@@ -114,6 +114,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 	if (seq_size > this->max_seq_size) {
 		this->max_seq_size = seq_size;
 		this->mini_buffer.resize((max_seq_size - m + 1) * 2, 0);
+		this->minis.resize(this->max_seq_size - k + 1, 0);
 		this->mini_pos.resize(this->max_seq_size - k + 1, 0);
 	}
 
@@ -140,13 +141,39 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 
 		uint nucl = (seq[byte_idx] >> (nucl_shift * 2)) & 0b11;
 		current_value = ((current_value << 2) + nucl) & m_mask;
-		current_rev_value = (current_rev_value >> 2) + (this->rc.reverse[nucl] << (2 * (m - 1)));
+		current_rev_value = (current_rev_value >> 2) + this->nucl_rev[idx%4][seq[byte_idx]];//(this->rc.reverse[nucl] << (2 * (m - 1)));
 		this->mini_buffer[kmer_idx] = current_value;
 		this->mini_buffer[this->mini_buffer.size()/2 + kmer_idx] = current_rev_value;
 	}	
 }
 
 
+
+// void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
+// 	// Compute the minimizer of each sliding window of size k - m
+// 	uint max_nb_candidates = this->mini_buffer.size()/2;
+// 	for (uint i=0 ; i<max_nb_candidates ; i++) {
+// 		if (i < this->minis.size())
+// 			this->minis[i] = 0xFFFFFFFFFFFFFFFF;
+// 		// Compute minimum
+// 		uint64_t mini = this->mini_buffer[i];
+// 		int64_t abs_pos = i;
+// 		if (not this->single_side) {
+// 			if (this->mini_buffer[max_nb_candidates + i] < mini) {
+// 				mini = this->mini_buffer[max_nb_candidates + i];
+// 				abs_pos = - (int)i - 1;
+// 			}
+// 		}
+
+// 		// Fill the minis
+// 		for (int j=max(0, (int)i-(int)k+(int)m) ; j<(int)this->minis.size() ; j++) {
+// 			if (mini < this->minis[j]) {
+// 				this->minis[j] = mini;
+// 				this->mini_pos[j] = abs_pos;
+// 			}
+// 		}
+// 	}
+// }
 
 void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
 	// Compute the minimizer of each sliding window of size k - m
@@ -198,6 +225,8 @@ void MinimizerSearcher::compute_skmers(const uint nb_kmers) {
 
 
 vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_size) {
+	// this->get_skmers_fast(seq, seq_size);
+
 	this->compute_candidates(seq, seq_size);
 	uint nb_kmers = seq_size - k + 1;
 	this->compute_minimizers(nb_kmers);
@@ -208,17 +237,207 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 	for (uint sk_idx=0 ; sk_idx<this->skmers.size() ; sk_idx++) {
 		uint64_t start = this->skmers[sk_idx].first;
 		skmers[sk_idx].start_position = start;
-  	skmers[sk_idx].stop_position = this->skmers[sk_idx].second;
-  	int64_t mini_pos = this->mini_pos[start];
-  	skmers[sk_idx].minimizer_position = mini_pos;
-  	if (mini_pos >= 0)
-	  	skmers[sk_idx].minimizer = this->mini_buffer[mini_pos];
-	  else {
-	  	mini_pos = - mini_pos - 1;
-	  	skmers[sk_idx].minimizer = this->mini_buffer[this->mini_buffer.size() / 2 + mini_pos];
-	  }
+		skmers[sk_idx].stop_position = this->skmers[sk_idx].second;
+		int64_t mini_pos = this->mini_pos[start];
+		skmers[sk_idx].minimizer_position = mini_pos;
+		if (mini_pos >= 0)
+			skmers[sk_idx].minimizer = this->mini_buffer[mini_pos];
+		else {
+			mini_pos = - mini_pos - 1;
+			skmers[sk_idx].minimizer = this->mini_buffer[this->mini_buffer.size() / 2 + mini_pos];
+		}
 	}
 
+	return skmers;
+}
+
+
+vector<skmer> MinimizerSearcher::get_skmers_fast(const uint8_t * seq, const uint seq_size) {
+	vector<skmer> skmers;
+
+	if (seq_size > this->candidates.size()) {
+		this->candidates.resize(seq_size, 0);
+		this->is_rev_candidates.resize(seq_size, 0);
+	}
+
+	// uint8_t encoding[] = {0, 1, 3, 2};
+	// Stringifyer strif(encoding);
+	// cout << strif.translate(seq, seq_size) << endl;
+
+	// Usefull variables
+	uint idx_offset = (4 - (seq_size % 4)) % 4;
+	uint8_t current_byte = seq[0];
+	uint64_t mini_mask = (1 << (this->m * 2)) - 1;
+
+	// --- Preprocess the m-1 size first minimizer prefix ---
+	uint64_t current_candidate = 0;
+	uint64_t current_candidate_fwd = 0;
+	uint64_t current_candidate_rev = 0;
+	bool current_rev = false;
+	for (uint seq_idx=0 ; seq_idx<this->m-1 ; seq_idx++) {
+		uint64_t abs_idx = idx_offset + seq_idx;
+		// Load new byte
+		uint64_t nucl_idx = abs_idx % 4;
+		if (nucl_idx == 0)
+			current_byte = seq[abs_idx / 4];
+
+		// Get nucleotide
+		// uint64_t nucl = (current_byte >> ((3 - nucl_idx) * 2)) & 0b11;
+		// Grow the minimizers
+		current_candidate_fwd <<= 2;
+		current_candidate_fwd |= this->nucl_fwd[nucl_idx][current_byte];
+		if (not this->single_side) {
+			current_candidate_rev >>= 2;
+			current_candidate_rev |= this->nucl_rev[nucl_idx][current_byte];
+		}
+		// cout << strif.translate(current_candidate, seq_idx+1) << endl;
+	}
+
+	uint64_t current_minimizer = 0xFFFFFFFFFFFFFFFF;
+	uint64_t abs_mini_pos = 0;
+	bool mini_rev = false;
+
+	// --- Process the minimizer for the first kmer ---
+	for (uint seq_idx = this->m-1 ; seq_idx<this->k ; seq_idx++) {
+		// --- Current candidate computation ---
+		uint64_t abs_idx = idx_offset + seq_idx;
+		// Load new byte
+		uint64_t nucl_idx = abs_idx % 4;
+		if (nucl_idx == 0)
+			current_byte = seq[abs_idx / 4];
+
+		// Get nucleotide
+		// uint64_t nucl = (current_byte >> ((3 - nucl_idx) * 2)) & 0b11;
+		// Update current minimizer fwd
+		current_candidate_fwd <<= 2;
+		current_candidate_fwd |= this->nucl_fwd[nucl_idx][current_byte];
+		current_candidate_fwd &= mini_mask;
+		current_candidate = current_candidate_fwd;
+
+		if (not this->single_side) {
+			current_candidate_rev >>= 2;
+			current_candidate_rev |= this->nucl_rev[nucl_idx][current_byte];
+			current_rev = false;
+			if (current_candidate_rev < current_candidate_fwd) {
+				current_candidate = current_candidate_rev;
+				current_rev = true;
+			}
+		}
+
+		// current minimizer init
+		if (current_candidate < current_minimizer) {
+			current_minimizer = current_candidate;
+			abs_mini_pos = seq_idx - (this->m - 1);
+			mini_rev = current_rev;
+		}
+	}
+
+	skmer sk = {0, 0, 0, 0};
+
+	// --- Compute all the other kmers ---
+	for (uint seq_idx = this->k ; seq_idx<seq_size ; seq_idx++) {
+		// --- Current candidate computation ---
+		uint64_t abs_idx = idx_offset + seq_idx;
+		// Load new byte
+		uint64_t nucl_idx = abs_idx % 4;
+		if (nucl_idx == 0)
+			current_byte = seq[abs_idx / 4];
+
+		// Get nucleotide
+		// uint64_t nucl = (current_byte >> ((3 - nucl_idx) * 2)) & 0b11;
+		// Update current minimizer fwd
+		current_candidate_fwd <<= 2;
+		current_candidate_fwd |= this->nucl_fwd[nucl_idx][current_byte];
+		current_candidate_fwd &= mini_mask;
+		current_candidate = current_candidate_fwd;
+		// Update current mini rev
+		if (not this->single_side) {
+			current_candidate_rev >>= 2;
+			current_candidate_rev |= this->nucl_rev[nucl_idx][current_byte];;
+			current_rev = false;
+			if (current_candidate_rev < current_candidate_fwd) {
+				current_candidate = current_candidate_rev;
+				current_rev = true;
+			}
+		}
+
+		bool mini_change = false;
+
+		// cout << seq_idx - m + 1 << " " << seq_idx - k + 1 << "\t" << strif.translate(current_candidate, this->m) << " " << current_candidate;
+		// --- get the best minimizer for current kmer ---
+		// New minimizer found
+		if (current_candidate < current_minimizer) {
+			sk.minimizer = current_minimizer;
+			sk.minimizer_position = abs_mini_pos;
+			if (mini_rev)
+				sk.minimizer_position = - sk.minimizer_position - 1;
+
+			current_minimizer = current_candidate;
+			abs_mini_pos = seq_idx - (this->m - 1);
+			mini_rev = current_rev;
+			// cout << " X (" << abs_mini_pos << ")";
+			mini_change = true;
+		}
+		// Previous mini OUTDATED
+		else if (seq_idx == abs_mini_pos + k) {
+			cerr << "Not properly implemented. Quitting" << endl;
+			exit(1);
+			sk.minimizer = current_minimizer;
+			sk.minimizer_position = abs_mini_pos;
+			if (mini_rev)
+				sk.minimizer_position = - sk.minimizer_position - 1;
+
+			// cout << " OUTDATED ";
+			current_minimizer = candidates[(seq_idx-k+m)];
+			this->use_count += 1;
+			abs_mini_pos = seq_idx - k + 1;
+			mini_rev = current_rev = is_rev_candidates[(seq_idx-k+m)];
+			// Recompute from the saved candidates
+			for (uint idx=seq_idx-k+m+1 ; idx<=seq_idx ; idx++) {
+				this->use_count += 1;
+				if (candidates[idx] < current_minimizer) {
+					current_minimizer = candidates[idx];
+					abs_mini_pos = idx - (this->m - 1);
+					mini_rev = current_rev = is_rev_candidates[idx];
+				}
+			}
+
+			mini_change = true;
+			// cout << abs_mini_pos << " ";
+
+			// cout << strif.translate(current_minimizer, this->m) << " (" << abs_mini_pos << ")";
+		}
+		// Keep the same minimizer
+		else {}
+
+		// --- Skmer generation ---
+		if (mini_change) {
+			sk.stop_position = seq_idx - 1;
+			skmers.push_back(sk);
+			sk.start_position = seq_idx - this->k + 1;
+		}
+	}
+
+	// Last skmer
+	sk.stop_position = seq_size - 1;
+	sk.minimizer = current_minimizer;
+	sk.minimizer_position = abs_mini_pos;
+	if (mini_rev)
+		sk.minimizer_position = - sk.minimizer_position - 1;
+
+	skmers.push_back(sk);
+
+	// uint8_t subseq[10];
+	// subsequence(seq, seq_size, subseq, skmer_start, skmer_stop);
+	// cout << " " << strif.translate(subseq, skmer_stop - skmer_start + 1) << endl << endl;
+
+	// for (const skmer sk : skmers) {
+	// 	uint8_t subseq[10];
+	// 	subsequence(seq, seq_size, subseq, sk.start_position, sk.stop_position);
+	// 	cout << strif.translate(subseq, sk.stop_position - sk.start_position + 1) << endl;
+	// }
+
+	// exit(0);
 	return skmers;
 }
 

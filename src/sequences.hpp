@@ -110,19 +110,38 @@ class MinimizerSearcher {
 public:
   uint k;
   uint m;
+  uint add_count;
+  uint use_count;
   uint max_seq_size;
   bool single_side;
+  std::vector<uint64_t> candidates;
+  std::vector<bool> is_rev_candidates;
   std::vector<uint64_t> mini_buffer;
+  std::vector<uint64_t> minis;
   std::vector<int64_t> mini_pos;
   std::vector<std::pair<uint64_t, uint64_t> > skmers;
+  uint64_t nucl_fwd[4][256];
+  uint64_t nucl_rev[4][256];
   RevComp rc;
   MinimizerSearcher(const uint k, const uint m, const uint8_t encoding[4], const uint max_seq_size = 0, const bool single_side = false)
-          : k(k), m(m), max_seq_size(max_seq_size), single_side(single_side)
+          : k(k), m(m), add_count(0), use_count(0), max_seq_size(max_seq_size), single_side(single_side)
           , mini_buffer(max_seq_size < m - 1 ? 0 : (max_seq_size - m + 1) * 2, 0)
+          , minis(max_seq_size < k - 1 ? 0 : max_seq_size - k + 1, 0)
           , mini_pos(max_seq_size < k - 1 ? 0 : max_seq_size - k + 1, 0)
           , skmers()
           , rc(encoding)
-  {};
+  {
+    for (uint byte=0 ; byte<256 ; byte++) {
+      for (uint nucl_pos=0 ; nucl_pos<4 ; nucl_pos++) {
+        nucl_fwd[nucl_pos][byte] = (byte >> (2 * (3 - nucl_pos))) & 0b11;
+        nucl_rev[nucl_pos][byte] = this->rc.reverse[nucl_fwd[nucl_pos][byte]] << (2 * (this->m - 1));
+      }
+    }
+  };
+
+  ~MinimizerSearcher() {
+    // std::cout << add_count << std::endl << use_count << std::endl << std::endl;
+  }
 
   /** Fill the first half of the mini_buffer with m-mers candidates for the fwd.
    * Same with the second half and the candidates from the rev-comp.
@@ -155,6 +174,7 @@ public:
    * @return A vector containing object of type skmer.
    **/
   std::vector<skmer> get_skmers(const uint8_t * seq, const uint seq_size);
+  std::vector<skmer> get_skmers_fast(const uint8_t * seq, const uint seq_size);
 };
 
 

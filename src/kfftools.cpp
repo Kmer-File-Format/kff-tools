@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
 	tools.push_back(new Validate());
 	tools.push_back(new Instr());
 	tools.push_back(new Bucket());
-	tools.push_back(new Compact());
+	// tools.push_back(new Compact());
 	tools.push_back(new Shuffle()); 
 	tools.push_back(new Sort()); 
 
