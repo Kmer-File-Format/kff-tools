@@ -84,9 +84,9 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	// Extraction of subsequences
 	uint subseq_size = seq1_stop - seq1_start + 1;
 	uint subseq_bytes = (subseq_size + 3) / 4;
-	uint8_t * subseq1 = new uint8_t[subseq_bytes];
+	uint8_t * subseq1 = new uint8_t[subseq_bytes+1];
 	subsequence(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
-	uint8_t * subseq2 = new uint8_t[subseq_bytes];
+	uint8_t * subseq2 = new uint8_t[subseq_bytes+1];
 	subsequence(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
 
 	// comparison of the subsequences (same size)
