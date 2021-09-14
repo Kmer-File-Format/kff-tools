@@ -113,7 +113,7 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	uint next_free = 0;
 	uint8_t * kmers = (uint8_t *)malloc(kmer_buffer_size);
 	memset(kmers, 0, kmer_buffer_size);
-	vector<vector<uint8_t *> > kmers_per_index(k-m+1);
+	vector<vector<uint64_t> > kmers_per_index(k-m+1);
 
 	// 1 - Load the input section
 	for (uint n=0 ; n<ism.nb_blocks ; n++) {
@@ -143,13 +143,13 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 				kmer_mini_pos >>= 8;
 			}
 			// Update
-			kmers_per_index[kmer_pos].push_back(kmers + next_free);
+			kmers_per_index[kmer_pos].push_back(next_free);
 			next_free += kmer_bytes + data_size + mini_pos_size;
 		}
 	}
 
 	// 2 - Compact kmers
-	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index, k, m);
+	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers, kmers_per_index, k, m);
 	vector<vector<uint8_t *> > paths = this->pairs_to_paths(to_compact);
 
 	Section_Minimizer osm(&outfile);
@@ -163,19 +163,20 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	delete[] data_buffer;
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8_t *> > & kmers, const uint k, const uint m) {
+vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(uint8_t * kmers_buffer, vector<vector<uint64_t> > & kmers_positions, const uint k, const uint m) {
 	uint nb_kmers = k - m + 1;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
 
 	// Index kmers from the 0th set
-	for (uint8_t * kmer : kmers[0])
-		assembly.emplace_back(nullptr, kmer);
+	for (uint64_t kmer_pos : kmers_positions[0])
+		assembly.emplace_back(nullptr, kmers_buffer+kmer_pos);
 
 	for (uint i=0 ; i<nb_kmers-1 ; i++) {
 		// Index kmers in ith set
 		unordered_map<uint64_t, vector<uint8_t *> > index;
 		
-		for (uint8_t * kmer : kmers[i]) {
+		for (uint64_t kmer_pos : kmers_positions[i]) {
+			uint8_t * kmer = kmers_buffer + kmer_pos;
 			// Get the suffix
 			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 1, nb_kmers-2);
 			// Add a new vector for this value
@@ -186,7 +187,8 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 		}
 
 		// link kmers from (i+1)th set to ith kmers.
-		for (uint8_t * kmer : kmers[i+1]) {
+		for (uint64_t kmer_pos : kmers_positions[i+1]) {
+			uint8_t * kmer = kmers_buffer + kmer_pos;
 			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 0, nb_kmers-3);
 
 			if (index.find(val) == index.end()) {
@@ -223,8 +225,8 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 
 	// Index last kmers without compaction
 	int assembly_idx = assembly.size()-1;
-	for (auto it=kmers[nb_kmers-1].end() ; it>kmers[nb_kmers-1].begin() ; it--) {
-		uint8_t * kmer = *(it-1);
+	for (auto it=kmers_positions[nb_kmers-1].end() ; it>kmers_positions[nb_kmers-1].begin() ; it--) {
+		uint8_t * kmer = kmers_buffer + *(it-1);
 
 		if (assembly_idx < 0 or kmer != assembly[assembly_idx].second) {
 			assembly.emplace_back(nullptr, kmer);
