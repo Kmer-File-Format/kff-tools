@@ -30,7 +30,7 @@ public:
     * next call to the method.
     * @return size of the sequence that have been read.
     **/
-  virtual uint next_sequence(uint8_t * & seq, uint8_t * & data) = 0;
+  virtual int next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) = 0;
 };
 
 
@@ -43,7 +43,18 @@ public:
   KffSeqStream(const std::string filename)
       : reader(filename)
   {};
-  uint next_sequence(uint8_t * & seq, uint8_t * & data);
+  /** Read the next sequence (the whole block) storing the nucleotides in the seq array and the
+   * associated data in the data array. These two arrays must be pre-allocated.
+   * 
+   * @param seq User allocated array where the sequence will be loaded
+   * @param max_seq_size Maximum sequence size that can fit in the seq buffer (in nucleotides).
+   * @param data User allocated array where the data will be loaded
+   * @param max_data_size Maximum number of Bytes that can fit into data.
+   * 
+   * @return The number of kmers into the sequence. -1 if the sequence do not fit in seq or the
+   * data in data.
+   **/
+  int next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size);
 };
 
 

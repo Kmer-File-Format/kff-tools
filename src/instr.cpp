@@ -132,6 +132,10 @@ public:
 
 		return seq_size;
 	}
+
+	int next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) {
+		return this->next_sequence(seq, data);
+  }
 };
 
 

@@ -39,10 +39,15 @@ uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
 	return (left_bits & mask) | (right_bits & ~mask);
 }
 
-
-uint KffSeqStream::next_sequence(uint8_t * & seq, uint8_t * & data) {
+int KffSeqStream::next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) {
+// int KffSeqStream::next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) {
 	if (this->reader.has_next()) {
-		return this->reader.next_block(seq, data);
+		uint max_seq = this->reader.k + this->reader.max - 1;
+		uint max_data = this->reader.max * this->reader.data_size;
+		if (max_seq_size < max_seq or max_data_size < max_data)
+			return -1;
+		else
+			return this->reader.next_block(seq, data);
 	}
 
 	return 0;

@@ -56,4 +56,5 @@ set(HEADERS
 add_executable(kff-tools ${SRCS} ${HEADERS})
 
 # link libraries
-target_link_libraries(kff-tools kff)
+find_package(OpenMP)
+target_link_libraries(kff-tools PUBLIC kff OpenMP::OpenMP_CXX)
