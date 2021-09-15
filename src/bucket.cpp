@@ -50,24 +50,25 @@ void Bucket::cli_prepare(CLI::App * app) {
 
 
 void Bucket::exec() {
+	uint nb_mutex = 256;
+
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
-	unordered_map<uint64_t, Section_Minimizer *> buckets;
+	vector<unordered_map<uint64_t, Section_Minimizer *> > buckets;
+	buckets.resize(nb_mutex);
 
-
-	unordered_map<uint64_t, Kff_file *> opened_files;
 
 	RevComp rc(stream.reader.get_encoding());
 	Stringifyer strif(stream.reader.get_encoding());
 
 	// Prepare synchronisation locks
 	vector<omp_lock_t> bucket_mutexes;
-	bucket_mutexes.resize(1024);
-	for (uint64_t i(0); i < 1024; ++i) {
+	bucket_mutexes.resize(nb_mutex);
+	for (uint64_t i(0); i < nb_mutex; ++i) {
 		omp_init_lock(&bucket_mutexes[i]);
 	}
 
-	#pragma omp parallel num_threads(2)
+	#pragma omp parallel num_threads(4)
 	{
 	// Variables init by thread
 	MinimizerSearcher * searcher = new MinimizerSearcher(0, m, stream.reader.get_encoding());
@@ -77,16 +78,15 @@ void Bucket::exec() {
 	uint max_data = 1;
 	uint8_t * data = new uint8_t[max_data];
 	uint prev_k = 0;
-	cout << "data " << (int *)data << " " << omp_get_thread_num() << endl;
 
 	// Read the stream line by line
 	while(true) {
-		uint nb_kmers;
+		int nb_kmers = 0;
 		#pragma omp critical
 		{
-			cout << "Start " << omp_get_thread_num() << endl;
+			// cout << "Start " << omp_get_thread_num() << endl;
 			while ((nb_kmers = stream.next_sequence(seq, max_seq, data, max_data)) < 0) {
-				cout << "Realloc " << omp_get_thread_num() << endl;
+				// cout << "Realloc " << omp_get_thread_num() << endl;
 				// Seq buffer update
 				uint new_seq_size = stream.reader.k + stream.reader.max - 1;
 				if (new_seq_size > max_seq) {
@@ -103,8 +103,8 @@ void Bucket::exec() {
 					data = new uint8_t[max_data];
 				}
 			}
-			cout << nb_kmers << endl;
-			cout << "Stop critic " << omp_get_thread_num() << endl;
+			// cout << "nb kmers " << nb_kmers << endl;
+			// cout << "Stop critic " << omp_get_thread_num() << endl;
 		}
 		if (nb_kmers == 0)
 			break;
@@ -124,14 +124,14 @@ void Bucket::exec() {
 		// Skmer deduction
 		vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
 		for (skmer sk : skmers) {
-			omp_set_lock(&bucket_mutexes[sk.minimizer % 1024]);
-			cout << "mutex " << sk.minimizer % 1024 << endl;
+			uint mutex_id = sk.minimizer % nb_mutex;
+			omp_set_lock(&bucket_mutexes[mutex_id]);
+			// cout << "mutex " << mutex_id << endl;
 			// New bucket
-			if (buckets.find(sk.minimizer) == buckets.end()) {
-				cout << "New bucket " << sk.minimizer << endl;
+			if (buckets[mutex_id].find(sk.minimizer) == buckets[mutex_id].end()) {
+				// cout << "New bucket " << sk.minimizer << endl;
 				// Create the file
 				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(sk.minimizer) + ".kff", "w");
-				opened_files[sk.minimizer] = outfile;
 				outfile->write_encoding(stream.reader.get_encoding());
 				outfile->set_uniqueness(stream.reader.file->uniqueness);
 				outfile->set_canonicity(stream.reader.file->canonicity);
@@ -145,7 +145,7 @@ void Bucket::exec() {
 			  sgv.close();
 			  // Create the bucket by itself
 			  Section_Minimizer * sm = new Section_Minimizer(outfile);
-			  buckets[sk.minimizer] = sm;
+			  buckets[mutex_id][sk.minimizer] = sm;
 			  // Write the minimizer
 			  if (sk.minimizer_position < 0) {
 			  	int mini_pos = - sk.minimizer_position - 1;
@@ -156,13 +156,13 @@ void Bucket::exec() {
 			  }
 			  sm->write_minimizer(subseq);
 			} else {
-				cout << "No new bucket" << endl;
+				// cout << "No new bucket" << endl;
 			}
 
 			uint seq_size = k - 1 + nb_kmers;
 			uint mini_pos = k + 2;
 			// Get the subsequence
-			cout << "Subsequence" << endl;
+			// cout << "Subsequence" << endl;
 			subsequence(seq, seq_size, subseq, sk.start_position, sk.stop_position);
 			uint subseq_size = sk.stop_position - sk.start_position + 1;
 			if (sk.minimizer_position >= 0) {
@@ -176,15 +176,15 @@ void Bucket::exec() {
 				rc.rev_data(data + sk.start_position * data_size, data_size, subseq_size - k + 1);
 			}
 
-			cout << "File write" << endl;
+			// cout << "File write " << sk.minimizer << " " << sk.minimizer % 1024 << endl;
 			// Save the skmer and its related data
-			buckets[sk.minimizer]->write_compacted_sequence(
+			buckets[mutex_id][sk.minimizer]->write_compacted_sequence(
 					subseq, subseq_size, mini_pos,
 					data + sk.start_position * data_size
 			);
 
-			cout << "Xmutex " << sk.minimizer % 1024 << endl;
-			omp_unset_lock(&bucket_mutexes[sk.minimizer % 1024]);
+			// cout << "Xmutex " << sk.minimizer % 1024 << endl;
+			omp_unset_lock(&bucket_mutexes[sk.minimizer % nb_mutex]);
 		}
 	}
 
@@ -195,24 +195,18 @@ void Bucket::exec() {
 	}
 
 	// Close all the buckets
-	for (auto& it: buckets) {
-		Section_Minimizer * sm = it.second;
-		Kff_file * outfile = sm->file;
-		sm->close();
-		delete sm;
-
-		outfile->close(false);
-	}
-
-
-	// Prepare bucket merging
 	vector<Kff_file *> files;
-	files.reserve(opened_files.size());
-	for(auto & kv : opened_files) {
-		// cout << kv.second->filename << endl;
-		kv.second->open("r");
-    files.push_back(kv.second);
-	}
+	for (uint mutex_idx=0 ; mutex_idx<nb_mutex ; mutex_idx++)
+		for (auto& it: buckets[mutex_idx]) {
+			Section_Minimizer * sm = it.second;
+			Kff_file * outfile = sm->file;
+			sm->close();
+			delete sm;
+
+			files.push_back(outfile);
+			outfile->close(false);
+			outfile->open("r");
+		}
 
 	// Merge all the buckets in one file
 	Merge mg;

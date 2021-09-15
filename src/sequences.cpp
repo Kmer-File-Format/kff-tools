@@ -136,7 +136,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_value = (current_value << 2) + nucl;
 		current_rev_value = (current_rev_value >> 2) + (this->rc.reverse[nucl] << (2 * (this->m - 1)));
 	}
-
+	
 	// Compute minimizer candidates
 	uint64_t m_mask = (1 << (this->m*2)) - 1;
 	for (uint i=this->m-1, kmer_idx=0 ; i<seq_size ; i++, kmer_idx++) {
@@ -149,7 +149,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_rev_value = (current_rev_value >> 2) + this->nucl_rev[idx%4][seq[byte_idx]];//(this->rc.reverse[nucl] << (2 * (m - 1)));
 		this->mini_buffer[kmer_idx] = current_value;
 		this->mini_buffer[this->mini_buffer.size()/2 + kmer_idx] = current_rev_value;
-	}	
+	}
 }
 
 
