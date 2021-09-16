@@ -72,13 +72,47 @@ void Validate::exec() {
 			// Index section
 			else if (section_type == 'i') {
 				Section_Index si(&infile);
+				long end_byte = si.beginning + 17 + 9 * si.index.size();
+
 				if (this->verbose) {
 					cout << "Start Byte " << si.beginning << endl;
-					long end_byte = si.beginning + 17 + 9 * si.index.size();
 					cout << "Section\trelative\tabsolute" << endl;
-					for (const auto & pair : si.index) {
+				}
+
+				for (const auto & pair : si.index) {
+					if (this->verbose)
 						cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+
+					// Jump to the section
+					long section_pos = end_byte + pair.first;
+					long current_pos = infile.tellp();
+					infile.jump_to(section_pos);
+					// Read the byte at this position
+					uint8_t type = 0;
+					infile.read(&type, 1);
+					if (type != pair.second) {
+						cerr << "Wrong section at position " << section_pos << ". Found a section " << type << endl;
 					}
+					// Go back to previous position
+					infile.jump_to(current_pos);
+				}
+
+				if (si.next_index != 0) {
+					// Jump to the section
+					long section_pos = end_byte + si.next_index;
+					long current_pos = infile.tellp();
+					infile.jump_to(section_pos);
+					// Read the byte at this position
+					uint8_t type = 0;
+					infile.read(&type, 1);
+					if (type != 'i') {
+						cerr << "No index found at position " << section_pos << "." << endl;
+					}
+					// Go back to previous position
+					infile.jump_to(current_pos);	
+				}
+
+				if (this->verbose) {
 					cout << "Next index position " << si.next_index << endl;
 				}
 				si.close();
