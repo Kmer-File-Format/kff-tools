@@ -68,7 +68,7 @@ void Bucket::exec() {
 		omp_init_lock(&bucket_mutexes[i]);
 	}
 
-	#pragma omp parallel num_threads(8)
+	// #pragma omp parallel num_threads(8)
 	{
 	// Variables init by thread
 	MinimizerSearcher * searcher = new MinimizerSearcher(0, m, stream.reader.get_encoding());
