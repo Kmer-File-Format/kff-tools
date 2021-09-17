@@ -211,7 +211,7 @@ class TestBucketting(unittest.TestCase):
 
 
         print(f"  2/3 bucket the file")
-        # print(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11")
+        print(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11")
         self.assertEqual(0, os.system(f"./bin/kff-tools bucket -i {kff_raw} -o {kff_bucket} -m 11"))
         
 

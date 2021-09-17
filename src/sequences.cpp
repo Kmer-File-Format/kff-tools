@@ -39,10 +39,15 @@ uint8_t fusion8(uint8_t left_bits, uint8_t right_bits, size_t merge_index) {
 	return (left_bits & mask) | (right_bits & ~mask);
 }
 
-
-uint KffSeqStream::next_sequence(uint8_t * & seq, uint8_t * & data) {
+int KffSeqStream::next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) {
+// int KffSeqStream::next_sequence(uint8_t * & seq, uint max_seq_size, uint8_t * & data, uint max_data_size) {
 	if (this->reader.has_next()) {
-		return this->reader.next_block(seq, data);
+		uint max_seq = this->reader.k + this->reader.max - 1;
+		uint max_data = this->reader.max * this->reader.data_size;
+		if (max_seq_size < max_seq or max_data_size < max_data)
+			return -1;
+		else
+			return this->reader.next_block(seq, data);
 	}
 
 	return 0;
@@ -131,7 +136,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_value = (current_value << 2) + nucl;
 		current_rev_value = (current_rev_value >> 2) + (this->rc.reverse[nucl] << (2 * (this->m - 1)));
 	}
-
+	
 	// Compute minimizer candidates
 	uint64_t m_mask = (1 << (this->m*2)) - 1;
 	for (uint i=this->m-1, kmer_idx=0 ; i<seq_size ; i++, kmer_idx++) {
@@ -144,7 +149,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_rev_value = (current_rev_value >> 2) + this->nucl_rev[idx%4][seq[byte_idx]];//(this->rc.reverse[nucl] << (2 * (m - 1)));
 		this->mini_buffer[kmer_idx] = current_value;
 		this->mini_buffer[this->mini_buffer.size()/2 + kmer_idx] = current_rev_value;
-	}	
+	}
 }
 
 
