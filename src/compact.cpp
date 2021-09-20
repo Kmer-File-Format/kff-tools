@@ -106,56 +106,12 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	uint k = outfile.global_vars["k"];
 	uint m = outfile.global_vars["m"];
 	uint data_size = outfile.global_vars["data_size"];
-	uint kmer_bytes = (k - m + 3) / 4;
-	uint mini_pos_size = (static_cast<uint>(ceil(log2(k - m + 1))) + 7) / 8;
-
-	// Buffers
-	uint8_t * seq_buffer = new uint8_t[(2 * k + 3) / 4];
-	uint8_t * data_buffer = new uint8_t[2 * k * data_size];
-	uint64_t mini_pos;
-
-	// Kmer storing space
-	uint kmer_buffer_size = 1 << 15;
-	long next_free = 0;
-	uint8_t * kmers = (uint8_t *)malloc(kmer_buffer_size);
-	memset(kmers, 0, kmer_buffer_size);
-	vector<vector<long> > kmers_per_index(k-m+1);
-
+	
 	// 1 - Load the input section
-	for (uint n=0 ; n<ism.nb_blocks ; n++) {
-		// Read sequence
-		uint nb_kmers = ism.read_compacted_sequence_without_mini(
-			seq_buffer, data_buffer, mini_pos);
-
-		// Add kmer by index
-		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
-			uint kmer_pos = k - m - mini_pos + kmer_idx;
-
-			// Realloc if needed
-			if (kmer_buffer_size - next_free < kmer_bytes + data_size + mini_pos_size) {
-				kmers = (uint8_t *) realloc((void *)kmers, kmer_buffer_size*2);
-				memset(kmers + kmer_buffer_size, 0, kmer_buffer_size);
-				kmer_buffer_size *= 2;
-			}
-
-			// Copy kmer sequence
-			subsequence(seq_buffer, k - m + nb_kmers - 1, kmers + next_free, kmer_idx, kmer_idx + k - m - 1);
-			// Copy data array
-			memcpy(kmers + next_free + kmer_bytes, data_buffer + kmer_idx * data_size, data_size);
-			// Write mini position
-			uint kmer_mini_pos = mini_pos - kmer_idx;
-			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
-				*(kmers + next_free + kmer_bytes + data_size + b) = kmer_mini_pos & 0xFF;
-				kmer_mini_pos >>= 8;
-			}
-			// Update
-			kmers_per_index[kmer_pos].push_back(next_free);
-			next_free += kmer_bytes + data_size + mini_pos_size;
-		}
-	}
-
+	vector<vector<long> > kmers_per_index = this->prepare_kmer_matrix(ism);
+	
 	// 2 - Compact kmers
-	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers, kmers_per_index, k, m);
+	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index, k, m);
 	vector<vector<uint8_t *> > paths = this->pairs_to_paths(to_compact);
 
 	Section_Minimizer osm(&outfile);
@@ -164,9 +120,6 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	osm.close();
 
 	// Cleaning
-	free(kmers);
-	delete[] seq_buffer;
-	delete[] data_buffer;
 }
 
 // this->buffer_size = 1 << 10;
@@ -225,7 +178,7 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	return kmer_matrix;
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(uint8_t * kmer_buffer, vector<vector<long> > & positions, const uint k, const uint m) {
+vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions, const uint k, const uint m) {
 	uint nb_kmers = k - m + 1;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
 
