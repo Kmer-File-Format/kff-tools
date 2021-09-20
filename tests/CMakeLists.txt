@@ -20,13 +20,16 @@ set(SRCS
     main.cpp
     encoding_test.cpp
     sequence_test.cpp
+    compact_test.cpp
     ../src/sequences.cpp
     ../src/encoding.cpp
+    ../src/compact.cpp
     )
     
 set(HEADERS
     ../src/sequences.hpp
     ../src/encoding.hpp
+    ../src/compact.hpp
     )
 
 # add the executable

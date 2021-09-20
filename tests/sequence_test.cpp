@@ -13,8 +13,8 @@ const lest::test module[] = {
 
     CASE("Testing sequence minimizer search") {
 
-        cout << "Test minimizer search\n\tk=11, m=3, single side minimizer search" << endl;
-        SETUP( "k=11, m=3, single side minimizer search" ) {
+        cout << "Test minimizer search k=5, m=3\n\tsingle side minimizer search" << endl;
+        SETUP( "single side minimizer search" ) {
             uint8_t encoding[] = {0, 1, 3, 2};
             uint k = 5;
             uint m = 3;
@@ -104,8 +104,8 @@ const lest::test module[] = {
         }
         cout << endl;
 
-        cout << "\tk=11, m=3, double side minimizer search" << endl;
-        SETUP( "k=11, m=3, double side minimizer search" ) {
+        cout << "\tdouble side minimizer search" << endl;
+        SETUP( "double side minimizer search" ) {
             uint8_t encoding[] = {0, 1, 3, 2};
             uint k = 5;
             uint m = 3;
