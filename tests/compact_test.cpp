@@ -20,21 +20,21 @@ const lest::test module[] = {
         uint8_t seq[3];
         uint8_t data[2];
 
-        // File with one small section prepare
-        Kff_file file("compact_test.kff", "w");
-        Binarizer bz(file.encoding);
-        Compact comp;
-
-        // Write needed values
-        Section_GV sgv(&file);
-        sgv.write_var("k", k);
-        sgv.write_var("m", m);
-        sgv.write_var("max", 1);
-        sgv.write_var("data_size", 1);
-        sgv.close();
 
         SETUP( "2 kmer compaction" ) {
             cout << "\t2 kmer compaction test" << endl;
+            // File with one small section prepare
+            Kff_file file("compact_test.kff", "w");
+            Binarizer bz(file.encoding);
+            Compact comp;
+
+            // Write needed values
+            Section_GV sgv(&file);
+            sgv.write_var("k", k);
+            sgv.write_var("m", m);
+            sgv.write_var("max", 1);
+            sgv.write_var("data_size", 1);
+            sgv.close();
             // Write a minimizer section
             Section_Minimizer sm(&file);
             bz.translate("AAA", 3, seq);
@@ -81,10 +81,10 @@ const lest::test module[] = {
             }
 
             sm.close();
+            file.close(false);
             cout << "\t\tOK" << endl;
         }
         
-        file.close(false);
         cout << endl;
 
     }
