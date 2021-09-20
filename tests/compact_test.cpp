@@ -63,8 +63,21 @@ const lest::test module[] = {
                 vector<vector<long> > matrix = comp.prepare_kmer_matrix(sm);
                 EXPECT( matrix.size() == k - m + 1 );
                 EXPECT( matrix[0].size() == 0u );
+                
+                // First kmer tests
                 EXPECT( matrix[1].size() == 1u );
+                EXPECT( matrix[1][0] == 0l );
+                bz.translate("TG", 2, seq);
+                EXPECT( comp.kmer_buffer[0] == seq[0] ); // Sequence
+                EXPECT( comp.kmer_buffer[1] == 1 ); // Data
+                EXPECT( comp.kmer_buffer[2] == 1 ); // mini pos
+
+                // Second kmer tests
                 EXPECT( matrix[2].size() == 1u );
+                bz.translate("GC", 2, seq);
+                EXPECT( comp.kmer_buffer[3] == seq[0] );
+                EXPECT( comp.kmer_buffer[4] == 2 );
+                EXPECT( comp.kmer_buffer[5] == 0 );
             }
 
             sm.close();

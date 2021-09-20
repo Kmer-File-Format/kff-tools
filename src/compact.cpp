@@ -21,6 +21,7 @@ Compact::Compact() {
 	this->buffer_size = 1 << 10;
 	this->next_free = 0;
 	this->kmer_buffer = (uint8_t *)malloc(this->buffer_size);
+	memset(this->kmer_buffer, 0, this->buffer_size);
 }
 
 
@@ -178,7 +179,7 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	
 	uint64_t max_nucl = sm.k + sm.max - 1;
 	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
-	uint64_t kmer_bytes = (sm.k + 3) / 4;
+	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
 	uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
 
 	uint8_t * seq_buffer = new uint8_t[max_seq_bytes];
