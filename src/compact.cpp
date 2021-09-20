@@ -332,6 +332,8 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 			// Compact the nucleotide
 			uint8_t last_nucl = kmer[kmer_bytes - 1] & 0b11;
 			skmer_buffer[compact_byte] |= last_nucl << (2 * compact_shift);
+			// Copy data
+			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
 		}
 		// cout << endl;
 
