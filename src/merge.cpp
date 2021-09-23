@@ -180,6 +180,8 @@ void Merge::merge(const vector<Kff_file *> & files, string output) {
 				infile->jump(8);
 				// Chain the section and save its position
 				long i_relative = last_index - (i_position + file_size + 8l);
+				if (last_index == 0)
+					i_relative = 0;
 				for (uint i=0 ; i<8 ; i++) {
 					uint8_t val = (uint8_t)(i_relative >> (56 - 8 * i));
 					outfile.write(&val, 1);

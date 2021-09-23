@@ -92,11 +92,16 @@ void Validate::exec() {
 					infile.read(&type, 1);
 					if (type != pair.second) {
 						cerr << "Wrong section at position " << section_pos << ". Found a section " << type << endl;
+						exit(1);
 					}
 					// Go back to previous position
 					infile.jump_to(current_pos);
 				}
 
+				if (this->verbose) {
+					cout << "Next index position " << si.next_index << endl;
+				}
+				
 				if (si.next_index != 0) {
 					// Jump to the section
 					long section_pos = end_byte + si.next_index;
@@ -106,15 +111,14 @@ void Validate::exec() {
 					uint8_t type = 0;
 					infile.read(&type, 1);
 					if (type != 'i') {
+						cerr << end_byte << " " << si.next_index << endl;
 						cerr << "No index found at position " << section_pos << "." << endl;
+						exit(1);
 					}
 					// Go back to previous position
 					infile.jump_to(current_pos);	
 				}
 
-				if (this->verbose) {
-					cout << "Next index position " << si.next_index << endl;
-				}
 				si.close();
 			}
 			// Raw sequence section
