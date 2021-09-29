@@ -34,6 +34,7 @@ void Compact::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("compact", "Read a kff file and try to compact the kmers from minimizer sections. The available ram must be sufficent to load a complete minimizer section into memory.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "Input kff file to compact.");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff to write (must be different from the input)");
 	out_option->required();
 }

@@ -15,6 +15,7 @@ void Shuffle::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("shuffle", "Randomly shuffle the order of the sequences within each section (m and r) of a kff files.");
 	CLI::Option * input_option = subapp->add_option("-i, --input", input_filename, "Input KFF file");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Shuffled output KFF file");
 	out_option->required();

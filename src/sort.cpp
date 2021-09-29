@@ -16,6 +16,7 @@ void Sort::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("sort", "Sort the order of the sequences within each section (m and r) of a kff files.");
 	CLI::Option * input_option = subapp->add_option("-i, --input", input_filename, "Input KFF file");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Sortd output KFF file");
 	out_option->required();

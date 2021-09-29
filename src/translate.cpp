@@ -34,6 +34,7 @@ void Translate::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("translate", "Translate a kff file from its encoding to another one.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "The file to convert");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Translated output file.");
 	out_option->required();

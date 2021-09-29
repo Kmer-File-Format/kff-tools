@@ -17,6 +17,7 @@ void DataRm::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("data-rm", "Read the input file and rewrite it in the output, removing all the data associated with the kmers.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "The file to copy");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Outfile without data.");
 	out_option->required();

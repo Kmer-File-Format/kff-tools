@@ -31,6 +31,7 @@ void Instr::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("instr", "Convert a text kmer file or a text sequence file into a kff file. Kmers or sequences must be 1 per line. If data size is more than 0, then the delimiters are used to split each line.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "A text file with one sequence per line (sequence omitted if its size < k). Empty data is added (size defined by -d option).");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 	CLI::Option * output_option = subapp->add_option("-o, --outfile", output_filename, "The kff output file name.");
 	output_option->required();
 	CLI::Option * k_opt = subapp->add_option("-k, --kmer-size", k, "Mandatory kmer size");

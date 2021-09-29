@@ -13,8 +13,10 @@ Split::Split() {
 void Split::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("split", "Split a kff file into one file per section.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "Input file in kff format");
+	input_option->check(CLI::ExistingFile);
 	input_option->required();
-	subapp->add_option("-o, --outdir", output_dirname, "Output directory where to put all the subkff files");
+	CLI::Option * out_opt = subapp->add_option("-o, --outdir", output_dirname, "Output directory where to put all the subkff files");
+	out_opt->check(CLI::ExistingDirectory);
 }
 
 void Split::exec() {

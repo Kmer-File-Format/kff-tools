@@ -18,6 +18,7 @@ void Validate::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("validate", "Read the input file and tell if some values are unexpected.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "The file to copy");
 	input_option->required();
+	input_option->check(CLI::ExistingFile);
 
 	subapp->add_flag("-v, --verbose", verbose, "Print all the validation process instead of only unexpected values.");
 }

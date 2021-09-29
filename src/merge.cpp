@@ -17,7 +17,9 @@ void Merge::cli_prepare(CLI::App * app) {
 	CLI::Option_group * group = subapp->add_option_group("input", "different ways to pass inputs to the merge command");
 	CLI::Option * input_option = group->add_option("-i, --inputs", input_filenames, "A list of input file names. The order of the file list will be preserved in the output file.");
 	input_option->expected(2, -1);
-	group->add_option("-f, --input-filelist", input_filelist, "A file containing the list of input file names. The order of the file list will be preserved in the output file.");
+	// input_option->check(CLI::ExistingFile);
+	CLI::Option * input_fileopt = group->add_option("-f, --input-filelist", input_filelist, "A file containing the list of input file names. The order of the file list will be preserved in the output file.");
+	input_fileopt->check(CLI::ExistingFile);
 	group->required();
 
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff file where all the input will be merged");
