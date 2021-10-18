@@ -35,10 +35,6 @@ void Merge::merge(const vector<string> inputs, string output) {
 
 	this->merge(files, output);
 
-    for (Kff_file* file : files)
-    {
-        delete file;
-    }
 	files.clear();
 }
 
