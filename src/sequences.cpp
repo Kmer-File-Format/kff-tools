@@ -471,8 +471,8 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size) {
 
 
 uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uint end_nucl) {
-	uint8_t encoding[] = {0, 1, 3, 2};
-	Stringifyer strif(encoding);
+	// uint8_t encoding[] = {0, 1, 3, 2};
+	// Stringifyer strif(encoding);
 	// Trunkate too long sequences
 	if (end_nucl - start_nucl + 1 > 32)
 		start_nucl = end_nucl - 31;

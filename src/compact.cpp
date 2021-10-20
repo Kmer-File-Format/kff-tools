@@ -231,9 +231,6 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 	uint nb_nucl = k - m;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
 
-	uint8_t encoding[] = {0, 1, 3, 2};
-	Stringifyer strif(encoding);
-
 	// Index kmers from the 0th set
 	for (long kmer_pos : positions[0]) {
 		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
