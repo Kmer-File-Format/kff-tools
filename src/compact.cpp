@@ -17,11 +17,17 @@ using namespace std;
 Compact::Compact() {
 	input_filename = "";
 	output_filename = "";
+	sorted = false;
 
 	this->buffer_size = 1 << 10;
 	this->next_free = 0;
 	this->kmer_buffer = (uint8_t *)malloc(this->buffer_size);
 	memset(this->kmer_buffer, 0, this->buffer_size);
+
+	this->k = 0;
+	this->m = 0;
+	this->bytes_compacted = 0;
+	this->offset_idx = 0;
 }
 
 
@@ -37,6 +43,7 @@ void Compact::cli_prepare(CLI::App * app) {
 	input_option->check(CLI::ExistingFile);
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff to write (must be different from the input)");
 	out_option->required();
+	subapp->add_flag("-s, --sorted", sorted, "The output compacted superkmers will be sorted to allow binary search. Sorted superkmer have a lower compaction ratio (ie will be less compacted).");
 }
 
 
@@ -107,17 +114,28 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	uint k = outfile.global_vars["k"];
 	uint m = outfile.global_vars["m"];
 	uint data_size = outfile.global_vars["data_size"];
+
+	this->k = k;
+	this->m = m;
+	this->bytes_compacted = (k - m + 3) / 4;
+	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 	
 	// 1 - Load the input section
 	vector<vector<long> > kmers_per_index = this->prepare_kmer_matrix(ism);
 	
 	// 2 - Compact kmers
-	vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index, k, m);
+	vector<pair<uint8_t *, uint8_t *> > to_compact;
+	if (this->sorted) {
+		to_compact = this->sorted_assembly(kmers_per_index);
+		exit(0);
+	} else {
+		to_compact = this->greedy_assembly(kmers_per_index);
+	}
 	vector<vector<uint8_t *> > paths = this->pairs_to_paths(to_compact);
 
 	Section_Minimizer osm(&outfile);
 	osm.write_minimizer(ism.minimizer);
-	this->write_paths(paths, osm, k, m, data_size);
+	this->write_paths(paths, osm, data_size);
 	osm.close();
 
 	// Cleaning
@@ -179,22 +197,56 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	return kmer_matrix;
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions, const uint k, const uint m) {
-	uint nb_kmers = k - m + 1;
+
+void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
+	// Comparison function
+	// Compact * comp = this;
+	auto comp_function = [this](const long pos1, const long pos2) {
+		uint8_t * kmer1 = this->kmer_buffer + pos1;
+		uint8_t * kmer2 = this->kmer_buffer + pos2;
+
+		for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
+			if (kmer1[byte_idx] != kmer2[byte_idx])
+				return kmer1[byte_idx] <= kmer2[byte_idx];
+		}
+		return true;
+	};
+
+	// Sort by column
+	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
+		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+	}
+}
+
+vector<pair<uint8_t *, uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
+	vector<pair<uint8_t *, uint8_t *> > links;
+
+	this->sort_matrix(positions);
+	cout << "POUET " << endl;
+
+	return links;
+}
+
+vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions) {
+	uint nb_nucl = k - m;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
 
-	// Index kmers from the 0th set
-	for (long kmer_pos : positions[0])
-		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
+	uint8_t encoding[] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
 
-	for (uint i=0 ; i<nb_kmers-1 ; i++) {
+	// Index kmers from the 0th set
+	for (long kmer_pos : positions[0]) {
+		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
+	}
+
+	for (uint i=0 ; i<nb_nucl ; i++) {
 		// Index kmers in ith set
 		unordered_map<uint64_t, vector<uint8_t *> > index;
 		
 		for (long kmer_pos : positions[i]) {
 			uint8_t * kmer = kmer_buffer + kmer_pos;
 			// Get the suffix
-			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 1, nb_kmers-2);
+			uint64_t val = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 			// Add a new vector for this value
 			if (index.find(val) == index.end())
 				index[val] = vector<uint8_t *>();
@@ -203,9 +255,9 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 		}
 
 		// link kmers from (i+1)th set to ith kmers.
-		for (long kmer_pos : positions	[i+1]) {
+		for (long kmer_pos : positions[i+1]) {
 			uint8_t * kmer = kmer_buffer + kmer_pos;
-			uint64_t val = subseq_to_uint(kmer, nb_kmers-1, 0, nb_kmers-3);
+			uint64_t val = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
 
 			if (index.find(val) == index.end()) {
 				// No kmer available for matching
@@ -217,8 +269,8 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 				for (uint8_t * candidate : index[val]) {
 					// If the kmers can be assembled
 					if (sequence_compare(
-								kmer, nb_kmers-1, 0, nb_kmers-3,
-								candidate, nb_kmers-1, 1, nb_kmers-2
+								kmer, nb_nucl, 0, nb_nucl-2,
+								candidate, nb_nucl, 1, nb_nucl-1
 							) == 0) {
 						// Update status
 						chaining_found = true;
@@ -233,15 +285,16 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 					candidate_pos += 1;
 				}
 				// If no assembly possible, create a new superkmer
-				if (not chaining_found)
+				if (not chaining_found) {
 					assembly.emplace_back(nullptr, kmer);
+				}
 			}
 		}
 	}
 
 	// Index last kmers without compaction
 	int assembly_idx = assembly.size()-1;
-	for (auto it=positions[nb_kmers-1].end() ; it>positions[nb_kmers-1].begin() ; it--) {
+	for (auto it=positions[nb_nucl].end() ; it>positions[nb_nucl].begin() ; it--) {
 		long pos = *(it-1);
 		uint8_t * kmer = kmer_buffer + 	pos;
 
@@ -280,7 +333,7 @@ vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, 
 	return paths;
 }
 
-void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint k, const uint m, const uint data_size) {
+void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size) {
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
 	uint mini_pos_size = (static_cast<uint>(ceil(log2(k - m + 1))) + 7) / 8;

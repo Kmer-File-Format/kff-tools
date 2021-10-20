@@ -471,6 +471,8 @@ uint64_t seq_to_uint(const uint8_t * seq, uint seq_size) {
 
 
 uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uint end_nucl) {
+	uint8_t encoding[] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
 	// Trunkate too long sequences
 	if (end_nucl - start_nucl + 1 > 32)
 		start_nucl = end_nucl - 31;
@@ -479,6 +481,13 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 	uint seq_offset = (4 - (seq_size % 4)) % 4;
 	uint first_sub_byte = (seq_offset + start_nucl) / 4;
 	uint last_sub_byte = (seq_offset + end_nucl) / 4;
+
+	if (first_sub_byte == last_sub_byte) {
+		uint64_t val = seq[first_sub_byte];
+		uint shift = 2 * (3 - seq_offset - end_nucl);
+		uint mask = (1 << ((end_nucl - start_nucl + 1) * 2)) - 1;
+		return (val >> shift) & mask;
+	}
 
 	// First byte integration
 	uint mask = (1 << (2 * (4 - ((seq_offset + start_nucl) % 4)))) - 1;

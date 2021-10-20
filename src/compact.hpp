@@ -14,11 +14,22 @@ class Compact: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
+	bool sorted;
+
+	uint k;
+	uint m;
+	uint bytes_compacted;
+	uint offset_idx;
 
 
-	void write_paths(const std::vector<std::vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint k, const uint m, const uint data_size);
-	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<long> > & positions, const uint k, const uint m);
+	void write_paths(const std::vector<std::vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size);
 	std::vector<std::vector<uint8_t *> > pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact);
+
+	void sort_matrix(std::vector<std::vector<long> > & kmer_matrix);
+
+	std::vector<std::pair<uint8_t *, uint8_t *> > sorted_assembly(std::vector<std::vector<long> > & positions);
+	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<long> > & positions);
+
 
 public:
 	uint8_t * kmer_buffer;
