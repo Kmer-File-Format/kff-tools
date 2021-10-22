@@ -125,11 +125,11 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 	
 	// 1 - Load the input section
-	cout << "Matrix creation" << endl;
+	// cout << "Matrix creation" << endl;
 	vector<vector<long> > kmers_per_index = this->prepare_kmer_matrix(ism);
 	
 	// 2 - Compact kmers
-	cout << "Overlaping process" << endl;
+	// cout << "Overlaping process" << endl;
 	vector<pair<uint8_t *, uint8_t *> > to_compact;
 	if (this->sorted) {
 		to_compact = this->sorted_assembly(kmers_per_index);
@@ -137,10 +137,10 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	} else {
 		to_compact = this->greedy_assembly(kmers_per_index);
 	}
-	cout << "Path creation" << endl;
+	// cout << "Path creation" << endl;
 	vector<vector<uint8_t *> > paths = this->pairs_to_paths(to_compact);
 
-	cout << "save" << endl;
+	// cout << "save" << endl;
 	Section_Minimizer osm(&outfile);
 	osm.write_minimizer(ism.minimizer);
 	this->write_paths(paths, osm, data_size);
@@ -360,7 +360,7 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 	// Write skmer per skmer
 	uint idx = 0;
 	for (const vector<uint8_t *> & path : paths) {
-		cout << "path " << ++idx << "/" << paths.size() << endl;
+		// cout << "path " << ++idx << "/" << paths.size() << endl;
 		// Cleaning previous skmers/data
 		memset(skmer_buffer, 0, max_skmer_bytes + 1);
 		memset(data_buffer, 0, data_bytes);
@@ -379,7 +379,7 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 		// uint skmer_bytes = (skmer_size + 3) / 4;
 		uint skmer_offset = (4 - (skmer_size % 4)) % 4;
 
-		cout << "first kmer" << endl;
+		// cout << "first kmer" << endl;
 		// Save the first kmer
 		memcpy(skmer_buffer, path[0], kmer_bytes);
 		leftshift8(skmer_buffer, kmer_bytes, 2 * kmer_offset);
@@ -389,7 +389,7 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 
 		// Compact kmer+data one by one
 		for (uint kmer_idx = 1 ; kmer_idx<path.size() ; kmer_idx++) {
-			cout << "kmer " << kmer_idx << endl;
+			// cout << "kmer " << kmer_idx << endl;
 			uint8_t * kmer = path[kmer_idx];
 
 			// Compute compaction position
@@ -403,12 +403,12 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
 		}
 
-		cout << "write_compacted_sequence_without_mini" << endl;
+		// cout << "write_compacted_sequence_without_mini" << endl;
 		// Write everything in the file
 		sm.write_compacted_sequence_without_mini(skmer_buffer, skmer_size, mini_pos, data_buffer);
 	}
 
-	cout << "delete" << endl;
+	// cout << "delete" << endl;
 
 	delete[] skmer_buffer;
 	delete[] data_buffer;
