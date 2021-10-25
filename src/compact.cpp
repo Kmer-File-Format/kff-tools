@@ -358,7 +358,6 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 	// Stringifyer strif(encoding);
 
 	// Write skmer per skmer
-	uint idx = 0;
 	for (const vector<uint8_t *> & path : paths) {
 		// cout << "path " << ++idx << "/" << paths.size() << endl;
 		// Cleaning previous skmers/data
