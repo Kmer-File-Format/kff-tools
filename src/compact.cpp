@@ -62,7 +62,6 @@ void Compact::exec() {
   outfile.write_metadata(infile.metadata_size, metadata);
   delete[] metadata;
 
-  uint idx = 0;
 	while (infile.tellp() != infile.end_position) {
 		char section_type = infile.read_section_type();
 
@@ -101,11 +100,8 @@ void Compact::exec() {
 
 			// Compact and save the kmers
 			Section_Minimizer sm(&infile);
-			uint minival = seq_to_uint(sm.minimizer, m);
-			cout << minival << " (" << idx++ << ")" << endl;
 			this->compact_section(sm, outfile);
 			sm.close();
-			cout << "/" << minival << endl << endl;
 		}
 	}
 
