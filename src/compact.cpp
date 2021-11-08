@@ -219,20 +219,82 @@ void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
 	// Sort by column
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
-
-		for (long position : kmer_matrix[i]) {
-			cout << (uint)this->kmer_buffer[position] << endl;
-		}
-		cout << endl;
 	}
-	exit(0);
+}
+
+vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(vector<pair<uint8_t *, uint8_t *> > & candidates) const {
+	vector<pair<uint8_t *, uint8_t *> > predecessors;
+	vector<pair<uint8_t *, uint8_t *> > subseq_index;
+
+	// 0 - Sorting the candidates
+
+	uint longest = 0;
+	uint idx=0;
+	for (const pair<uint8_t *, uint8_t *> & candidate : candidates) {
+		
+
+		idx += 1;
+	}
+	
+	vector<pair<uint8_t *, uint8_t *> > selected;
+
+	return selected;
 }
 
 vector<pair<uint8_t *, uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
 	vector<pair<uint8_t *, uint8_t *> > links;
 
 	this->sort_matrix(positions);
-	cout << "POUET " << endl;
+
+	// Index kmers from the 0th set
+	for (long kmer_pos : positions[0]) {
+		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
+	}
+
+	// For each column pair, index the first column, index overlaps and choose wich to compact.
+	for (uint i=0 ; i<nb_nucl ; i++) {
+		// 1 - Index kmers in ith set
+		unordered_map<uint64_t, vector<uint8_t *> > index;
+		
+		for (long kmer_pos : positions[i]) {
+			uint8_t * kmer = kmer_buffer + kmer_pos;
+			// Get the suffix
+			uint64_t val = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
+			// Add a new vector for this value
+			if (index.find(val) == index.end())
+				index[val] = vector<uint8_t *>();
+			// Add the kmer to the value list
+			index[val].push_back(kmer);
+		}
+
+		// 2 - Register possible links from (i+1)th set to ith kmers.
+		vector<pair<uint8_t *, uint8_t *> > candidates;
+		for (long kmer_pos : positions[i+1]) {
+			uint8_t * kmer = kmer_buffer + kmer_pos;
+			uint64_t val = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
+
+			if (index.find(val) != index.end()) {
+				// verify complete matching for candidates kmers
+				for (uint8_t * candidate : index[val]) {
+					// If the kmers can be assembled
+					if (sequence_compare(
+								kmer, nb_nucl, 0, nb_nucl-2,
+								candidate, nb_nucl, 1, nb_nucl-1
+							) == 0) {
+						// Add the candidate after full kmer check
+						candidates.emplace_back(candidate, kmer);
+					}
+				}
+			}
+		}
+
+		// 3 - Select the links that are not overlaping (Using longest increasing subsequence)
+		vector<pair<uint8_t *, uint8_t *> > selected = this->LIS(candidates);
+
+		// 4 - Interleave non selected right kmers
+	}
+
+	exit(0);
 
 	return links;
 }

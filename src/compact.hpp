@@ -22,12 +22,64 @@ private:
 	uint offset_idx;
 
 
+	/** Write a minimizer section containing all the superkmers given as paths. The process preserve
+	 * the order of the superkmers.
+	 * 
+	 * @param paths List of all the kmer paths that represent virtual superkmers.
+	 * @param sm Section Minimizer to fill.
+	 * @param data_size Size in bytes of each data.
+	 **/
 	void write_paths(const std::vector<std::vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size);
+
+	/** Take a list of kmer pair to assemble and return a list of paths from left to right of
+	 * virtual superkmers.
+	 * 
+	 * @param to_compact Pairs of kmers to compact into paths
+	 * 
+	 * @return A list of virtual superkmer paths (path = kmer list from left to right).
+	 **/
 	std::vector<std::vector<uint8_t *> > pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact);
 
+	/** Sort each column of the matrix using a kmer order. The input columns of the matrix are
+	 * modified during this process.
+	 * 
+	 * @param kmer_matrix A matrix where all the kmers of the same column share the same minimizer 
+	 * position.
+	 **/
 	void sort_matrix(std::vector<std::vector<long> > & kmer_matrix);
+	
+	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
+	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
+	 * the kmer order for each column of the matrix (order on the kmers that share the same minimizer
+	 * position)
+	 * 
+	 * @param candidates Sorted list of overlaping candidate. This list should be sorted by the first
+	 * kmer order, then the second kmer for equalities.
+	 * 
+	 * @return The list of selected links. All other links must be remove to keep the order.
+	 **/
+	vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair<uint8_t *, uint8_t *> > & candidates) const;
 
+	/** Assemble all the kmers into sorted virtual superkmers.
+	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 
+	 * keeping the order). This compaction is not necessary the only one that is optimal.
+	 * The matrix given in parameter will be sorted during this step.
+	 * 
+	 * @param Matrix of kmer positions in the memory buffer. There are k-m+1 vectors in the matrix.
+	 * Each of this vectors contains all the kmers that share the same minimizer position.
+	 * 
+	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
+	 **/
 	std::vector<std::pair<uint8_t *, uint8_t *> > sorted_assembly(std::vector<std::vector<long> > & positions);
+	/** Assemble all the kmers into virtual superkmers.
+	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space).
+	 * This compaction is not necessary the only one that is optimal.
+	 * 
+	 * @param Matrix of kmer positions in the memory buffer. There are k-m+1 vectors in the matrix.
+	 * Each of this vectors contains all the kmers that share the same minimizer position.
+	 * 
+	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
+	 **/
 	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<long> > & positions);
 
 
