@@ -16,40 +16,42 @@ include_directories(${CMAKE_BINARY_DIR})
 include_directories(${CMAKE_BINARY_DIR}/kff-cpp-api/)
 
 set(SRCS
-    sequences.cpp
-    encoding.cpp
-    kfftools.cpp
-    split.cpp
-    merge.cpp
-    translate.cpp
-    outstr.cpp
-    datarm.cpp
-    disjoin.cpp
-    validate.cpp
-    instr.cpp
     bucket.cpp
     compact.cpp
+    datarm.cpp
+    disjoin.cpp
+    encoding.cpp
+    index.cpp
+    instr.cpp
+    kfftools.cpp
+    merge.cpp
+    outstr.cpp
+    sequences.cpp
     shuffle.cpp
     sort.cpp
+    split.cpp
+    translate.cpp
+    validate.cpp
     )
     
 set(HEADERS
-    sequences.hpp
-    encoding.hpp
     CLI11.hpp
-    kfftools.hpp
-    split.hpp
-    merge.hpp
-    translate.hpp
-    outstr.hpp
-    datarm.hpp
-    disjoin.hpp
-    validate.hpp
-    instr.hpp
     bucket.hpp
     compact.hpp
+    datarm.hpp
+    disjoin.hpp
+    encoding.hpp
+    index.hpp
+    instr.hpp
+    kfftools.hpp
+    merge.hpp
+    outstr.hpp
+    sequences.hpp
     shuffle.hpp
     sort.hpp
+    split.hpp
+    translate.hpp
+    validate.hpp
     )
 
 # add the executable

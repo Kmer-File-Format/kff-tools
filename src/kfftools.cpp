@@ -5,18 +5,19 @@
 #include "kfftools.hpp"
 #include "CLI11.hpp"
 
-#include "split.hpp"
-#include "merge.hpp"
-#include "translate.hpp"
-#include "outstr.hpp"
+#include "bucket.hpp"
+#include "compact.hpp"
 #include "datarm.hpp"
 #include "disjoin.hpp"
-#include "validate.hpp"
+#include "index.hpp"
 #include "instr.hpp"
-#include "compact.hpp"
-#include "bucket.hpp"
+#include "merge.hpp"
+#include "outstr.hpp"
 #include "shuffle.hpp"
 #include "sort.hpp"
+#include "split.hpp"
+#include "translate.hpp"
+#include "validate.hpp"
 
 
 using namespace std;
@@ -76,18 +77,19 @@ int main(int argc, char** argv) {
 
 	// --- Prepare tools ---
 	vector<KffTool *> tools;
-	tools.push_back(new Split());
-	tools.push_back(new Merge());
-	tools.push_back(new Translate());
-	tools.push_back(new Outstr());
-	tools.push_back(new DataRm());
-	tools.push_back(new Disjoin());
-	tools.push_back(new Validate());
-	tools.push_back(new Instr());
 	tools.push_back(new Bucket());
 	tools.push_back(new Compact());
+	tools.push_back(new DataRm());
+	tools.push_back(new Disjoin());
+	tools.push_back(new Index());
+	tools.push_back(new Instr());
+	tools.push_back(new Merge());
+	tools.push_back(new Outstr());
 	tools.push_back(new Shuffle()); 
 	tools.push_back(new Sort()); 
+	tools.push_back(new Split());
+	tools.push_back(new Translate());
+	tools.push_back(new Validate());
 
 	// Get the one selected
 	KffTool * tool = parse_args(argc, argv, tools);
