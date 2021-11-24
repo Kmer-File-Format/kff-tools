@@ -38,13 +38,32 @@ void Index::exec() {
   delete[] meta;
 
   // Copy section by section
-  char section_type = infile.read_section_type();
   while (infile.tellp() != infile.end_position) {
-    if (section_type != 'i') {
-      Section * current = SectionBuilder::build(&infile);
-      current->copy(&outfile);
-      delete current;
+    char section_type = infile.read_section_type();
+    
+    Section * current;
+    // Read v sections
+    if (section_type == 'v') {
+      Section_GV * vsec = new Section_GV(&infile);
+      current = vsec;
+      // Remove footer variables from the v sections
+      if (vsec->vars.find("footer_size") != vsec->vars.end())
+        vsec->vars.erase("footer_size");
+      if (vsec->vars.find("first_index") != vsec->vars.end())
+        vsec->vars.erase("first_index");
     }
+    // Read other type of section
+    else {
+      current = SectionBuilder::build(&infile);
+    }
+    
+    // Copy only non i sections
+    if (section_type != 'i') {
+      current->copy(&outfile);
+    }
+
+    // Free memory from previous section
+    delete current;
   }
 
   infile.close();
