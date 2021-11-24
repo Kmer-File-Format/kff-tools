@@ -269,7 +269,6 @@ class TestIndex(unittest.TestCase):
             stream.close()
 
             print("  Clean the directory")
-            # os.system(f"ls")
             self.assertEqual(0, os.system(f"rm {txt_file} {kff_file} {validate_out} {reindexed_file} {revalidate_out}"))
 
 
