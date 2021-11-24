@@ -238,6 +238,39 @@ class TestBucketting(unittest.TestCase):
         os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}*")
 
 
+class TestIndex(unittest.TestCase):
+    def test_raw_sections_index(self):
+        print("\n-- TestIndex test_raw_section_index")
+        for k in range(12, 16):
+            # Generate random kmer
+            print(f"Generate a random {k}-mers file.")
+            txt_file = f"index_raw_k{k}_test.txt"
+            kg.generate_random_kmers_file(txt_file, 1000, k, max_count=0, overlapping=True)
+
+            # Generate a kff file from a textual kmer count
+            print("  1/3 Generate a kff file from a textual kmer count")
+            kff_file = f"index_raw_k{k}_test.kff"
+            validate_out = f"index_raw_k{k}_valid_test.txt"
+            self.assertEqual(0, os.system(f"./bin/kff-tools instr --kmer-size {k} --data-size 0 --infile {txt_file} --outfile {kff_file}"))
+            self.assertEqual(0, os.system(f"./bin/kff-tools validate -v --infile {kff_file} > {validate_out}"))
+            # exit(0);
+
+            # Regenerate a textual file from the kff
+            print("  2/3 Re-index the kff file")
+            reindexed_file = f"index_raw_k{k}_indexed_test.kff"
+            self.assertEqual(0, os.system(f"./bin/kff-tools index --infile {kff_file} --outfile {reindexed_file}"))
+
+            # Compate the original file to the final translated file
+            print("  3/3 Compare initial and final validation files")
+            revalidate_out = f"index_raw_k{k}_indexed_test.txt"
+            self.assertEqual(0, os.system(f"./bin/kff-tools validate -v --infile {reindexed_file} > {revalidate_out}"))
+            stream = os.popen(f"diff {validate_out} {revalidate_out}")
+            self.assertEqual(stream.read(), "")
+            stream.close()
+
+            print("  Clean the directory")
+            self.assertEqual(0, os.system(f"rm {txt_file} {kff_file} {validate_out} {reindexed_file} {revalidate_out}"))
+
 
 class TestCompaction(unittest.TestCase):
 
