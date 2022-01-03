@@ -117,7 +117,10 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 
 	this->k = k;
 	this->m = m;
+	this->data_size = data_size;
 	this->bytes_compacted = (k - m + 3) / 4;
+	uint64_t max_nucl = (k - m) + 1;
+	this->mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 	
 	// 1 - Load the input section
@@ -145,9 +148,32 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	// Cleaning
 }
 
-// this->buffer_size = 1 << 10;
-// 	this->next_free = 0;
-// 	this->kmer_buffer
+
+long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint64_t mini_pos) {
+	// Realloc if needed
+	if (this->buffer_size - this->next_free < this->bytes_compacted + this->data_size + this->mini_pos_size) {
+		this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, this->buffer_size*2);
+		memset(this->kmer_buffer + this->buffer_size, 0, this->buffer_size);
+		this->buffer_size *= 2;
+	}
+	long position = this->next_free;
+	uint8_t * buffer = this->kmer_buffer + this->next_free;
+
+	// Copy kmer sequence
+	memcpy(buffer, seq, this->bytes_compacted);
+	buffer += this->bytes_compacted;
+	// Copy data array
+	memcpy(buffer, data, this->data_size);
+	buffer += this->data_size;
+	// Write mini position
+	for (int b=mini_pos_size-1 ; b>=0 ; b--) {
+		*(buffer + b) = mini_pos & 0xFF;
+		mini_pos >>= 8;
+	}
+	this->next_free += this->bytes_compacted + this->data_size + this->mini_pos_size;
+
+	return position;
+}
 
 vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	vector<vector<long> > kmer_matrix;
@@ -202,27 +228,120 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 }
 
 
-void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
-	// Comparison function
-	// Compact * comp = this;
-	auto comp_function = [this](const long pos1, const long pos2) {
-		uint8_t * kmer1 = this->kmer_buffer + pos1;
-		uint8_t * kmer2 = this->kmer_buffer + pos2;
+uint Compact::mini_pos_from_buffer(const long pos) const {
+	uint mini_pos = 0;
 
-		for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
-			if (kmer1[byte_idx] != kmer2[byte_idx])
-				return kmer1[byte_idx] <= kmer2[byte_idx];
+	for (uint i=0 ; i<this->mini_pos_size ; i++) {
+		mini_pos <<= 8;
+		mini_pos += this->kmer_buffer[pos + this->bytes_compacted + this->data_size + i];
+	}
+
+	return mini_pos;
+}
+
+
+int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
+	uint8_t * kmer1 = this->kmer_buffer + pos1;
+	const uint mini_pos1 = this->mini_pos(pos1);
+	uint8_t * kmer2 = this->kmer_buffer + pos2;
+	const uint mini_pos2 = this->mini_pos(pos2);
+
+	assert(mini_pos1 == mini_pos2);
+
+	const uint comp_nucl = this->k - this->m;
+	const uint offset_nucl = (4 - (comp_nucl % 4)) % 4;
+	const uint pref_nucl = pos1;
+	const uint pref_bytes = (offset_nucl + pref_nucl + 3) / 4;
+	const uint suff_nucl = comp_nucl - pref_nucl;
+	const uint suff_bytes = (suff_nucl + 3) / 4;
+	const uint total_bytes = (comp_nucl + 3) / 4;
+
+	// --- Prefix ---
+	int last_prefix_divergence = -1;
+	// Prepare masks
+	const uint pref_start_mask = (1 << (8 - 2 * offset_nucl)) - 1;
+	const uint pref_stop_mask = ~((1 << (2 * suff_nucl)) - 1);
+	// Iterate over all bytes
+	for (uint pref_byte=0 ; pref_byte<pref_bytes ; pref_byte++) {
+		uint8_t byte1 = kmer1[pref_byte];
+		uint8_t byte2 = kmer2[pref_byte];
+
+		// Mask useless bits
+		if (pref_byte == 0) {
+			byte1 &= pref_start_mask;
+			byte2 &= pref_start_mask;
 		}
-		return true;
-	};
+		if (pref_byte == pref_bytes-1) {
+			byte1 &= pref_stop_mask;
+			byte2 &= pref_stop_mask;	
+		}
+
+		// Compare
+		uint8_t result = byte1 xor byte2;
+		// Get the rightmost bit set to 0: ie the last difference between sequences
+		if ((result & 0b11) == 0) {
+			last_prefix_divergence = pref_byte * 4 + 3 - offset_nucl;
+		} else if ((result & 0b1100) == 0) {
+			last_prefix_divergence = pref_byte * 4 + 2 - offset_nucl;
+		} else if ((result & 0b110000) == 0) {
+			last_prefix_divergence = pref_byte * 4 + 1 - offset_nucl;
+		} else if ((result & 0b11000000) == 0) {
+			last_prefix_divergence = pref_byte * 4 - offset_nucl;
+		}
+	}
+}
+
+
+void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
+	// Bitmask for the leftmost nucleotides
+	const uint comp_nucl = this->k - this->m;
+	const uint offset_nucl = (4 - (comp_nucl % 4)) % 4;
+	const uint first_mask = (1 << (2 * offset_nucl)) - 1;
+	cout << "offset mask " << this->k << " " << offset_nucl << " " << first_mask << endl;
+	uint8_t encoding[] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
 
 	// Sort by column
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
+
+		// Comparison function (depends on minimizer position)
+		auto comp_function = [this, i, &strif, &comp_nucl](const long pos1, const long pos2) {
+			uint8_t * kmer1 = this->kmer_buffer + pos1;
+			uint8_t * kmer2 = this->kmer_buffer + pos2;
+			cout << strif.translate(kmer1, comp_nucl) << endl;
+			cout << strif.translate(kmer2, comp_nucl) << endl;
+
+			// No interleaved sort
+			// for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
+			// 	if (kmer1[byte_idx] != kmer2[byte_idx])
+			// 		return kmer1[byte_idx] <= kmer2[byte_idx];
+			// }
+
+			// --- Interleaved sort ---
+			// Prefix first byte
+			exit(0);
+			
+			// Prefix middle bytes
+			for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
+				uint8_t xor_val = kmer1[byte_idx] xor kmer2[byte_idx];
+			}
+
+			// Prefix last byte
+
+			// Suffix first byte
+
+			// Suffix middle bytes
+
+			// Suffix last byte
+
+			return true;
+		};
+
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
 	}
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(vector<pair<uint8_t *, uint8_t *> > & candidates) const {
+vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair<uint8_t *, uint8_t *> > & candidates) const {
 	vector<pair<uint8_t *, uint8_t *> > predecessors;
 	vector<pair<uint8_t *, uint8_t *> > subseq_index;
 
@@ -242,59 +361,17 @@ vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(vector<pair<uint8
 }
 
 vector<pair<uint8_t *, uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
+
+	// 1 - Sort Matrix per column
+	this->sort_matrix(positions);
+	exit(0);
+
+
+
+	// 2 - Find the collinear chaining of superkmers
 	vector<pair<uint8_t *, uint8_t *> > links;
 
-	this->sort_matrix(positions);
-
-	// Index kmers from the 0th set
-	for (long kmer_pos : positions[0]) {
-		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
-	}
-
-	// For each column pair, index the first column, index overlaps and choose wich to compact.
-	for (uint i=0 ; i<nb_nucl ; i++) {
-		// 1 - Index kmers in ith set
-		unordered_map<uint64_t, vector<uint8_t *> > index;
-		
-		for (long kmer_pos : positions[i]) {
-			uint8_t * kmer = kmer_buffer + kmer_pos;
-			// Get the suffix
-			uint64_t val = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
-			// Add a new vector for this value
-			if (index.find(val) == index.end())
-				index[val] = vector<uint8_t *>();
-			// Add the kmer to the value list
-			index[val].push_back(kmer);
-		}
-
-		// 2 - Register possible links from (i+1)th set to ith kmers.
-		vector<pair<uint8_t *, uint8_t *> > candidates;
-		for (long kmer_pos : positions[i+1]) {
-			uint8_t * kmer = kmer_buffer + kmer_pos;
-			uint64_t val = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
-
-			if (index.find(val) != index.end()) {
-				// verify complete matching for candidates kmers
-				for (uint8_t * candidate : index[val]) {
-					// If the kmers can be assembled
-					if (sequence_compare(
-								kmer, nb_nucl, 0, nb_nucl-2,
-								candidate, nb_nucl, 1, nb_nucl-1
-							) == 0) {
-						// Add the candidate after full kmer check
-						candidates.emplace_back(candidate, kmer);
-					}
-				}
-			}
-		}
-
-		// 3 - Select the links that are not overlaping (Using longest increasing subsequence)
-		vector<pair<uint8_t *, uint8_t *> > selected = this->LIS(candidates);
-
-		// 4 - Interleave non selected right kmers
-	}
-
-	exit(0);
+	// 3 - Add all the sorted skmers ordered to links
 
 	return links;
 }

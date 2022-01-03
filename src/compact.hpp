@@ -14,12 +14,23 @@ class Compact: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
-	bool sorted;
 
+
+public:
 	uint k;
 	uint m;
+	uint data_size;
+	uint mini_pos_size;
 	uint bytes_compacted;
 	uint offset_idx;
+	bool sorted;
+
+	uint8_t * kmer_buffer;
+	uint64_t buffer_size;
+	uint64_t next_free;
+
+	Compact();
+	~Compact();
 
 
 	/** Write a minimizer section containing all the superkmers given as paths. The process preserve
@@ -40,6 +51,24 @@ private:
 	 **/
 	std::vector<std::vector<uint8_t *> > pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact);
 
+	/** Add a kmer, its data and its minimizer position in the compaction buffer.
+	 * WARNING: All the requested values must be set in the compact object (ie k, m, data_size, mini_pos_size, bytes_compacted)
+	 * @param seq kmer to add. Must be compacted without minimizer.
+	 * @param data data related to the kmer to add (can be a nullpointer on data_size=0)
+	 * @param mini_pos Minimizer position inside of the kmer.
+	 * 
+	 * @return The position of the kmer (in bytes) inside of the buffer)
+	 **/
+	long add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, const uint64_t mini_pos);
+
+	/** Extract a kmer minimizer position from the kmer buffer.
+	 * 
+	 * @param pos The kmer position in the buffer
+	 * 
+	 * @return The minimizer position inside of the kmer
+	 **/
+	uint Compact::mini_pos_from_buffer(const long pos) const;
+
 	/** Sort each column of the matrix using a kmer order. The input columns of the matrix are
 	 * modified during this process.
 	 * 
@@ -58,7 +87,7 @@ private:
 	 * 
 	 * @return The list of selected links. All other links must be remove to keep the order.
 	 **/
-	vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair<uint8_t *, uint8_t *> > & candidates) const;
+	std::vector<std::pair<uint8_t *, uint8_t *> > colinear_chaining(const std::vector<std::pair<uint8_t *, uint8_t *> > & candidates) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 
@@ -82,14 +111,6 @@ private:
 	 **/
 	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<long> > & positions);
 
-
-public:
-	uint8_t * kmer_buffer;
-	uint64_t buffer_size;
-	uint64_t next_free;
-
-	Compact();
-	~Compact();
 
 	void cli_prepare(CLI::App * subapp);
 	/** Read a Section_Raw and write a bucketized and compacted file of the kmers.

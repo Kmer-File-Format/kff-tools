@@ -67,7 +67,7 @@ KffTool * parse_args(int argc, char** argv, vector<KffTool *> tools) {
 int main(int argc, char** argv) {
 	// --- System calls for optimization ---
 	// Remove interactive synchronization for speedup I/O
-	ios_base::sync_with_stdio(false);
+	// ios_base::sync_with_stdio(false);
 	// Raise the number of simultaneous file descriptors to maximum	
 	struct rlimit nb_file_descriptors;
 	getrlimit(RLIMIT_NOFILE, &nb_file_descriptors);
