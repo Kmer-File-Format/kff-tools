@@ -90,84 +90,84 @@ const lest::test module[] = {
     },
 
 
-    CASE( "Sorting tests for compaction" ) {
+    // CASE( "Sorting tests for compaction" ) {
 
-        cout << "Test sorting k=11, m=3" << endl;
-        uint k = 5;
-        uint m = 3;
+    //     cout << "Test sorting k=11, m=3" << endl;
+    //     uint k = 5;
+    //     uint m = 3;
         
-        uint8_t seq[3] = {0, 0, 0};
+    //     uint8_t seq[3] = {0, 0, 0};
 
-        SETUP( "kmer interleaved sorting" ) {
-            cout << "\tkmer interleaved sorting" << endl;
-            // File with one small section prepare
-            // Kff_file file("compact_test.kff", "w");
+    //     SETUP( "kmer interleaved sorting" ) {
+    //         cout << "\tkmer interleaved sorting" << endl;
+    //         // File with one small section prepare
+    //         // Kff_file file("compact_test.kff", "w");
 
-            // Init the compaction object
-            Compact comp;
-            comp.k = k;
-            comp.m = m;
-            comp.data_size = 0;
-            comp.mini_pos_size = 1;
-            comp.bytes_compacted = 1;
+    //         // Init the compaction object
+    //         Compact comp;
+    //         comp.k = k;
+    //         comp.m = m;
+    //         comp.data_size = 0;
+    //         comp.mini_pos_size = 1;
+    //         comp.bytes_compacted = 1;
 
-            // Create the kmer matrix
-            vector<vector<long> > matrix(3, vector<long>());
+    //         // Create the kmer matrix
+    //         vector<vector<long> > matrix(3, vector<long>());
 
-            // Add the kmers to compact
-            uint8_t encoding[] = {0, 1, 3, 2};
-            Binarizer bz(encoding);
-            // GGAAA
-            bz.translate("GG", k-m, seq);
-            long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
-            matrix[0].push_back(gg_pos);
-            // GAAC
-            bz.translate("GC", k-m, seq);
-            long gc_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
-            matrix[1].push_back(gc_pos);
-            // AAACT
-            bz.translate("CT", k-m, seq);
-            long ct_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
-            matrix[2].push_back(ct_pos);
-            // CGAAA
-            bz.translate("CG", k-m, seq);
-            long cg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
-            matrix[0].push_back(cg_pos);
-            // GAAAT
-            bz.translate("GT", k-m, seq);
-            long gt_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
-            matrix[1].push_back(gt_pos);
-            // AAATT
-            bz.translate("TT", k-m, seq);
-            long tt_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
-            matrix[2].push_back(tt_pos);
+    //         // Add the kmers to compact
+    //         uint8_t encoding[] = {0, 1, 3, 2};
+    //         Binarizer bz(encoding);
+    //         // GGAAA
+    //         bz.translate("GG", k-m, seq);
+    //         long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
+    //         matrix[0].push_back(gg_pos);
+    //         // GAAC
+    //         bz.translate("GC", k-m, seq);
+    //         long gc_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
+    //         matrix[1].push_back(gc_pos);
+    //         // AAACT
+    //         bz.translate("CT", k-m, seq);
+    //         long ct_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
+    //         matrix[2].push_back(ct_pos);
+    //         // CGAAA
+    //         bz.translate("CG", k-m, seq);
+    //         long cg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
+    //         matrix[0].push_back(cg_pos);
+    //         // GAAAT
+    //         bz.translate("GT", k-m, seq);
+    //         long gt_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
+    //         matrix[1].push_back(gt_pos);
+    //         // AAATT
+    //         bz.translate("TT", k-m, seq);
+    //         long tt_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
+    //         matrix[2].push_back(tt_pos);
 
             
-            SECTION( "Matrix sorting" )
-            {
-                cout << "\t\tMatrix sorting" << endl;
-                // Sorting the matrix
-                comp.sort_matrix(matrix);
+    //         SECTION( "Matrix sorting" )
+    //         {
+    //             cout << "\t\tMatrix sorting" << endl;
+    //             // Sorting the matrix
+    //             comp.sort_matrix(matrix);
 
-                // First column
-                EXPECT( cg_pos == matrix[0][0] );
-                EXPECT( gg_pos == matrix[0][1] );
+    //             // First column
+    //             EXPECT( cg_pos == matrix[0][0] );
+    //             EXPECT( gg_pos == matrix[0][1] );
 
-                // Second column
-                EXPECT( gc_pos == matrix[1][0] );
-                EXPECT( gt_pos == matrix[1][1] );
+    //             // Second column
+    //             EXPECT( gc_pos == matrix[1][0] );
+    //             EXPECT( gt_pos == matrix[1][1] );
 
-                // Third column
-                EXPECT( ct_pos == matrix[2][0] );
-                EXPECT( tt_pos == matrix[2][1] );
-            }
+    //             // Third column
+    //             EXPECT( ct_pos == matrix[2][0] );
+    //             EXPECT( tt_pos == matrix[2][1] );
+    //         }
 
-            cout << "\t\tOK" << endl;
-        }
+    //         cout << "\t\tOK" << endl;
+    //     }
         
-        cout << endl;
+    //     cout << endl;
 
-    },
+    // },
 
 
     CASE( "Sorted compaction" ) {
@@ -223,24 +223,41 @@ const lest::test module[] = {
             matrix[2].push_back(tt_pos);
 
 
-            SECTION( "Matrix sorting" )
+            SECTION( "kmer comparison" )
             {
-                cout << "\t\tMatrix sorting" << endl;
-                // Sorting the matrix
-                comp.sort_matrix(matrix);
+                cout << "\t\tkmer comparison" << endl;
 
-                // First column
-                EXPECT( cg_pos == matrix[0][0] );
-                EXPECT( gg_pos == matrix[0][1] );
+                // Test identity
+                int cmp_ret = comp.interleaved_compare_kmers(gg_pos, gg_pos);
+                EXPECT( cmp_ret == 0 );
 
-                // Second column
-                EXPECT( gc_pos == matrix[1][0] );
-                EXPECT( gt_pos == matrix[1][1] );
 
-                // Third column
-                EXPECT( ct_pos == matrix[2][0] );
-                EXPECT( tt_pos == matrix[2][1] );
+                // Test lower than
+
+
+                // Test higher than
+
             }
+
+
+            // SECTION( "Matrix sorting" )
+            // {
+            //     cout << "\t\tMatrix sorting" << endl;
+            //     // Sorting the matrix
+            //     comp.sort_matrix(matrix);
+
+            //     // First column
+            //     EXPECT( cg_pos == matrix[0][0] );
+            //     EXPECT( gg_pos == matrix[0][1] );
+
+            //     // Second column
+            //     EXPECT( gc_pos == matrix[1][0] );
+            //     EXPECT( gt_pos == matrix[1][1] );
+
+            //     // Third column
+            //     EXPECT( ct_pos == matrix[2][0] );
+            //     EXPECT( tt_pos == matrix[2][1] );
+            // }
 
             cout << "\t\tOK" << endl;
         }

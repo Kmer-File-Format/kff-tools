@@ -67,7 +67,18 @@ public:
 	 * 
 	 * @return The minimizer position inside of the kmer
 	 **/
-	uint Compact::mini_pos_from_buffer(const long pos) const;
+	uint mini_pos_from_buffer(const long pos) const;
+
+	/** Return the result of the comparison between kmers in the buffer.
+	 * WARNING: The comparator assumes that the minimizers are at the same place in the words
+	 * 
+	 * @param pos1 Position of the first kmer in the buffer
+	 * @param pos2 Position of the second kmer in the buffer
+	 * 
+	 * @return A negative number is the first kmer is smaller, 0 if both are equal, a positive number
+	 * otherwise.
+	 **/
+	int interleaved_compare_kmers(const long pos1, const long pos2) const;
 
 	/** Sort each column of the matrix using a kmer order. The input columns of the matrix are
 	 * modified during this process.

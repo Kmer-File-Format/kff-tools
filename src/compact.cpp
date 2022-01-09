@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <queue>
+#include <cassert>
 
 #include "encoding.hpp"
 #include "sequences.hpp"
@@ -242,9 +243,13 @@ uint Compact::mini_pos_from_buffer(const long pos) const {
 
 int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 	uint8_t * kmer1 = this->kmer_buffer + pos1;
-	const uint mini_pos1 = this->mini_pos(pos1);
+	const uint mini_pos1 = this->mini_pos_from_buffer(pos1);
 	uint8_t * kmer2 = this->kmer_buffer + pos2;
-	const uint mini_pos2 = this->mini_pos(pos2);
+	const uint mini_pos2 = this->mini_pos_from_buffer(pos2);
+
+	cout << pos1 << " " << pos2 << endl;
+	cout << mini_pos1 << " " << mini_pos2 << endl;
+	cout << (mini_pos1 == mini_pos2) << endl;
 
 	assert(mini_pos1 == mini_pos2);
 
