@@ -247,36 +247,34 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 	uint8_t * kmer2 = this->kmer_buffer + pos2;
 	const uint mini_pos2 = this->mini_pos_from_buffer(pos2);
 
-	cout << pos1 << " " << pos2 << endl;
-	cout << mini_pos1 << " " << mini_pos2 << endl;
-	cout << (mini_pos1 == mini_pos2) << endl;
-
 	assert(mini_pos1 == mini_pos2);
 
-	const uint comp_nucl = this->k - this->m;
-	const uint offset_nucl = (4 - (comp_nucl % 4)) % 4;
-	const uint pref_nucl = pos1;
+	const uint used_nucl = this->k - this->m;
+	const uint offset_nucl = (4 - (used_nucl % 4)) % 4;
+	const uint pref_nucl = mini_pos1;
 	const uint pref_bytes = (offset_nucl + pref_nucl + 3) / 4;
-	const uint suff_nucl = comp_nucl - pref_nucl;
+	const uint suff_nucl = used_nucl - pref_nucl;
 	const uint suff_bytes = (suff_nucl + 3) / 4;
-	const uint total_bytes = (comp_nucl + 3) / 4;
+	const uint total_bytes = (used_nucl + 3) / 4;
 
 	// --- Prefix ---
 	int last_prefix_divergence = -1;
 	// Prepare masks
-	const uint pref_start_mask = (1 << (8 - 2 * offset_nucl)) - 1;
-	const uint pref_stop_mask = ~((1 << (2 * suff_nucl)) - 1);
+	const uint pref_start_mask = (1u << (8 - 2 * offset_nucl)) - 1;
+	const uint pref_stop_mask = ~((1u << (2 * (suff_nucl % 4))) - 1);
 	// Iterate over all bytes
 	for (uint pref_byte=0 ; pref_byte<pref_bytes ; pref_byte++) {
 		uint8_t byte1 = kmer1[pref_byte];
 		uint8_t byte2 = kmer2[pref_byte];
+
+		bool end_byte = pref_byte == pref_bytes-1;
 
 		// Mask useless bits
 		if (pref_byte == 0) {
 			byte1 &= pref_start_mask;
 			byte2 &= pref_start_mask;
 		}
-		if (pref_byte == pref_bytes-1) {
+		if (end_byte) {
 			byte1 &= pref_stop_mask;
 			byte2 &= pref_stop_mask;	
 		}
@@ -284,16 +282,51 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 		// Compare
 		uint8_t result = byte1 xor byte2;
 		// Get the rightmost bit set to 0: ie the last difference between sequences
-		if ((result & 0b11) == 0) {
-			last_prefix_divergence = pref_byte * 4 + 3 - offset_nucl;
-		} else if ((result & 0b1100) == 0) {
-			last_prefix_divergence = pref_byte * 4 + 2 - offset_nucl;
-		} else if ((result & 0b110000) == 0) {
-			last_prefix_divergence = pref_byte * 4 + 1 - offset_nucl;
-		} else if ((result & 0b11000000) == 0) {
-			last_prefix_divergence = pref_byte * 4 - offset_nucl;
+		for (uint8_t i=0 ; i<4 ; i++) {
+			if ((not end_byte) or (end_byte and (i >= (suff_nucl % 4)))) {
+				if ((result & (0b11 << (2 * i))) != 0) {
+					last_prefix_divergence = pref_byte * 4 + 3 - i - offset_nucl;	
+					break;
+				}
+			}
 		}
 	}
+
+
+	// --- Suffix ---
+	int first_suffix_divergence = suff_nucl;
+	int current_divergence_idx = 0;
+	const uint suff_first_byte = total_bytes - suff_bytes + 1;
+	
+
+	// Iterate over all the bytes from the suffix
+	for (uint suff_byte=suff_first_byte ; suff_byte<total_bytes and first_suffix_divergence==suff_nucl ; suff_byte++) {
+		// Extract and compare bytes
+		uint8_t byte1 = kmer1[suff_byte];
+		uint8_t byte2 = kmer2[suff_byte];
+		uint8_t result = byte1 xor byte2;
+
+		for (uint8_t i=4 ; i>0 ; i++) {
+			// Skip the first nucleotides of the first byte
+			if (suff_byte == suff_first_byte and i == 4) {
+				i = ((suff_nucl - 1) % 4) + 1;
+			}
+
+			// Check for divergeance
+			if ((result & (0b11 << (2 * (i-1)))) != 0) {
+				first_suffix_divergence = current_divergence_idx;
+			} else {
+				current_divergence_idx += 1;
+			}
+		}
+	}
+	cout << last_prefix_divergence << " " << first_suffix_divergence << endl;
+
+	// Compare the divergences
+	if (last_prefix_divergence == -1 and first_suffix_divergence == suff_nucl)
+		return 0;
+
+	return -12;
 }
 
 

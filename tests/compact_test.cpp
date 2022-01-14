@@ -228,7 +228,11 @@ const lest::test module[] = {
                 cout << "\t\tkmer comparison" << endl;
 
                 // Test identity
-                int cmp_ret = comp.interleaved_compare_kmers(gg_pos, gg_pos);
+                int cmp_ret = comp.interleaved_compare_kmers(gc_pos, gc_pos);
+                EXPECT( cmp_ret == 0 );
+                cmp_ret = comp.interleaved_compare_kmers(tt_pos, tt_pos);
+                EXPECT( cmp_ret == 0 );
+                cmp_ret = comp.interleaved_compare_kmers(gg_pos, gg_pos);
                 EXPECT( cmp_ret == 0 );
 
 
