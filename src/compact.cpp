@@ -361,48 +361,13 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 
 
 void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
-	// Bitmask for the leftmost nucleotides
-	const uint comp_nucl = this->k - this->m;
-	const uint offset_nucl = (4 - (comp_nucl % 4)) % 4;
-	const uint first_mask = (1 << (2 * offset_nucl)) - 1;
-	cout << "offset mask " << this->k << " " << offset_nucl << " " << first_mask << endl;
-	uint8_t encoding[] = {0, 1, 3, 2};
-	Stringifyer strif(encoding);
-
 	// Sort by column
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 
 		// Comparison function (depends on minimizer position)
-		auto comp_function = [this, i, &strif, &comp_nucl](const long pos1, const long pos2) {
-			uint8_t * kmer1 = this->kmer_buffer + pos1;
-			uint8_t * kmer2 = this->kmer_buffer + pos2;
-			cout << strif.translate(kmer1, comp_nucl) << endl;
-			cout << strif.translate(kmer2, comp_nucl) << endl;
-
-			// No interleaved sort
-			// for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
-			// 	if (kmer1[byte_idx] != kmer2[byte_idx])
-			// 		return kmer1[byte_idx] <= kmer2[byte_idx];
-			// }
-
-			// --- Interleaved sort ---
-			// Prefix first byte
-			exit(0);
-			
-			// Prefix middle bytes
-			for (uint byte_idx=0 ; byte_idx<this->bytes_compacted ; byte_idx++) {
-				uint8_t xor_val = kmer1[byte_idx] xor kmer2[byte_idx];
-			}
-
-			// Prefix last byte
-
-			// Suffix first byte
-
-			// Suffix middle bytes
-
-			// Suffix last byte
-
-			return true;
+		auto comp_function = [this](const long pos1, const long pos2) {
+			return this->interleaved_compare_kmers(pos1, pos2);
+			// return true;
 		};
 
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
