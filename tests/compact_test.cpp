@@ -235,12 +235,21 @@ const lest::test module[] = {
                 cmp_ret = comp.interleaved_compare_kmers(gg_pos, gg_pos);
                 EXPECT( cmp_ret == 0 );
 
-
                 // Test lower than
-
+                cmp_ret = comp.interleaved_compare_kmers(ct_pos, tt_pos);
+                EXPECT( cmp_ret == -1 );
+                cmp_ret = comp.interleaved_compare_kmers(gc_pos, gt_pos);
+                EXPECT( cmp_ret == -1 );
+                cmp_ret = comp.interleaved_compare_kmers(cg_pos, gg_pos);
+                EXPECT( cmp_ret == -1 );
 
                 // Test higher than
-
+                cmp_ret = comp.interleaved_compare_kmers(tt_pos, ct_pos);
+                EXPECT( cmp_ret == +1 );
+                cmp_ret = comp.interleaved_compare_kmers(gt_pos, gc_pos);
+                EXPECT( cmp_ret == +1 );
+                cmp_ret = comp.interleaved_compare_kmers(gg_pos, cg_pos);
+                EXPECT( cmp_ret == +1 );
             }
 
 

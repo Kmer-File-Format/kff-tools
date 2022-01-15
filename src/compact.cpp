@@ -296,9 +296,8 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 	// --- Suffix ---
 	int first_suffix_divergence = suff_nucl;
 	int current_divergence_idx = 0;
-	const uint suff_first_byte = total_bytes - suff_bytes + 1;
+	const uint suff_first_byte = total_bytes - suff_bytes;
 	
-
 	// Iterate over all the bytes from the suffix
 	for (uint suff_byte=suff_first_byte ; suff_byte<total_bytes and first_suffix_divergence==suff_nucl ; suff_byte++) {
 		// Extract and compare bytes
@@ -306,7 +305,8 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 		uint8_t byte2 = kmer2[suff_byte];
 		uint8_t result = byte1 xor byte2;
 
-		for (uint8_t i=4 ; i>0 ; i++) {
+		for (uint8_t i=4 ; i>0 ; i--) {
+
 			// Skip the first nucleotides of the first byte
 			if (suff_byte == suff_first_byte and i == 4) {
 				i = ((suff_nucl - 1) % 4) + 1;
@@ -320,13 +320,43 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 			}
 		}
 	}
-	cout << last_prefix_divergence << " " << first_suffix_divergence << endl;
 
-	// Compare the divergences
-	if (last_prefix_divergence == -1 and first_suffix_divergence == suff_nucl)
+	// In case of sequence similarity
+	if (last_prefix_divergence == -1 and first_suffix_divergence == suff_nucl) {
 		return 0;
+	}
+	// Check the first suffix divergence
+	else {
+		// Compute the divergence posi
+		uint pref_div_distance = pref_nucl - last_prefix_divergence - 1;
+		uint nucl_pos = offset_nucl;
 
-	return -12;
+		if (pref_div_distance == pref_nucl) {
+			nucl_pos += pref_nucl + first_suffix_divergence;
+		} else if (first_suffix_divergence == suff_nucl) {
+			nucl_pos += last_prefix_divergence;
+		}
+		// First interleaved divergence in the prefix
+		else if (pref_div_distance < first_suffix_divergence) {
+			nucl_pos += last_prefix_divergence;
+		}
+		// First interleaved divergence in the suffix
+		else {
+			nucl_pos += pref_nucl + first_suffix_divergence;
+		}
+
+		// Extract the divergent nucleotides
+		uint byte_pos = nucl_pos / 4;
+		uint nucl_shift = 2 * (3 - (nucl_pos % 4));
+		uint nucl1 = (kmer1[byte_pos] >> nucl_shift) & 0b11;
+		uint nucl2 = (kmer2[byte_pos] >> nucl_shift) & 0b11;
+
+		// Compare
+		if (nucl1 < nucl2)
+			return -1;
+		else
+			return +1;
+	}
 }
 
 
