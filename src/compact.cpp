@@ -366,8 +366,7 @@ void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
 
 		// Comparison function (depends on minimizer position)
 		auto comp_function = [this](const long pos1, const long pos2) {
-			return this->interleaved_compare_kmers(pos1, pos2);
-			// return true;
+			return this->interleaved_compare_kmers(pos1, pos2) < 0;
 		};
 
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);

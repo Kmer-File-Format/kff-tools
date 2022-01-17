@@ -200,27 +200,22 @@ const lest::test module[] = {
             // GGAAA
             bz.translate("GG", k-m, seq);
             long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
-            matrix[0].push_back(gg_pos);
             // GAAC
             bz.translate("GC", k-m, seq);
             long gc_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
-            matrix[1].push_back(gc_pos);
             // AAACT
             bz.translate("CT", k-m, seq);
             long ct_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
-            matrix[2].push_back(ct_pos);
             // CGAAA
             bz.translate("CG", k-m, seq);
             long cg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
-            matrix[0].push_back(cg_pos);
             // GAAAT
             bz.translate("GT", k-m, seq);
             long gt_pos = comp.add_kmer_to_buffer(seq, nullptr, 1);
-            matrix[1].push_back(gt_pos);
             // AAATT
             bz.translate("TT", k-m, seq);
             long tt_pos = comp.add_kmer_to_buffer(seq, nullptr, 0);
-            matrix[2].push_back(tt_pos);
+            
 
 
             SECTION( "kmer comparison" )
@@ -252,25 +247,31 @@ const lest::test module[] = {
                 EXPECT( cmp_ret == +1 );
             }
 
+            matrix[0].push_back(gg_pos);
+            matrix[0].push_back(cg_pos);
+            matrix[1].push_back(gc_pos);
+            matrix[1].push_back(gt_pos);
+            matrix[2].push_back(ct_pos);
+            matrix[2].push_back(tt_pos);
 
-            // SECTION( "Matrix sorting" )
-            // {
-            //     cout << "\t\tMatrix sorting" << endl;
-            //     // Sorting the matrix
-            //     comp.sort_matrix(matrix);
+            SECTION( "Matrix sorting" )
+            {
+                cout << "\t\tMatrix sorting" << endl;
+                // Sorting the matrix
+                comp.sort_matrix(matrix);
 
-            //     // First column
-            //     EXPECT( cg_pos == matrix[0][0] );
-            //     EXPECT( gg_pos == matrix[0][1] );
+                // First column
+                EXPECT( cg_pos == matrix[0][0] );
+                EXPECT( gg_pos == matrix[0][1] );
 
-            //     // Second column
-            //     EXPECT( gc_pos == matrix[1][0] );
-            //     EXPECT( gt_pos == matrix[1][1] );
+                // Second column
+                EXPECT( gc_pos == matrix[1][0] );
+                EXPECT( gt_pos == matrix[1][1] );
 
-            //     // Third column
-            //     EXPECT( ct_pos == matrix[2][0] );
-            //     EXPECT( tt_pos == matrix[2][1] );
-            // }
+                // Third column
+                EXPECT( ct_pos == matrix[2][0] );
+                EXPECT( tt_pos == matrix[2][1] );
+            }
 
             cout << "\t\tOK" << endl;
         }
