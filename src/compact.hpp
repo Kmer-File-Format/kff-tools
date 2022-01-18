@@ -88,6 +88,14 @@ public:
 	 **/
 	void sort_matrix(std::vector<std::vector<long> > & kmer_matrix);
 	
+	/** Take a succesive pair of columns of the sorted matrix and output the kmer pairs that are
+	 * overlaping.
+	 * 
+	 * @param first_column index of the first column to pair.
+	 * @return A vector of all overlaping pairs. Unpaired kmers are paired with nullpointers.
+	 **/
+	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const uint first_column) const;
+
 	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
 	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
 	 * the kmer order for each column of the matrix (order on the kmers that share the same minimizer
@@ -96,9 +104,16 @@ public:
 	 * @param candidates Sorted list of overlaping candidate. This list should be sorted by the first
 	 * kmer order, then the second kmer for equalities.
 	 * 
-	 * @return The list of selected links. All other links must be remove to keep the order.
+	 * @return The list of selected links. All other links are removed to keep the order.
 	 **/
 	std::vector<std::pair<uint8_t *, uint8_t *> > colinear_chaining(const std::vector<std::pair<uint8_t *, uint8_t *> > & candidates) const;
+
+	/** From the list of all the preserved pairs of kmers, generate the ordered list of superkmers.
+	 * 
+	 * @param colinear_chainings
+	 * @return The list of sorted skmers.
+	 **/
+	std::vector<std::vector<uint8_t *> > polish_sort(const std::vector<std::vector<std::pair<uint8_t *, uint8_t *> > > & colinear_chainings) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 
@@ -110,7 +125,7 @@ public:
 	 * 
 	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> > sorted_assembly(std::vector<std::vector<long> > & positions);
+	std::vector<std::vector<uint8_t *> > sorted_assembly(std::vector<std::vector<long> > & positions);
 	/** Assemble all the kmers into virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space).
 	 * This compaction is not necessary the only one that is optimal.

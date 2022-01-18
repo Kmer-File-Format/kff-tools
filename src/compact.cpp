@@ -130,15 +130,15 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	
 	// 2 - Compact kmers
 	// cout << "Overlaping process" << endl;
-	vector<pair<uint8_t *, uint8_t *> > to_compact;
+	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
-		to_compact = this->sorted_assembly(kmers_per_index);
+		paths = this->sorted_assembly(kmers_per_index);
 		exit(0);
 	} else {
-		to_compact = this->greedy_assembly(kmers_per_index);
+		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
+		paths = this->pairs_to_paths(to_compact);
 	}
 	// cout << "Path creation" << endl;
-	vector<vector<uint8_t *> > paths = this->pairs_to_paths(to_compact);
 
 	// cout << "save" << endl;
 	Section_Minimizer osm(&outfile);
@@ -299,7 +299,7 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 	const uint suff_first_byte = total_bytes - suff_bytes;
 	
 	// Iterate over all the bytes from the suffix
-	for (uint suff_byte=suff_first_byte ; suff_byte<total_bytes and first_suffix_divergence==suff_nucl ; suff_byte++) {
+	for (uint suff_byte=suff_first_byte ; suff_byte<total_bytes and first_suffix_divergence==(int)suff_nucl ; suff_byte++) {
 		// Extract and compare bytes
 		uint8_t byte1 = kmer1[suff_byte];
 		uint8_t byte2 = kmer2[suff_byte];
@@ -322,7 +322,7 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 	}
 
 	// In case of sequence similarity
-	if (last_prefix_divergence == -1 and first_suffix_divergence == suff_nucl) {
+	if (last_prefix_divergence == -1 and first_suffix_divergence == (int)suff_nucl) {
 		return 0;
 	}
 	// Check the first suffix divergence
@@ -333,11 +333,11 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 
 		if (pref_div_distance == pref_nucl) {
 			nucl_pos += pref_nucl + first_suffix_divergence;
-		} else if (first_suffix_divergence == suff_nucl) {
+		} else if (first_suffix_divergence == (int)suff_nucl) {
 			nucl_pos += last_prefix_divergence;
 		}
 		// First interleaved divergence in the prefix
-		else if (pref_div_distance < first_suffix_divergence) {
+		else if ((int)pref_div_distance < first_suffix_divergence) {
 			nucl_pos += last_prefix_divergence;
 		}
 		// First interleaved divergence in the suffix
@@ -392,20 +392,42 @@ vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair
 	return selected;
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
+vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
 
 	// 1 - Sort Matrix per column
 	this->sort_matrix(positions);
-	exit(0);
 
+	vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
+	// TODO: Set the first column (from nullptr to kmers of the first column)
 
+	for (uint i=0 ; i<this->k-this->m ; i++) {
+		// 2 - Find all the possible overlaps of kmers
+		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(i);
 
-	// 2 - Find the collinear chaining of superkmers
-	vector<pair<uint8_t *, uint8_t *> > links;
+		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
+		const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
+		kmer_pairs.push_back(colinear_links);
+	}
 
-	// 3 - Add all the sorted skmers ordered to links
+	// 4 - Finish the ordering by sorting skmers that could have been interchanged
+	const vector<vector<uint8_t *> > skmers = polish_sort(kmer_pairs);
 
-	return links;
+	return skmers;
+}
+
+vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const uint first_column) const {
+	cerr << "TODO pair_kmers" << endl;
+	exit(1);
+
+	return vector<pair<uint8_t *, uint8_t *> >();
+}
+
+vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t *, uint8_t *> > > & colinear_chainings) const {
+
+	cerr << "TODO polish_sort" << endl;
+	exit(1);
+
+	return vector<vector<uint8_t *> >();
 }
 
 vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions) {
