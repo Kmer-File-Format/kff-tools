@@ -373,6 +373,65 @@ void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
 	}
 }
 
+
+vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<long> & column1, const vector<long> & column2) const {
+	const uint nb_nucl = k - m;
+
+	vector<pair<uint8_t *, uint8_t *> > pairs;
+	pairs.reserve(max(column1.size(), column2.size()));
+
+	// Index the second column by their prefix hash
+	unordered_map<uint64_t, vector<uint8_t *> > index;
+	for (long pos : column2) {
+		// Get the kmer for its buffer position
+		uint8_t * kmer = this->kmer_buffer + pos;
+		// Get the hash corresponding to the k-m-1 prefix
+		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-1);
+
+		if (index.find(hash) == index.end())
+			index[hash] = vector<uint8_t *>();
+		index[hash].push_back(kmer);
+	}
+
+	// Looks for suffix matches of the first column
+	for (long pos : column1) {
+		// Get the kmer for its buffer position
+		uint8_t * kmer = this->kmer_buffer + pos;
+		uint8_t * pair = nullptr;
+		// Get the hash corresponding to the k-m-1 suffix
+		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
+
+		// Test for hash collision
+		if (index.find(hash) != index.end()) {
+			uint candidate_pos = 0;
+			// Test each of the 
+			for (uint8_t * candidate : index[hash]) {
+				if (sequence_compare(
+							candidate, nb_nucl, 0, nb_nucl-2,
+							kmer, nb_nucl, 1, nb_nucl-1
+						) == 0) {
+					
+					pair = candidate;
+					index[hash].erase(index[hash].begin()+candidate_pos);
+					break;
+				}
+				candidate_pos += 1;
+			}
+		}
+
+		pairs.emplace_back(kmer, pair);
+	}
+
+	// Add the right kmers that are not paired
+	for (auto & entry : index)
+		for (uint8_t * kmer : entry.second) {
+			pairs.emplace_back(nullptr, kmer);
+		}
+
+	return pairs;
+}
+
+
 vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair<uint8_t *, uint8_t *> > & candidates) const {
 	vector<pair<uint8_t *, uint8_t *> > predecessors;
 	vector<pair<uint8_t *, uint8_t *> > subseq_index;
@@ -392,6 +451,16 @@ vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair
 	return selected;
 }
 
+
+vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t *, uint8_t *> > > & colinear_chainings) const {
+
+	cerr << "TODO polish_sort" << endl;
+	exit(1);
+
+	return vector<vector<uint8_t *> >();
+}
+
+
 vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
 
 	// 1 - Sort Matrix per column
@@ -402,7 +471,7 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & posi
 
 	for (uint i=0 ; i<this->k-this->m ; i++) {
 		// 2 - Find all the possible overlaps of kmers
-		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(i);
+		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(positions[i], positions[i+1]);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
 		const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
@@ -415,20 +484,6 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & posi
 	return skmers;
 }
 
-vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const uint first_column) const {
-	cerr << "TODO pair_kmers" << endl;
-	exit(1);
-
-	return vector<pair<uint8_t *, uint8_t *> >();
-}
-
-vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t *, uint8_t *> > > & colinear_chainings) const {
-
-	cerr << "TODO polish_sort" << endl;
-	exit(1);
-
-	return vector<vector<uint8_t *> >();
-}
 
 vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions) {
 	uint nb_nucl = k - m;

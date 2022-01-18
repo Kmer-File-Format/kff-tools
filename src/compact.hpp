@@ -68,6 +68,8 @@ public:
 	 * @return The minimizer position inside of the kmer
 	 **/
 	uint mini_pos_from_buffer(const long pos) const;
+	
+	std::vector<std::vector<long> > prepare_kmer_matrix(Section_Minimizer & sm);
 
 	/** Return the result of the comparison between kmers in the buffer.
 	 * WARNING: The comparator assumes that the minimizers are at the same place in the words
@@ -88,13 +90,16 @@ public:
 	 **/
 	void sort_matrix(std::vector<std::vector<long> > & kmer_matrix);
 	
-	/** Take a succesive pair of columns of the sorted matrix and output the kmer pairs that are
-	 * overlaping.
+	/** Take a succesive pair of columns of the sorted matrix and output the kmer
+	 * pairs that are overlaping.
 	 * 
-	 * @param first_column index of the first column to pair.
-	 * @return A vector of all overlaping pairs. Unpaired kmers are paired with nullpointers.
+	 * @param column1 column of the matrix for left kmers
+	 * @param column2 column of the matrix for right kmers
+	 * @return A vector of all overlaping pairs. Unpaired kmers are paired with
+	 * nullpointers. The list is given in the same order than the first column
+	 * kmers.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const uint first_column) const;
+	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const std::vector<long> & column1, const std::vector<long> & column2) const;
 
 	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
 	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
@@ -148,7 +153,6 @@ public:
 	void exec();
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
 
-	std::vector<std::vector<long> > prepare_kmer_matrix(Section_Minimizer & sm);
 };
 
 #endif
