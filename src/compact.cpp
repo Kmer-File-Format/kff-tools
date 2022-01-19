@@ -125,11 +125,9 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 	
 	// 1 - Load the input section
-	// cout << "Matrix creation" << endl;
-	vector<vector<long> > kmers_per_index = this->prepare_kmer_matrix(ism);
+	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(ism);
 	
 	// 2 - Compact kmers
-	// cout << "Overlaping process" << endl;
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
 		paths = this->sorted_assembly(kmers_per_index);
@@ -138,15 +136,11 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
 	}
-	// cout << "Path creation" << endl;
 
-	// cout << "save" << endl;
 	Section_Minimizer osm(&outfile);
 	osm.write_minimizer(ism.minimizer);
 	this->write_paths(paths, osm, data_size);
 	osm.close();
-
-	// Cleaning
 }
 
 
@@ -176,9 +170,9 @@ long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint
 	return position;
 }
 
-vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
-	vector<vector<long> > kmer_matrix;
-	kmer_matrix.resize(sm.k - sm.m + 1);
+vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
+	vector<vector<long> > pos_matrix;
+	pos_matrix.resize(sm.k - sm.m + 1);
 	
 	uint64_t max_nucl = sm.k + sm.max - 1;
 	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
@@ -217,7 +211,7 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 				kmer_mini_pos >>= 8;
 			}
 			// Update
-			kmer_matrix[kmer_pos].push_back(this->next_free);
+			pos_matrix[kmer_pos].push_back(this->next_free);
 			next_free += kmer_bytes + sm.data_size + mini_pos_size;
 		}
 	}
@@ -225,27 +219,35 @@ vector<vector<long> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	delete[] seq_buffer;
 	delete[] data_buffer;
 
+	// Transform the position matrix into the kmer matrix
+	vector<vector<uint8_t *> > kmer_matrix;
+	for (vector<long> & positions : pos_matrix) {
+		vector<uint8_t *> column(positions.size(), nullptr);
+		uint idx = 0;
+		for (long pos : positions)
+			column[idx++] = this->kmer_buffer + pos;
+		kmer_matrix.push_back(column);
+	}
+
 	return kmer_matrix;
 }
 
 
-uint Compact::mini_pos_from_buffer(const long pos) const {
+uint Compact::mini_pos_from_buffer(const uint8_t * kmer) const {
 	uint mini_pos = 0;
 
 	for (uint i=0 ; i<this->mini_pos_size ; i++) {
 		mini_pos <<= 8;
-		mini_pos += this->kmer_buffer[pos + this->bytes_compacted + this->data_size + i];
+		mini_pos += kmer[this->bytes_compacted + this->data_size + i];
 	}
 
 	return mini_pos;
 }
 
 
-int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
-	uint8_t * kmer1 = this->kmer_buffer + pos1;
-	const uint mini_pos1 = this->mini_pos_from_buffer(pos1);
-	uint8_t * kmer2 = this->kmer_buffer + pos2;
-	const uint mini_pos2 = this->mini_pos_from_buffer(pos2);
+int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const {
+	const uint mini_pos1 = this->mini_pos_from_buffer(kmer1);
+	const uint mini_pos2 = this->mini_pos_from_buffer(kmer2);
 
 	assert(mini_pos1 == mini_pos2);
 
@@ -360,13 +362,13 @@ int Compact::interleaved_compare_kmers(const long pos1, const long pos2) const {
 }
 
 
-void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
+void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	// Sort by column
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 
 		// Comparison function (depends on minimizer position)
-		auto comp_function = [this](const long pos1, const long pos2) {
-			return this->interleaved_compare_kmers(pos1, pos2) < 0;
+		auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
+			return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
 		};
 
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
@@ -374,7 +376,7 @@ void Compact::sort_matrix(vector<vector<long> > & kmer_matrix) {
 }
 
 
-vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<long> & column1, const vector<long> & column2) const {
+vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
 	const uint nb_nucl = k - m;
 
 	vector<pair<uint8_t *, uint8_t *> > pairs;
@@ -382,9 +384,7 @@ vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<long> & col
 
 	// Index the second column by their prefix hash
 	unordered_map<uint64_t, vector<uint8_t *> > index;
-	for (long pos : column2) {
-		// Get the kmer for its buffer position
-		uint8_t * kmer = this->kmer_buffer + pos;
+	for (uint8_t * kmer : column2) {
 		// Get the hash corresponding to the k-m-1 prefix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-1);
 
@@ -394,9 +394,7 @@ vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<long> & col
 	}
 
 	// Looks for suffix matches of the first column
-	for (long pos : column1) {
-		// Get the kmer for its buffer position
-		uint8_t * kmer = this->kmer_buffer + pos;
+	for (uint8_t * kmer : column1) {
 		uint8_t * pair = nullptr;
 		// Get the hash corresponding to the k-m-1 suffix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
@@ -461,17 +459,17 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t
 }
 
 
-vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & positions) {
+vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
 
 	// 1 - Sort Matrix per column
-	this->sort_matrix(positions);
+	this->sort_matrix(kmers);
 
 	vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
 	// TODO: Set the first column (from nullptr to kmers of the first column)
 
 	for (uint i=0 ; i<this->k-this->m ; i++) {
 		// 2 - Find all the possible overlaps of kmers
-		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(positions[i], positions[i+1]);
+		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
 		const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
@@ -485,21 +483,20 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<long> > & posi
 }
 
 
-vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long> > & positions) {
+vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8_t *> > & kmers) {
 	uint nb_nucl = k - m;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
 
 	// Index kmers from the 0th set
-	for (long kmer_pos : positions[0]) {
-		assembly.emplace_back(nullptr, kmer_buffer + kmer_pos);
+	for (uint8_t * kmer : kmers[0]) {
+		assembly.emplace_back(nullptr, kmer);
 	}
 
 	for (uint i=0 ; i<nb_nucl ; i++) {
 		// Index kmers in ith set
 		unordered_map<uint64_t, vector<uint8_t *> > index;
 		
-		for (long kmer_pos : positions[i]) {
-			uint8_t * kmer = kmer_buffer + kmer_pos;
+		for (uint8_t * kmer : kmers[i]) {
 			// Get the suffix
 			uint64_t val = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 			// Add a new vector for this value
@@ -510,8 +507,7 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 		}
 
 		// link kmers from (i+1)th set to ith kmers.
-		for (long kmer_pos : positions[i+1]) {
-			uint8_t * kmer = kmer_buffer + kmer_pos;
+		for (uint8_t * kmer : kmers[i+1]) {
 			uint64_t val = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
 
 			if (index.find(val) == index.end()) {
@@ -549,9 +545,8 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<long>
 
 	// Index last kmers without compaction
 	int assembly_idx = assembly.size()-1;
-	for (auto it=positions[nb_nucl].end() ; it>positions[nb_nucl].begin() ; it--) {
-		long pos = *(it-1);
-		uint8_t * kmer = kmer_buffer + 	pos;
+	for (auto it=kmers[nb_nucl].end() ; it>kmers[nb_nucl].begin() ; it--) {
+		uint8_t * kmer = *(it-1);
 
 		if (assembly_idx < 0 or kmer != assembly[assembly_idx].second) {
 			assembly.emplace_back(nullptr, kmer);

@@ -67,20 +67,20 @@ public:
 	 * 
 	 * @return The minimizer position inside of the kmer
 	 **/
-	uint mini_pos_from_buffer(const long pos) const;
+	uint mini_pos_from_buffer(const uint8_t * kmer) const;
 	
-	std::vector<std::vector<long> > prepare_kmer_matrix(Section_Minimizer & sm);
+	std::vector<std::vector<uint8_t *> > prepare_kmer_matrix(Section_Minimizer & sm);
 
 	/** Return the result of the comparison between kmers in the buffer.
 	 * WARNING: The comparator assumes that the minimizers are at the same place in the words
 	 * 
-	 * @param pos1 Position of the first kmer in the buffer
-	 * @param pos2 Position of the second kmer in the buffer
+	 * @param kmer1 First kmer in the buffer
+	 * @param kmer2 Second kmer in the buffer
 	 * 
 	 * @return A negative number is the first kmer is smaller, 0 if both are equal, a positive number
 	 * otherwise.
 	 **/
-	int interleaved_compare_kmers(const long pos1, const long pos2) const;
+	int interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const;
 
 	/** Sort each column of the matrix using a kmer order. The input columns of the matrix are
 	 * modified during this process.
@@ -88,7 +88,7 @@ public:
 	 * @param kmer_matrix A matrix where all the kmers of the same column share the same minimizer 
 	 * position.
 	 **/
-	void sort_matrix(std::vector<std::vector<long> > & kmer_matrix);
+	void sort_matrix(std::vector<std::vector<uint8_t *> > & kmer_matrix);
 	
 	/** Take a succesive pair of columns of the sorted matrix and output the kmer
 	 * pairs that are overlaping.
@@ -99,7 +99,7 @@ public:
 	 * nullpointers. The list is given in the same order than the first column
 	 * kmers.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const std::vector<long> & column1, const std::vector<long> & column2) const;
+	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2) const;
 
 	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
 	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
@@ -130,7 +130,7 @@ public:
 	 * 
 	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
 	 **/
-	std::vector<std::vector<uint8_t *> > sorted_assembly(std::vector<std::vector<long> > & positions);
+	std::vector<std::vector<uint8_t *> > sorted_assembly(std::vector<std::vector<uint8_t *> > & positions);
 	/** Assemble all the kmers into virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space).
 	 * This compaction is not necessary the only one that is optimal.
@@ -140,7 +140,7 @@ public:
 	 * 
 	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<long> > & positions);
+	std::vector<std::pair<uint8_t *, uint8_t *> >  greedy_assembly(std::vector<std::vector<uint8_t *> > & kmers);
 
 
 	void cli_prepare(CLI::App * subapp);
