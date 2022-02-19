@@ -2,17 +2,16 @@
 #include <string>
 
 #include "validate.hpp"
-#include "encoding.hpp"
 
 
 using namespace std;
 
 
 
-Validate::Validate() {
-	input_filename = "";
-	verbose = false;
-}
+Validate::Validate() : input_filename(" ")
+										 , index_only(false)
+										 , verbose(false)
+{};
 
 void Validate::cli_prepare(CLI::App * app) {
 	this->subapp = app->add_subcommand("validate", "Read the input file and tell if some values are unexpected.");
@@ -20,13 +19,14 @@ void Validate::cli_prepare(CLI::App * app) {
 	input_option->required();
 	input_option->check(CLI::ExistingFile);
 
+	subapp->add_flag("--index-only", index_only, "Restrict the verification to the index only.");
 	subapp->add_flag("-v, --verbose", verbose, "Print all the validation process instead of only unexpected values.");
 }
 
 void Validate::exec() {
 	try {
 		Kff_file infile(input_filename, "r");
-		Stringifyer strif(infile.encoding);
+		this->strif = Stringifyer(infile.encoding);
 
 		if (verbose) {
 			cout << "=== Header ===" << endl;
@@ -73,170 +73,18 @@ void Validate::exec() {
 			}
 			// Index section
 			else if (section_type == 'i') {
-				Section_Index si(&infile);
-				long end_byte = si.beginning + 17 + 9 * si.index.size();
-
-				if (this->verbose) {
-					cout << "Start Byte " << si.beginning << endl;
-					cout << "Section\trelative\tabsolute" << endl;
-				}
-
-				for (const auto & pair : si.index) {
-					if (this->verbose)
-						cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
-
-					// Jump to the section
-					long section_pos = end_byte + pair.first;
-					long current_pos = infile.tellp();
-					infile.jump_to(section_pos);
-					// Read the byte at this position
-					uint8_t type = 0;
-					infile.read(&type, 1);
-					if (type != pair.second) {
-						cerr << "Wrong section at position " << section_pos << ". Found a section " << type << endl;
-						exit(1);
-					}
-					// Go back to previous position
-					infile.jump_to(current_pos);
-				}
-
-				if (this->verbose) {
-					cout << "Next index position " << si.next_index << endl;
-				}
-				
-				if (si.next_index != 0) {
-					// Jump to the section
-					long section_pos = end_byte + si.next_index;
-					long current_pos = infile.tellp();
-					infile.jump_to(section_pos);
-					// Read the byte at this position
-					uint8_t type = 0;
-					infile.read(&type, 1);
-					if (type != 'i') {
-						cerr << end_byte << " " << si.next_index << endl;
-						cerr << "No index found at position " << section_pos << "." << endl;
-						exit(1);
-					}
-					// Go back to previous position
-					infile.jump_to(current_pos);	
-				}
-
-				si.close();
+				if (not this->is_valid_i_section(infile))
+					exit(1);
 			}
 			// Raw sequence section
 			else if (section_type == 'r') {
-				Section_Raw sr(&infile);
-
-				uint k = infile.global_vars["k"];
-				uint max = infile.global_vars["max"];
-				uint data_size = infile.global_vars["data_size"];
-
-				if (verbose) {
-					cout << "Start Byte " << sr.beginning << endl;
-					cout << "-> Number of blocks: " << sr.nb_blocks << endl;
-				}
-
-				uint max_nucl = k + max - 1;
-				uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
-				uint8_t * data_bytes = new uint8_t[data_size * max];
-
-				for (uint i=0 ; i<sr.nb_blocks ; i++) {
-					if (infile.tellp() >= infile.end_position) {
-						cerr << "/!\\ End of the file reached before the end of the section." << endl;
-						exit(1);
-					}
-					uint nb_kmers = sr.read_compacted_sequence(seq_bytes, data_bytes);
-
-					if (nb_kmers == 0) {
-						cerr << "Block containing 0 kmer detected." << endl;
-						exit(1);
-					}
-
-					if (verbose) {
-						cout << "* Number of kmers: " << nb_kmers << endl;
-						cout << strif.translate(seq_bytes, k + nb_kmers - 1) << endl;
-
-						if (data_size != 0) {
-							cout << "data array: ";
-							for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
-								if (i_data > 0)
-									cout << ",\t";
-
-								cout << "[";
-								for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
-									if (b_idx > 0)
-										cout << "\t";
-									cout << (uint)data_bytes[data_size*i_data+b_idx];
-								}
-								cout << "]";
-							}
-							cout << endl;
-						}
-					}
-				}
-
-				delete[] seq_bytes;
-				delete[] data_bytes;
+				if (not this->is_valid_r_section(infile))
+					exit(1);
 			}
 			// Minimizer sequence section
 			else if (section_type == 'm') {
-				Section_Minimizer sm(&infile);
-
-				uint k = infile.global_vars["k"];
-				uint m = infile.global_vars["m"];
-				uint max = infile.global_vars["max"];
-				uint data_size = infile.global_vars["data_size"];
-
-				if (verbose) {
-					cout << "Start Byte " << sm.beginning << endl;
-					cout << "-> Minimizer: " << strif.translate(sm.minimizer, m) << endl;
-					cout << "-> Number of blocks: " << sm.nb_blocks << endl;
-					cout << endl;
-				}
-
-				uint max_nucl = k - m + max - 1;
-				uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
-				uint8_t * data_bytes = new uint8_t[data_size * max];
-
-				for (uint i=0 ; i<sm.nb_blocks ; i++) {
-					if (infile.tellp() >= infile.end_position) {
-						cerr << "/!\\ End of the file reached before the end of the section." << endl;
-						exit(1);
-					}
-					uint64_t mini_pos;
-					uint nb_kmers = sm.read_compacted_sequence_without_mini(seq_bytes, data_bytes, mini_pos);
-
-					if (nb_kmers == 0) {
-						cerr << "Block containing 0 kmer detected." << endl;
-						exit(1);
-					}
-
-					if (mini_pos > k - m + nb_kmers) {
-						cerr << "* minimizer position out of sequence. position=" << mini_pos << " , skmer_size=" <<  (k-m+nb_kmers) << endl;
-					}
-
-					if (verbose) {
-						cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << endl;
-						string seq = strif.translate(seq_bytes, k - m + nb_kmers - 1);
-						cout << seq.substr(0, mini_pos) << "|" << seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos) << endl;
-						if (data_size != 0) {
-							cout << "data array: ";
-							for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
-								cout << "[";
-								for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
-									if (b_idx > 0)
-										cout << "\t";
-									cout << (uint)data_bytes[data_size*i_data+b_idx];
-								}
-								cout << "],\t";
-							}
-							cout << endl;
-						}
-					}
-				}
-
-				delete[] seq_bytes;
-				delete[] data_bytes;
+				if (not this->is_valid_m_section(infile))
+					exit(1);
 			}
 			// Unknown section
 			else {
@@ -267,3 +115,178 @@ void Validate::exec() {
 		exit(1);
 	}
 }
+
+bool Validate::is_valid_r_section(Kff_file & infile) {
+	Section_Raw sr(&infile);
+
+	uint k = infile.global_vars["k"];
+	uint max = infile.global_vars["max"];
+	uint data_size = infile.global_vars["data_size"];
+
+	if (verbose) {
+		cout << "Start Byte " << sr.beginning << endl;
+		cout << "-> Number of blocks: " << sr.nb_blocks << endl;
+	}
+
+	uint max_nucl = k + max - 1;
+	uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
+	uint8_t * data_bytes = new uint8_t[data_size * max];
+
+	for (uint i=0 ; i<sr.nb_blocks ; i++) {
+		if (infile.tellp() >= infile.end_position) {
+			cerr << "/!\\ End of the file reached before the end of the section." << endl;
+			return false;
+		}
+		uint nb_kmers = sr.read_compacted_sequence(seq_bytes, data_bytes);
+
+		if (nb_kmers == 0) {
+			cerr << "Block containing 0 kmer detected." << endl;
+			return false;
+		}
+
+		if (verbose) {
+			cout << "* Number of kmers: " << nb_kmers << endl;
+			cout << strif.translate(seq_bytes, k + nb_kmers - 1) << endl;
+
+			if (data_size != 0) {
+				cout << "data array: ";
+				for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
+					if (i_data > 0)
+						cout << ",\t";
+
+					cout << "[";
+					for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
+						if (b_idx > 0)
+							cout << "\t";
+						cout << (uint)data_bytes[data_size*i_data+b_idx];
+					}
+					cout << "]";
+				}
+				cout << endl;
+			}
+		}
+	}
+
+	delete[] seq_bytes;
+	delete[] data_bytes;
+
+	return true;
+}
+
+
+bool Validate::is_valid_m_section(Kff_file & infile) {
+	Section_Minimizer sm(&infile);
+
+	uint k = infile.global_vars["k"];
+	uint m = infile.global_vars["m"];
+	uint max = infile.global_vars["max"];
+	uint data_size = infile.global_vars["data_size"];
+
+	if (verbose) {
+		cout << "Start Byte " << sm.beginning << endl;
+		cout << "-> Minimizer: " << strif.translate(sm.minimizer, m) << endl;
+		cout << "-> Number of blocks: " << sm.nb_blocks << endl;
+		cout << endl;
+	}
+
+	uint max_nucl = k - m + max - 1;
+	uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
+	uint8_t * data_bytes = new uint8_t[data_size * max];
+
+	for (uint i=0 ; i<sm.nb_blocks ; i++) {
+		if (infile.tellp() >= infile.end_position) {
+			cerr << "/!\\ End of the file reached before the end of the section." << endl;
+			return false;
+		}
+		uint64_t mini_pos;
+		uint nb_kmers = sm.read_compacted_sequence_without_mini(seq_bytes, data_bytes, mini_pos);
+
+		if (nb_kmers == 0) {
+			cerr << "Block containing 0 kmer detected." << endl;
+			return false;
+		}
+
+		if (mini_pos > k - m + nb_kmers) {
+			cerr << "* minimizer position out of sequence. position=" << mini_pos << " , skmer_size=" <<  (k-m+nb_kmers) << endl;
+		}
+
+		if (verbose) {
+			cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << endl;
+			string seq = strif.translate(seq_bytes, k - m + nb_kmers - 1);
+			cout << seq.substr(0, mini_pos) << "|" << seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos) << endl;
+			if (data_size != 0) {
+				cout << "data array: ";
+				for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
+					cout << "[";
+					for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
+						if (b_idx > 0)
+							cout << "\t";
+						cout << (uint)data_bytes[data_size*i_data+b_idx];
+					}
+					cout << "],\t";
+				}
+				cout << endl;
+			}
+		}
+	}
+
+	delete[] seq_bytes;
+	delete[] data_bytes;
+
+	return true;		
+}
+
+
+bool Validate::is_valid_i_section(Kff_file & infile) {
+	Section_Index si(&infile);
+	long end_byte = si.beginning + 17 + 9 * si.index.size();
+
+	if (this->verbose) {
+		cout << "Start Byte " << si.beginning << endl;
+		cout << "Section\trelative\tabsolute" << endl;
+	}
+
+	for (const auto & pair : si.index) {
+		if (this->verbose)
+			cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+
+		// Jump to the section
+		long section_pos = end_byte + pair.first;
+		long current_pos = infile.tellp();
+		infile.jump_to(section_pos);
+		// Read the byte at this position
+		uint8_t type = 0;
+		infile.read(&type, 1);
+		if (type != pair.second) {
+			cerr << "Wrong section at position " << section_pos << ". Found a section " << type << endl;
+			return false;
+		}
+		// Go back to previous position
+		infile.jump_to(current_pos);
+	}
+
+	if (this->verbose) {
+		cout << "Next index position " << si.next_index << endl;
+	}
+	
+	if (si.next_index != 0) {
+		// Jump to the section
+		long section_pos = end_byte + si.next_index;
+		long current_pos = infile.tellp();
+		infile.jump_to(section_pos);
+		// Read the byte at this position
+		uint8_t type = 0;
+		infile.read(&type, 1);
+		if (type != 'i') {
+			cerr << end_byte << " " << si.next_index << endl;
+			cerr << "No index found at position " << section_pos << "." << endl;
+			return false;
+		}
+		// Go back to previous position
+		infile.jump_to(current_pos);
+	}
+
+	si.close();
+	return true;
+}
+

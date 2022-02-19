@@ -81,7 +81,7 @@ void RevComp::rev_data(uint8_t * data, const uint64_t data_size, const uint64_t 
 }
 
 
-Stringifyer::Stringifyer(uint8_t encoding[4]) {
+void Stringifyer::init(uint8_t encoding[4]) {
 	// Nucleotide translation values
 	string nucl_translation[4];
 	nucl_translation[encoding[0]] = "A";

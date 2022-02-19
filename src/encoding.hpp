@@ -60,13 +60,21 @@ class Stringifyer {
 private:
 	std::string lookup[256];
 
+	void init(uint8_t encoding[4]);
+
 public:
 	/**
 		* Construct a 256 Bytes lookup table for fast conversion
 		*
 		* @param encoding The sequence encoding
 		**/
-	Stringifyer(uint8_t encoding[4]);
+	Stringifyer(uint8_t encoding[4]) {
+		this->init(encoding);
+	}
+	Stringifyer() {
+		uint8_t encoding[] = {0, 1, 3, 2};
+		this->init(encoding);
+	};
 	/**
 	  * read a 2-bits/nucl sequence and return a coresponding string
 	  *
