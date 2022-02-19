@@ -384,18 +384,19 @@ vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<uint8_t *> 
 
 	// Index the second column by their prefix hash
 	unordered_map<uint64_t, vector<uint8_t *> > index;
+	unordered_map<uint8_t *, bool> used;
 	for (uint8_t * kmer : column2) {
 		// Get the hash corresponding to the k-m-1 prefix
-		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-1);
+		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
 
 		if (index.find(hash) == index.end())
 			index[hash] = vector<uint8_t *>();
 		index[hash].push_back(kmer);
+		used[kmer] = false;
 	}
 
 	// Looks for suffix matches of the first column
 	for (uint8_t * kmer : column1) {
-		uint8_t * pair = nullptr;
 		// Get the hash corresponding to the k-m-1 suffix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 
@@ -409,22 +410,20 @@ vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<uint8_t *> 
 							kmer, nb_nucl, 1, nb_nucl-1
 						) == 0) {
 					
-					pair = candidate;
-					index[hash].erase(index[hash].begin()+candidate_pos);
-					break;
+					pairs.emplace_back(kmer, candidate);
+					used[candidate] = true;
 				}
 				candidate_pos += 1;
 			}
 		}
 
-		pairs.emplace_back(kmer, pair);
 	}
 
 	// Add the right kmers that are not paired
-	for (auto & entry : index)
-		for (uint8_t * kmer : entry.second) {
-			pairs.emplace_back(nullptr, kmer);
-		}
+	for (auto & entry : used) {
+		if (not entry.second)
+			pairs.emplace_back(nullptr, entry.first);
+	}
 
 	return pairs;
 }

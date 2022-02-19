@@ -57,10 +57,10 @@ const lest::test module[] = {
             sgv.close();
             sm = Section_Minimizer(&file);
 
-            SECTION( "Matrix creation" )
+            SECTION( "Matrix creation tests" )
             {
-                cout << "\t\tMatrix construction" << endl;
                 vector<vector<uint8_t *> > matrix = comp.prepare_kmer_matrix(sm);
+                cout << "\t\tMatrix construction" << endl;
                 EXPECT( matrix.size() == k - m + 1 );
                 EXPECT( matrix[0].size() == 0u );
                 
@@ -181,11 +181,11 @@ const lest::test module[] = {
             matrix[2].push_back(ct);
             matrix[2].push_back(tt);
 
+            comp.sort_matrix(matrix);
             SECTION( "Matrix sorting" )
             {
                 cout << "\t\tMatrix sorting" << endl;
                 // Sorting the matrix
-                comp.sort_matrix(matrix);
 
                 // First column
                 EXPECT( cg == matrix[0][0] );
@@ -198,6 +198,50 @@ const lest::test module[] = {
                 // Third column
                 EXPECT( ct == matrix[2][0] );
                 EXPECT( tt == matrix[2][1] );
+            }
+
+
+            SECTION( "kmer pairing tests" )
+            {
+                cout << "\t\tkmer pairing" << endl;
+
+                // Prepare real pairs to test
+                unordered_map<uint8_t *, uint8_t *> real_pairs;
+                real_pairs[gc] = ct;
+                real_pairs[gt] = tt;
+
+                // Perform pairing
+                vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[1], matrix[2]);
+
+                // Verify
+                EXPECT( pairs.size() == 2u );
+                for (pair<uint8_t *, uint8_t *> & pair : pairs) {
+                    EXPECT( pair.second == real_pairs[pair.first]);
+                }
+            }
+
+            SECTION( "colinear chaining test" )
+            {
+                cout << "\t\tBasic colinear chaining test" << endl;
+
+                vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
+
+                EXPECT( pairs.size() == 4u );
+
+                // Prepare real pairs to test
+                unordered_map<uint8_t *, uint8_t *> real_colinear;
+                real_colinear[cg] = gc;
+                real_colinear[gg] = gt;
+
+                // Perform colinear chaining
+                vector<pair<uint8_t *, uint8_t *> > co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u );
+                EXPECT( co_chain[0].first == cg );
+                EXPECT( co_chain[0].second == gc );
+                EXPECT( co_chain[1].first == gg );
+                EXPECT( co_chain[1].second == gt );
             }
 
             cout << "\t\tOK" << endl;
