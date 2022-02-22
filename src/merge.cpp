@@ -152,6 +152,9 @@ void Merge::merge(const vector<Kff_file *> & files, string output) {
 				size = end_byte - begin_byte;
 				infile->jump(-size);
 
+				// Register the section in the index of the output file
+				outfile.register_position(section_type);
+
 				// Read from input and write into output
 				while (size > 0) {
 					size_t size_to_copy = size > buffer_size ? buffer_size : size;
@@ -163,37 +166,9 @@ void Merge::merge(const vector<Kff_file *> & files, string output) {
 				}
 				break;
 				case 'i': {
-				// read section and compute its size
-				Section_Index si(infile);
-				si.close();
-				// long file_size = infile->tellp() - si.beginning - 8l;
-				// infile->jump(-file_size - 8);
-
-				// // Save the position in the file for later chaining
-				// long i_position = outfile.tellp();
-				// size = file_size;
-				// // Copy section (except the chaining part)
-				// // Read from input and write into output
-				// while (size > 0) {
-				// 	size_t size_to_copy = size > buffer_size ? buffer_size : size;
-
-				// 	infile->read(buffer, size_to_copy);
-				// 	outfile.write(buffer, size_to_copy);
-
-				// 	size -= size_to_copy;
-				// }
-				// // Jump over the last value of infile
-				// infile->jump(8);
-				// // Chain the section and save its position
-				// long i_relative = last_index - (i_position + file_size + 8l);
-				// if (last_index == 0)
-				// 	i_relative = 0;
-				// for (uint i=0 ; i<8 ; i++) {
-				// 	uint8_t val = (uint8_t)(i_relative >> (56 - 8 * i));
-				// 	outfile.write(&val, 1);
-				// }
-				// // write_value(last_index, outfile.fs);
-				// last_index = i_position;
+					// read section and compute its size
+					Section_Index si(infile);
+					si.close();
 				} break;
 
 				default:
