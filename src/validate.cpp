@@ -140,7 +140,7 @@ void Validate::exec() {
 				uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
 				uint8_t * data_bytes = new uint8_t[data_size * max];
 
-				for (uint i=0 ; i<sr.nb_blocks ; i++) {
+				for (uint64_t i=0 ; i<sr.nb_blocks ; i++) {
 					if (infile.tellp() >= infile.end_position) {
 						cerr << "/!\\ End of the file reached before the end of the section." << endl;
 						exit(1);
