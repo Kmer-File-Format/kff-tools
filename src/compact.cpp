@@ -464,8 +464,14 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 	this->sort_matrix(kmers);
 
 	vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
-	// TODO: Set the first column (from nullptr to kmers of the first column)
 
+	// Init first column
+	vector<pair<uint8_t *, uint8_t *> > first_kmers;
+	for (uint8_t * kmer : kmers[0])
+		first_kmers.emplace_back(nullptr, kmer);
+	kmer_pairs.push_back(first_kmers)
+
+	// Pair columns
 	for (uint i=0 ; i<this->k-this->m ; i++) {
 		// 2 - Find all the possible overlaps of kmers
 		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
