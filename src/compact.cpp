@@ -469,7 +469,7 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 	vector<pair<uint8_t *, uint8_t *> > first_kmers;
 	for (uint8_t * kmer : kmers[0])
 		first_kmers.emplace_back(nullptr, kmer);
-	kmer_pairs.push_back(first_kmers)
+	kmer_pairs.push_back(first_kmers);
 
 	// Pair columns
 	for (uint i=0 ; i<this->k-this->m ; i++) {
