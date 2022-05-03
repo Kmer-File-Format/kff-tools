@@ -87,14 +87,14 @@ void Compact::exec() {
 			uint m = outfile.global_vars["m"];
 
 			// Rewrite a value section if max is not sufficently large
-			if (outfile.global_vars["max"] < (k-m) * 2) {
+			if (outfile.global_vars["max"] < k - m + 1) {
 				unordered_map<string, uint64_t> values(outfile.global_vars);
 				Section_GV sgv(&outfile);
 
 				for (auto & p : values)
 					if (p.first != "max")
 						sgv.write_var(p.first, p.second);
-				sgv.write_var("max", (k-m)*2);
+				sgv.write_var("max", k - m + 1);
 
 				sgv.close();
 			}
@@ -435,13 +435,13 @@ vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair
 
 	// 0 - Sorting the candidates
 
-	uint longest = 0;
-	uint idx=0;
-	for (const pair<uint8_t *, uint8_t *> & candidate : candidates) {
+	// uint longest = 0;
+	// uint idx=0;
+	// for (const pair<uint8_t *, uint8_t *> & candidate : candidates) {
 		
 
-		idx += 1;
-	}
+	// 	idx += 1;
+	// }
 	
 	vector<pair<uint8_t *, uint8_t *> > selected;
 
@@ -591,7 +591,7 @@ vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, 
 void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size) {
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
-	uint mini_pos_size = (static_cast<uint>(ceil(log2(k - m + 1))) + 7) / 8;
+	uint mini_pos_size = (static_cast<uint>(ceil(log2(sm.max + k - m))) + 7) / 8;
 
 	uint max_skmer_bytes = (2 * (k - m) + 3) / 4;
 	uint8_t * skmer_buffer = new uint8_t[max_skmer_bytes + 1];
@@ -646,6 +646,8 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
 		}
 
+		uint8_t encoding[4] = {0, 1, 3, 2};
+		Stringifyer strif(encoding);
 		// cout << "write_compacted_sequence_without_mini" << endl;
 		// Write everything in the file
 		sm.write_compacted_sequence_without_mini(skmer_buffer, skmer_size, mini_pos, data_buffer);
