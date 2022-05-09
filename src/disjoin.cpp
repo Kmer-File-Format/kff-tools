@@ -48,6 +48,7 @@ void Disjoin::exec() {
 	// Read and write section per section
 	char section_type = infile.read_section_type();
 	while (infile.tellp() != infile.end_position) {
+		section_type = infile.read_section_type();
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
@@ -247,8 +248,6 @@ void Disjoin::exec() {
 				raw_section.close();
 			}
 		}
-
-		section_type = infile.read_section_type();
 	}
 
 	for (uint i=0 ; i<4 ; i++)

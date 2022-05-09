@@ -3,7 +3,6 @@
 
 #include "datarm.hpp"
 
-
 using namespace std;
 
 
@@ -44,14 +43,16 @@ void DataRm::exec() {
 	// Read and write section per section
 	char section_type = infile.read_section_type();
 	while (infile.tellp() != infile.end_position) {
+		section_type = infile.read_section_type();
 		// Read variables
 		if (section_type == 'v') {
 			// Load variables
 			Section_GV isgv(&infile);
 
 			// Remove old footer
-			if (isgv.vars.find("footer_size") != isgv.vars.end())
+			if (isgv.vars.find("footer_size") != isgv.vars.end()) {
 				continue;
+			}
 
 			Section_GV osgv(&outfile);
 
@@ -129,8 +130,6 @@ void DataRm::exec() {
 			in_section.close();
 			out_section.close();
 		}
-
-		section_type = infile.read_section_type();
 	}
 
 	delete[] nucleotides;
