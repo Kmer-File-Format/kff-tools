@@ -58,10 +58,12 @@ void Compact::exec() {
 	outfile.set_canonicity(infile.canonicity);
 	
 	// Metadata transfer
-  uint8_t * metadata = new uint8_t[infile.metadata_size];
-  infile.read_metadata(metadata);
-  outfile.write_metadata(infile.metadata_size, metadata);
-  delete[] metadata;
+	uint8_t * metadata = new uint8_t[infile.metadata_size];
+	infile.read_metadata(metadata);
+	outfile.write_metadata(infile.metadata_size, metadata);
+	delete[] metadata;
+
+	bool first_warning = true;
 
 	while (infile.tellp() != infile.end_position) {
 		char section_type = infile.read_section_type();
@@ -89,6 +91,11 @@ void Compact::exec() {
 			si.close();
 		}
 		else if (section_type == 'r') {
+			if (first_warning) {
+				first_warning = false;
+				cerr << "WARNING: kff-tools has detected R sections inside of the file. The compact tool is only compacting kmers inside of M sections. The R sections are omitted." << endl;
+			}
+
 			Section_Raw sr(&infile);
 			sr.close();
 		}
