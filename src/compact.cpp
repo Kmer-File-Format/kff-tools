@@ -68,11 +68,21 @@ void Compact::exec() {
 
 		if (section_type == 'v') {
 			Section_GV isgv(&infile);
-			Section_GV osgv(&outfile);
-			for (auto & p : isgv.vars)
-				osgv.write_var(p.first, p.second);
 			isgv.close();
-			osgv.close();
+
+			unordered_map<string, uint64_t> to_copy;
+			for (auto & p : isgv.vars) {
+				if (p.first != "first_index" and p.first != "footer_size") {
+					to_copy[p.first] = p.second;
+				}
+			}
+
+			if (to_copy.size() > 0) {
+				Section_GV osgv(&outfile);
+				for (auto & p : isgv.vars)
+					osgv.write_var(p.first, p.second);
+				osgv.close();
+			}
 		}
 		else if (section_type == 'i') {
 			Section_Index si(&infile);
