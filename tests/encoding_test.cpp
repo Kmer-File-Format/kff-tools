@@ -3,7 +3,7 @@
 #include <string>
 
 #include "lest.hpp"
-#include "../src/encoding.hpp"
+#include "encoding.hpp"
 
 
 using namespace std;

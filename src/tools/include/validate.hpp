@@ -1,24 +1,23 @@
-// #include <experimental/filesystem>
 #include <string>
 #include <iostream>
+#include <vector>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef SPLIT_H
-#define SPLIT_H
+#ifndef VALID_H
+#define VALID_H
 
-class Split: public KffTool {
+class Validate: public KffTool {
 private:
 	std::string input_filename;
-	std::string output_dirname;
+	bool verbose;
 
 public:
-	Split();
+	Validate();
 	void cli_prepare(CLI::App * subapp);
 	void exec();
 };
-
 
 #endif

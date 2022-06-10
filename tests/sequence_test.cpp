@@ -3,8 +3,8 @@
 #include <string>
 
 #include "lest.hpp"
-#include "../src/encoding.hpp"
-#include "../src/sequences.hpp"
+#include "encoding.hpp"
+#include "sequences.hpp"
 
 using namespace std;
 

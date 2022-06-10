@@ -3,3 +3,6 @@
 	path = kff-cpp-api
 	url = https://github.com/Kmer-File-Format/kff-cpp-api.git
 	branch = main
+[submodule "extern/CLI11"]
+	path = extern/CLI11
+	url = https://github.com/CLIUtils/CLI11.git

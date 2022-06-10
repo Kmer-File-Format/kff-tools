@@ -1,23 +1,26 @@
 #include <string>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef DISJOIN_H
-#define DISJOIN_H
+#ifndef INDEX_H
+#define INDEX_H
 
-class Disjoin: public KffTool {
+class Index: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
 
 public:
-	Disjoin();
+	Index();
+
 	void cli_prepare(CLI::App * subapp);
 	void exec();
+
 };
 
 #endif

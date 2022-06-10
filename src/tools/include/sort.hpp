@@ -2,21 +2,22 @@
 #include <iostream>
 #include <vector>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef OUTSTR_H
-#define OUTSTR_H
+#ifndef SORT_H
+#define SORT_H
 
-class Outstr: public KffTool {
+class Sort: public KffTool {
 private:
 	std::string input_filename;
-	bool revcomp;
+	std::string output_filename;
 
 public:
-	Outstr();
+	Sort();
 	void cli_prepare(CLI::App * subapp);
+	void sort(std::string input, std::string output);
 	void exec();
 };
 
