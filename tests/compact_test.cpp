@@ -5,6 +5,7 @@
 #include "lest.hpp"
 #include "encoding.hpp"
 #include "compact.hpp"
+#include "RangeMaxTree.hpp"
 
 using namespace std;
 
@@ -206,16 +207,18 @@ const lest::test module[] = {
                 cout << "\t\tkmer pairing" << endl;
 
                 // Prepare real pairs to test
-                unordered_map<uint8_t *, uint8_t *> real_pairs;
-                real_pairs[gc] = ct;
-                real_pairs[gt] = tt;
+                unordered_map<uint64_t, uint64_t> real_pairs;
+                //         gc   ct
+                real_pairs[0] = 0;
+                //         gt   tt
+                real_pairs[1] = 1;
 
                 // Perform pairing
-                vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[1], matrix[2]);
+                vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[1], matrix[2]);
 
                 // Verify
                 EXPECT( pairs.size() == 2u );
-                for (pair<uint8_t *, uint8_t *> & pair : pairs) {
+                for (pair<uint64_t, uint64_t> & pair : pairs) {
                     EXPECT( pair.second == real_pairs[pair.first]);
                 }
             }
@@ -224,17 +227,19 @@ const lest::test module[] = {
             {
                 cout << "\t\tBasic colinear chaining test" << endl;
 
-                vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
+                vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
 
                 EXPECT( pairs.size() == 4u );
 
                 // Prepare real pairs to test
-                unordered_map<uint8_t *, uint8_t *> real_colinear;
-                real_colinear[cg] = gc;
-                real_colinear[gg] = gt;
+                unordered_map<uint64_t, uint64_t> real_colinear;
+                //             cg   gc
+                real_colinear[0] = 0;
+                //            gg    gt
+                real_colinear[1] = 1;
 
                 // Perform colinear chaining
-                vector<pair<uint8_t *, uint8_t *> > co_chain = comp.colinear_chaining(pairs);
+                vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
 
                 // Verify
                 EXPECT( co_chain.size() == 2u );

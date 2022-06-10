@@ -10,6 +10,7 @@
 #include "encoding.hpp"
 #include "sequences.hpp"
 #include "merge.hpp"
+#include "RangeMaxTree.hpp"
 
 
 using namespace std;
@@ -393,75 +394,105 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 }
 
 
-vector<pair<uint8_t *, uint8_t *> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
+vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
 	const uint nb_nucl = k - m;
 
-	vector<pair<uint8_t *, uint8_t *> > pairs;
+	vector<pair<uint64_t, uint64_t> > pairs;
 	pairs.reserve(max(column1.size(), column2.size()));
 
 	// Index the second column by their prefix hash
-	unordered_map<uint64_t, vector<uint8_t *> > index;
-	unordered_map<uint8_t *, bool> used;
-	for (uint8_t * kmer : column2) {
+	//            hash      kmer positions
+	unordered_map<uint64_t, vector<uint64_t> > index;
+	//            kmer position, used
+	unordered_map<uint64_t, bool> used;
+	for (uint64_t idx=0 ; idx<column2.size() ; idx++) {
+		uint8_t * kmer = column2[idx];
 		// Get the hash corresponding to the k-m-1 prefix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
 
 		if (index.find(hash) == index.end())
-			index[hash] = vector<uint8_t *>();
-		index[hash].push_back(kmer);
-		used[kmer] = false;
+			index[hash] = vector<uint64_t>();
+		index[hash].push_back(idx);
+		used[idx] = false;
 	}
 
 	// Looks for suffix matches of the first column
-	for (uint8_t * kmer : column1) {
+	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
+		uint8_t * kmer = column1[idx];
 		// Get the hash corresponding to the k-m-1 suffix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 
 		// Test for hash collision
 		if (index.find(hash) != index.end()) {
-			uint candidate_pos = 0;
 			// Test each of the 
-			for (uint8_t * candidate : index[hash]) {
+			for (uint64_t candidate_lst_idx=0 ; candidate_lst_idx<index[hash].size() ; candidate_lst_idx++) {
+				uint64_t candidate_vect_idx = index[hash][candidate_lst_idx];
+				uint8_t * candidate = column2[candidate_vect_idx];
 				if (sequence_compare(
 							candidate, nb_nucl, 0, nb_nucl-2,
 							kmer, nb_nucl, 1, nb_nucl-1
 						) == 0) {
 					
-					pairs.emplace_back(kmer, candidate);
-					used[candidate] = true;
+					pairs.emplace_back(idx, candidate_vect_idx);
+					used[candidate_vect_idx] = true;
 				}
-				candidate_pos += 1;
 			}
 		}
-
-	}
-
-	// Add the right kmers that are not paired
-	for (auto & entry : used) {
-		if (not entry.second)
-			pairs.emplace_back(nullptr, entry.first);
 	}
 
 	return pairs;
 }
 
 
-vector<pair<uint8_t *, uint8_t *> > Compact::colinear_chaining(const vector<pair<uint8_t *, uint8_t *> > & candidates) const {
-	vector<pair<uint8_t *, uint8_t *> > predecessors;
-	vector<pair<uint8_t *, uint8_t *> > subseq_index;
+struct pair_hash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1,T2> &p) const {
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
 
-	// 0 - Sorting the candidates
+        // Mainly for demonstration purposes, i.e. works but is overly simple
+        // In the real world, use sth. like boost.hash_combine
+        return h1 ^ h2;  
+    }
+};
 
-	// uint longest = 0;
-	// uint idx=0;
-	// for (const pair<uint8_t *, uint8_t *> & candidate : candidates) {
-		
+vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
+	vector<pair<uint64_t, uint64_t> > selected;
 
-	// 	idx += 1;
-	// }
-	
-	vector<pair<uint8_t *, uint8_t *> > selected;
+	// Sort the pairs for the RMT structure
+	auto treeSorted = vector<pair<uint64_t, uint64_t> >(candidates);
+	sort(treeSorted.begin(), treeSorted.end(), [](const pair<uint64_t, uint64_t> &a, const pair<uint64_t, uint64_t> &b) -> bool
+	{
+		if (a.second == b.second)
+			return b.first < a.first;
+		else
+			return a.second < b.second;
+	});
 
+	// Datastruct to remember the scores
+	MaxRangeTree * rmt = MaxRangeTree::buildFromLeaves(treeSorted, 0, treeSorted.size());
+	rmt->print();
+
+	// Memorize pair positions in a hash table
+	unordered_map<pair<uint64_t, uint64_t>, uint64_t, pair_hash> positions;
+	uint64_t position = 0;
+	for(pair<uint64_t, uint64_t> & p : treeSorted)
+		positions[p] = position++;
+
+	// Colinear chaining
+	for (const pair<uint64_t, uint64_t> & p : candidates) {
+		cout << "paire (" << p.first << "," << p.second << ")" << endl;
+		uint64_t prev_score = static_cast<uint64_t>(rmt->RMaxQ(0, positions[p]));
+		cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
+		cout << "positions : " << positions[p] << endl;
+		rmt->update(positions[p], prev_score + 1);
+		rmt->print();
+
+	}
+
+	cout << rmt->node.key << " " << rmt->node.value << endl;
+
+	delete rmt;
 	return selected;
 }
 
@@ -477,31 +508,32 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t
 
 vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
 
-	// 1 - Sort Matrix per column
-	this->sort_matrix(kmers);
+	// // 1 - Sort Matrix per column
+	// this->sort_matrix(kmers);
 
-	vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
+	// vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
 
-	// Init first column
-	vector<pair<uint8_t *, uint8_t *> > first_kmers;
-	for (uint8_t * kmer : kmers[0])
-		first_kmers.emplace_back(nullptr, kmer);
-	kmer_pairs.push_back(first_kmers);
+	// // Init first column
+	// vector<pair<uint8_t *, uint8_t *> > first_kmers;
+	// for (uint8_t * kmer : kmers[0])
+	// 	first_kmers.emplace_back(nullptr, kmer);
+	// kmer_pairs.push_back(first_kmers);
 
-	// Pair columns
-	for (uint i=0 ; i<this->k-this->m ; i++) {
-		// 2 - Find all the possible overlaps of kmers
-		const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
+	// // Pair columns
+	// for (uint i=0 ; i<this->k-this->m ; i++) {
+	// 	// 2 - Find all the possible overlaps of kmers
+	// 	const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
 
-		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
-		const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
-		kmer_pairs.push_back(colinear_links);
-	}
+	// 	// 3 - Filter out kmer pairs that are not in optimal colinear chainings
+	// 	const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
+	// 	kmer_pairs.push_back(colinear_links);
+	// }
 
-	// 4 - Finish the ordering by sorting skmers that could have been interchanged
-	const vector<vector<uint8_t *> > skmers = polish_sort(kmer_pairs);
+	// // 4 - Finish the ordering by sorting skmers that could have been interchanged
+	// const vector<vector<uint8_t *> > skmers = polish_sort(kmer_pairs);
 
-	return skmers;
+	// return skmers;
+	return vector<vector<uint8_t *> >();
 }
 
 

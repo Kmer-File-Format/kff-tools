@@ -6,3 +6,6 @@
 [submodule "extern/CLI11"]
 	path = extern/CLI11
 	url = https://github.com/CLIUtils/CLI11.git
+[submodule "extern/RMT"]
+	path = extern/RMT
+	url = git@github.com:yoann-dufresne/RangeMaxTree.git

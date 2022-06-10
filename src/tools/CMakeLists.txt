@@ -28,5 +28,6 @@ target_link_libraries(kfftl
     PUBLIC
     kff
     kffutils
+    RangeMaxTree
     OpenMP::OpenMP_CXX
 )

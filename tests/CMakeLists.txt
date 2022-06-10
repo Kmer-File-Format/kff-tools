@@ -28,4 +28,9 @@ set(SRCS
 add_executable(test ${SRCS})
 
 # link libraries
-target_link_libraries(test kff kfftl kffutils)
+target_link_libraries(test
+    kff
+    kfftl
+    kffutils
+    RangeMaxTree
+)
