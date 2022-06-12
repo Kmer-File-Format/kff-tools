@@ -21,6 +21,7 @@ set(SRCS
     encoding_test.cpp
     sequence_test.cpp
     compact_test.cpp
+    ZRMT_test.cpp
 )
     
 
@@ -33,4 +34,9 @@ target_link_libraries(test
     kfftl
     kffutils
     RangeMaxTree
+)
+
+target_include_directories(test
+    PUBLIC
+    "${PROJECT_SOURCE_DIR}/tests"
 )

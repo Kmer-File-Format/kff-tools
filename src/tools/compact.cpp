@@ -479,14 +479,14 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	for(pair<uint64_t, uint64_t> & p : treeSorted)
 		positions[p] = position++;
 
+
 	// Colinear chaining
 	for (const pair<uint64_t, uint64_t> & p : candidates) {
-		cout << "paire (" << p.first << "," << p.second << ")" << endl;
+		// cout << "paire (" << p.first << "," << p.second << ")" << endl;
 		uint64_t prev_score = static_cast<uint64_t>(rmt->RMaxQ(0, positions[p]));
-		cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
-		cout << "positions : " << positions[p] << endl;
+		// cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
+		// cout << "positions : " << positions[p] << endl;
 		rmt->update(positions[p], prev_score + 1);
-		rmt->print();
 
 	}
 
