@@ -10,7 +10,7 @@
 #include "encoding.hpp"
 #include "sequences.hpp"
 #include "merge.hpp"
-#include "RangeMaxTree.hpp"
+#include "RMT.hpp"
 
 
 using namespace std;
@@ -456,11 +456,21 @@ struct pair_hash {
     }
 };
 
-vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
-	vector<pair<uint64_t, uint64_t> > selected;
 
+// Redefine pair operators
+typedef  std::pair<uint64_t, uint64_t> PairInt;
+template<>
+bool std::operator==(const PairInt& l, const PairInt& r) 
+{ return l.second == r.second; }
+template<>
+bool std::operator<(const PairInt& l, const PairInt& r) 
+{ return l.second < r.second; }
+
+
+vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
+	vector<PairInt> selected;
 	// Sort the pairs for the RMT structure
-	auto treeSorted = vector<pair<uint64_t, uint64_t> >(candidates);
+	auto treeSorted = vector<PairInt>(candidates);
 	sort(treeSorted.begin(), treeSorted.end(), [](const pair<uint64_t, uint64_t> &a, const pair<uint64_t, uint64_t> &b) -> bool
 	{
 		if (a.second == b.second)
@@ -470,8 +480,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	});
 
 	// Datastruct to remember the scores
-	MaxRangeTree * rmt = MaxRangeTree::buildFromLeaves(treeSorted, 0, treeSorted.size());
-	rmt->print();
+	RangeMaxTree<PairInt> rmt = RangeMaxTree<PairInt>(treeSorted);
 
 	// Memorize pair positions in a hash table
 	unordered_map<pair<uint64_t, uint64_t>, uint64_t, pair_hash> positions;
@@ -480,19 +489,18 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 		positions[p] = position++;
 
 
-	// Colinear chaining
-	for (const pair<uint64_t, uint64_t> & p : candidates) {
-		// cout << "paire (" << p.first << "," << p.second << ")" << endl;
-		uint64_t prev_score = static_cast<uint64_t>(rmt->RMaxQ(0, positions[p]));
-		// cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
-		// cout << "positions : " << positions[p] << endl;
-		rmt->update(positions[p], prev_score + 1);
+	// // Colinear chaining
+	// for (const pair<uint64_t, uint64_t> & p : candidates) {
+	// 	// cout << "paire (" << p.first << "," << p.second << ")" << endl;
+	// 	uint64_t prev_score = static_cast<uint64_t>(rmt.RMaxQ(0, positions[p]));
+	// 	// cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
+	// 	// cout << "positions : " << positions[p] << endl;
+	// 	rmt.update(positions[p], prev_score + 1);
 
-	}
+	// }
 
-	cout << rmt->node.key << " " << rmt->node.value << endl;
+	// cout << rmt->node.key << " " << rmt->node.value << endl;
 
-	delete rmt;
 	return selected;
 }
 
