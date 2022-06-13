@@ -119,6 +119,16 @@ const lest::test module[] = {
             // Add the kmers to compact
             uint8_t encoding[] = {0, 1, 3, 2};
             Binarizer bz(encoding);
+            
+            // AAAAA
+            bz.translate("AA", k-m, seq);
+            long aa_pos1 = comp.add_kmer_to_buffer(seq, nullptr, 1);
+            uint8_t * aa1 = comp.kmer_buffer + aa_pos1;
+            // AAAAA
+            bz.translate("AA", k-m, seq);
+            long aa_pos2 = comp.add_kmer_to_buffer(seq, nullptr, 2);
+            uint8_t * aa2 = comp.kmer_buffer + aa_pos2;
+
             // GGAAA
             bz.translate("GG", k-m, seq);
             long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
@@ -223,13 +233,16 @@ const lest::test module[] = {
                 }
             }
 
+            matrix[0].push_back(aa1);
+            matrix[1].push_back(aa2);
+
             SECTION( "colinear chaining test" )
             {
                 cout << "\t\tBasic colinear chaining test" << endl;
 
                 vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
 
-                EXPECT( pairs.size() == 4u );
+                EXPECT( pairs.size() == 5u );
 
                 // Prepare real pairs to test
                 unordered_map<uint64_t, uint64_t> real_colinear;

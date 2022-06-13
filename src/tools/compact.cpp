@@ -459,12 +459,24 @@ struct pair_hash {
 
 // Redefine pair operators
 typedef  std::pair<uint64_t, uint64_t> PairInt;
-template<>
-bool std::operator==(const PairInt& l, const PairInt& r) 
-{ return l.second == r.second; }
+// template<>
+// bool std::operator==(const PairInt& l, const PairInt& r) 
+// { return l.second == r.second && ; }
 template<>
 bool std::operator<(const PairInt& l, const PairInt& r) 
-{ return l.second < r.second; }
+{ 
+	if (l.second == r.second)
+		return l.first < r.first;
+	else
+		return l.second < r.second;
+}
+
+ostream& operator<<(ostream& os, const PairInt& p)
+{
+    os << p.first << "," << p.second;
+    return os;
+}
+
 
 
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
@@ -474,32 +486,73 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	sort(treeSorted.begin(), treeSorted.end(), [](const pair<uint64_t, uint64_t> &a, const pair<uint64_t, uint64_t> &b) -> bool
 	{
 		if (a.second == b.second)
-			return b.first < a.first;
+			return a.first < b.first;
 		else
 			return a.second < b.second;
 	});
 
+	// Traceback list
+	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
 	// Datastruct to remember the scores
 	RangeMaxTree<PairInt> rmt = RangeMaxTree<PairInt>(treeSorted);
+	rmt.update(treeSorted[0], 1);
 
-	// Memorize pair positions in a hash table
-	unordered_map<pair<uint64_t, uint64_t>, uint64_t, pair_hash> positions;
-	uint64_t position = 0;
-	for(pair<uint64_t, uint64_t> & p : treeSorted)
-		positions[p] = position++;
+	// Colinear chaining
+	for (const PairInt & p : candidates) {
+		cout << p.first << " " << p.second << endl;
+		uint64_t tree_position = rmt.find(p);
 
+		// Search for the first position in the tree the collide with the current second pair value
+		uint64_t first_collision = tree_position;
+		for (int64_t position=tree_position ; position>= 0 ; position -= 2) {
+			if (rmt.tree[position].first.second == p.second)
+				first_collision = position;
+			else
+				break;
+		}
 
-	// // Colinear chaining
-	// for (const pair<uint64_t, uint64_t> & p : candidates) {
-	// 	// cout << "paire (" << p.first << "," << p.second << ")" << endl;
-	// 	uint64_t prev_score = static_cast<uint64_t>(rmt.RMaxQ(0, positions[p]));
-	// 	// cout << "score " << prev_score << " -> " << prev_score + 1 << endl;
-	// 	// cout << "positions : " << positions[p] << endl;
-	// 	rmt.update(positions[p], prev_score + 1);
+		// Find the max key/value that does not collide with the current candidate.
+		uint64_t prev_no_collision_score = 0;
+		PairInt no_collision_max_key;
+		if (first_collision > 0) {
+			PairInt last_no_collision = rmt.tree[first_collision - 2].first;
+			prev_no_collision_score = rmt.zero_range(last_no_collision);
+			no_collision_max_key = rmt.first_max_key(prev_no_collision_score);
 
-	// }
+			if (no_collision_max_key.first != p.first)
+				prev_no_collision_score += 1;
+		}
 
-	// cout << rmt->node.key << " " << rmt->node.value << endl;
+		// Find the max key/value that collides with the current candidate.
+		PairInt first_pair_collision = rmt.tree[first_collision].first;
+		uint64_t prev_collision_score = rmt.range(first_pair_collision, p);
+		PairInt collision_max_key = rmt.bounded_first_max_key(prev_collision_score, first_pair_collision);
+
+		// cout << "scores " << prev_no_collision_score << " " << prev_collision_score << endl;
+		// cout << "tree position " << tree_position << endl;
+
+		// Update score and traceback datastructure
+		if (prev_no_collision_score > prev_collision_score) {
+			cout << "----------------------------" << endl;
+			cout << "score " << prev_no_collision_score << endl;
+			cout << "from " << no_collision_max_key.first << " " << no_collision_max_key.second << endl;
+			uint64_t position = rmt.find(no_collision_max_key) / 2;
+			cout << "position " << position << endl << endl;
+			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
+			rmt.update(no_collision_max_key, prev_no_collision_score);
+		} else {
+			cout << "++++++++++++++++++++++++++++" << endl;
+			cout << "score " << prev_collision_score << endl;
+			uint64_t position = rmt.find(collision_max_key) / 2;
+			cout << "position " << position << endl << endl;
+			traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
+			rmt.update(collision_max_key, prev_collision_score);
+		}
+	}
+
+	for (uint64_t idx=0 ; idx<traceback_array.size() ; idx++) {
+		cout << idx << " : " << traceback_array[idx] << endl;
+	}
 
 	return selected;
 }
