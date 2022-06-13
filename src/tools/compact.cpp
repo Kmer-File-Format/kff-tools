@@ -502,9 +502,9 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 		cout << p.first << " " << p.second << endl;
 		uint64_t tree_position = rmt.find(p);
 
-		// Search for the first position in the tree the collide with the current second pair value
+		// Search for the first position in the tree that collides with the current second pair value
 		uint64_t first_collision = tree_position;
-		for (int64_t position=tree_position ; position>= 0 ; position -= 2) {
+		for (int64_t position=tree_position - 2; position>= 0 ; position -= 2) {
 			if (rmt.tree[position].first.second == p.second)
 				first_collision = position;
 			else
@@ -539,20 +539,52 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			uint64_t position = rmt.find(no_collision_max_key) / 2;
 			cout << "position " << position << endl << endl;
 			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
-			rmt.update(no_collision_max_key, prev_no_collision_score);
+			rmt.update(p, prev_no_collision_score);
 		} else {
 			cout << "++++++++++++++++++++++++++++" << endl;
 			cout << "score " << prev_collision_score << endl;
-			uint64_t position = rmt.find(collision_max_key) / 2;
+            uint64_t position = rmt.find(collision_max_key) / 2;
 			cout << "position " << position << endl << endl;
 			traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
-			rmt.update(collision_max_key, prev_collision_score);
+			rmt.update(p, prev_collision_score);
 		}
 	}
+
+//    cout << "final score = " << rmt.tree[rmt.tree.size() / 2].second << endl;
 
 	for (uint64_t idx=0 ; idx<traceback_array.size() ; idx++) {
 		cout << idx << " : " << traceback_array[idx] << endl;
 	}
+
+//    cout << "TreeSorted";
+//    for (uint64_t idx=0 ; idx < treeSorted.size() ; idx++) {
+//        cout << "\t" << treeSorted[idx];
+//    }
+//    cout << endl;
+
+    uint64_t idxMax = 0;
+    for (ulong i = 0; i < traceback_array.size() ; i++) {
+        uint64_t nodeScore = rmt.tree[i*2].second;
+        if (nodeScore == rmt.tree[rmt.tree.size() / 2].second) {
+            idxMax = i;
+        }
+    }
+//    cout << "idxMax = " << idxMax << endl;
+
+    while (true) {
+        selected.push_back(treeSorted[idxMax]);
+        idxMax = traceback_array[idxMax];
+        if (traceback_array[idxMax] == idxMax) {
+            selected.push_back(treeSorted[idxMax]);
+            break;
+        }
+    }
+
+    cout << "selected : ";
+    for (ulong i = 0; i < selected.size() ; i++) {
+        cout << "\t" << selected[i];
+    }
+    cout << endl;
 
 	return selected;
 }
