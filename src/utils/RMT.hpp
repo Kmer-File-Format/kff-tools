@@ -178,8 +178,6 @@ public:
 	 */
 	K first_max_key(uint64_t value) {
 		uint64_t current_position = this->tree.size() / 2;
-		cout << "value " << value << endl;
-		this->print();
 
 		for (uint lvl=next_2pow ; lvl>0 ; lvl--) {
 			uint shift = 1 << (lvl - 1);
@@ -205,9 +203,6 @@ public:
 	K bounded_first_max_key(uint64_t value, K bound) {
 		uint64_t current_position = this->find(bound);
 		uint64_t position = current_position/2;
-
-		cout << "value " << value << endl;
-		this->print();
 
 		bool found_value = this->tree[current_position].second == value;
 		uint64_t lvl = 0;

@@ -246,20 +246,20 @@ const lest::test module[] = {
 
                 // Prepare real pairs to test
                 unordered_map<uint64_t, uint64_t> real_colinear;
-                //             cg   gc
+                //           cg    gc
                 real_colinear[0] = 0;
-                //            gg    gt
+                //           gg    gt
                 real_colinear[1] = 1;
+                //           aa    aa
+                real_colinear[2] = 2;
 
                 // Perform colinear chaining
                 vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
 
                 // Verify
-                EXPECT( co_chain.size() == 2u );
-                // EXPECT( co_chain[0].first == cg );
-                // EXPECT( co_chain[0].second == gc );
-                // EXPECT( co_chain[1].first == gg );
-                // EXPECT( co_chain[1].second == gt );
+                EXPECT( co_chain.size() == 3u );
+                for (pair<uint64_t, uint64_t> & p : co_chain)
+                    EXPECT( real_colinear[p.first] == p.second );
             }
 
             cout << "\t\tOK" << endl;
