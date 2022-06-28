@@ -212,6 +212,10 @@ const lest::test module[] = {
             }
 
 
+            vector<vector<pair<uint64_t, uint64_t> > > pairs_by_column;
+            pairs_by_column.push_back(comp.pair_kmers(matrix[0], matrix[1]));
+            pairs_by_column.push_back(comp.pair_kmers(matrix[1], matrix[2]));
+
             SECTION( "kmer pairing tests" )
             {
                 cout << "\t\tkmer pairing" << endl;
@@ -224,7 +228,7 @@ const lest::test module[] = {
                 real_pairs[1] = 1;
 
                 // Perform pairing
-                vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[1], matrix[2]);
+                vector<pair<uint64_t, uint64_t> > & pairs = pairs_by_column[1];
 
                 // Verify
                 EXPECT( pairs.size() == 2u );
@@ -233,12 +237,16 @@ const lest::test module[] = {
                 }
             }
 
-            matrix[0].push_back(aa1);
-            matrix[1].push_back(aa2);
+
+            vector<vector<pair<uint64_t, uint64_t> > > colinear_chainings;
+            for (const auto & pair : pairs_by_column)
+                colinear_chainings.push_back(comp.colinear_chaining(pair));
 
             SECTION( "colinear chaining test" )
             {
                 cout << "\t\tBasic colinear chaining test" << endl;
+                matrix[0].push_back(aa1);
+                matrix[1].push_back(aa2);
 
                 vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
 
@@ -260,6 +268,19 @@ const lest::test module[] = {
                 EXPECT( co_chain.size() == 3u );
                 for (pair<uint64_t, uint64_t> & p : co_chain)
                     EXPECT( real_colinear[p.first] == p.second );
+            }
+
+
+            SECTION( "polish super-kmers" )
+            {
+                cout << "\t\tPolish super-kmers test" << endl;
+
+                vector<vector<uint8_t *> > skmers = comp.polish_sort(matrix, colinear_chainings);
+
+                // Verify
+                EXPECT( skmers.size() == 2u );
+                // for (pair<uint64_t, uint64_t> & p : co_chain)
+                //     EXPECT( real_colinear[p.first] == p.second );
             }
 
             cout << "\t\tOK" << endl;

@@ -527,9 +527,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 		uint64_t prev_collision_score = rmt.range(first_pair_collision, p);
 		PairInt collision_max_key = rmt.bounded_first_max_key(prev_collision_score, first_pair_collision);
 
-		// cout << "scores " << prev_no_collision_score << " " << prev_collision_score << endl;
-		// cout << "tree position " << tree_position << endl;
-
 		// Update score and traceback datastructure
 		if (prev_no_collision_score > prev_collision_score) {
 			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
@@ -567,10 +564,9 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 }
 
 
-vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t *, uint8_t *> > > & colinear_chainings) const {
+vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
 
 	cerr << "TODO polish_sort" << endl;
-	exit(1);
 
 	return vector<vector<uint8_t *> >();
 }
@@ -578,29 +574,23 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<pair<uint8_t
 
 vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
 
-	// // 1 - Sort Matrix per column
-	// this->sort_matrix(kmers);
+	// 1 - Sort Matrix per column
+	this->sort_matrix(kmers);
 
-	// vector<vector<pair<uint8_t *, uint8_t *> > > kmer_pairs;
+	vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
 
-	// // Init first column
-	// vector<pair<uint8_t *, uint8_t *> > first_kmers;
-	// for (uint8_t * kmer : kmers[0])
-	// 	first_kmers.emplace_back(nullptr, kmer);
-	// kmer_pairs.push_back(first_kmers);
+	// Pair columns
+	for (uint i=0 ; i<this->k-this->m ; i++) {
+		// 2 - Find all the possible overlaps of kmers
+		const vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
 
-	// // Pair columns
-	// for (uint i=0 ; i<this->k-this->m ; i++) {
-	// 	// 2 - Find all the possible overlaps of kmers
-	// 	const vector<pair<uint8_t *, uint8_t *> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
-
-	// 	// 3 - Filter out kmer pairs that are not in optimal colinear chainings
-	// 	const vector<pair<uint8_t *, uint8_t *> > colinear_links = this->colinear_chaining(candidate_links);
-	// 	kmer_pairs.push_back(colinear_links);
-	// }
+		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
+		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
+		kmer_pairs.push_back(colinear_links);
+	}
 
 	// // 4 - Finish the ordering by sorting skmers that could have been interchanged
-	// const vector<vector<uint8_t *> > skmers = polish_sort(kmer_pairs);
+	const vector<vector<uint8_t *> > skmers = polish_sort(kmers, kmer_pairs);
 
 	// return skmers;
 	return vector<vector<uint8_t *> >();
