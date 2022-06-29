@@ -21,6 +21,7 @@ set(SRCS
     encoding_test.cpp
     sequence_test.cpp
     compact_test.cpp
+    skmers_test.cpp
     RMT_test.cpp
 )
     

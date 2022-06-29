@@ -17,7 +17,7 @@ const lest::test module[] = {
 
             SECTION( "Test 2 Bytes bin" )
             {
-                cout << "  Construction" << endl;
+                cout << "\tConstruction" << endl;
                 EXPECT( rmt.tree.size() == 15u );
 
                 vector<uint64_t> expected_keys{0, 1, 1, 3, 2, 3, 3, 7, 4, 5, 5, 7, 6, 7, 7};
@@ -25,11 +25,11 @@ const lest::test module[] = {
                     EXPECT( rmt.tree[i].first == expected_keys[i] );
                     EXPECT( rmt.tree[i].second == 0u );
                 }
-                cout << "  OK" << endl;
+                cout << "\t\tOK" << endl;
             }
 
             SECTION( "Update" ) {
-                cout << "  Update" << endl;
+                cout << "\tUpdate" << endl;
 
                 rmt.update(3, 2);
                 vector<uint64_t> expected_values1{0, 0, 0, 2, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0};
@@ -40,11 +40,11 @@ const lest::test module[] = {
                 vector<uint64_t> expected_values2{0, 0, 0, 2, 0, 2, 2, 3, 0, 3, 3, 3, 0, 0, 0};
                 for (uint idx=0 ; idx<rmt.tree.size() ; idx++)
                     EXPECT(rmt.tree[idx].second == expected_values2[idx]);
-                cout << "  OK" << endl;
+                cout << "\t\tOK" << endl;
             }
 
             SECTION( "0-Range Max" ) {
-                cout << "  0-Range Max" << endl;
+                cout << "\t0-Range Max" << endl;
                 
                 rmt.update(3, 2);
                 rmt.update(5, 3);
@@ -58,11 +58,11 @@ const lest::test module[] = {
                 EXPECT( rmt.first_max_key(2) == 3u );
                 EXPECT( rmt.first_max_key(3) == 5u );
 
-                cout << "  OK" << endl;
+                cout << "\t\tOK" << endl;
             }
 
             SECTION( "Range Max" ) {
-                cout << "  Range Max" << endl;
+                cout << "\tRange Max" << endl;
                 
                 rmt.update(1, 7);
                 rmt.update(2, 2);
@@ -75,11 +75,11 @@ const lest::test module[] = {
                 EXPECT( rmt.range(2, 4) == 9u );
                 EXPECT( rmt.range(6, 7) == 0u );
 
-                cout << "  OK" << endl;
+                cout << "\t\tOK" << endl;
             }
 
             SECTION( "Bounded first max" ) {
-                cout << "  Bounded first max" << endl;
+                cout << "\tBounded first max" << endl;
                 
                 rmt.update(1, 7);
                 rmt.update(2, 2);
@@ -92,7 +92,7 @@ const lest::test module[] = {
                 EXPECT( rmt.bounded_first_max_key(7, 1) == 1u );
                 EXPECT( rmt.bounded_first_max_key(7, 2) == 3u );
 
-                cout << "  OK" << endl;
+                cout << "\t\tOK" << endl;
             }
         }
 
