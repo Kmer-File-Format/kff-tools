@@ -11,7 +11,7 @@
 #include "sequences.hpp"
 #include "merge.hpp"
 #include "RMT.hpp"
-
+#include "skmers.hpp"
 
 using namespace std;
 
@@ -554,17 +554,56 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
         }
     }
 
-    // cout << "selected : ";
-    // for (ulong i = 0; i < selected.size() ; i++) {
-    //     cout << "\t" << selected[i];
-    // }
-    // cout << endl;
-
 	return selected;
 }
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+
+	// Unify kmers into skmers
+	unordered_map<uint8_t *, vector<uint8_t *> *> rev_skmers_index;
+	for (size_t col_idx = 0 ; col_idx<pairs.size() ; col_idx++) {
+		// Get the current column
+		const vector<pair<uint64_t, uint64_t> > & column = pairs[col_idx];
+
+		// for each new link, try to extend previous skmers
+		for (const pair<uint64_t, uint64_t> & link : column) {
+			uint8_t * lkmer = matrix[col_idx][link.first];
+			uint8_t * rkmer = matrix[col_idx+1][link.second];
+
+			// Previous kmer not found
+			if (rev_skmers_index.find(lkmer) == rev_skmers_index.end()) {
+				// Create a new superkmer
+				vector<uint8_t *> * new_sk = new vector<uint8_t *>();
+				new_sk->push_back(lkmer); new_sk->push_back(rkmer);
+				// Insert it in the rev index
+				rev_skmers_index[rkmer] = new_sk;
+			}
+			// Previous kmer found: extend it
+			else {
+				// Get the skmer
+				vector<uint8_t *> * sk = rev_skmers_index[lkmer];
+				// Extend it
+				sk->push_back(rkmer);
+				// change the reference of the sk in the index
+				rev_skmers_index.erase(lkmer);
+				rev_skmers_index[rkmer] = sk;
+			}
+		}
+	}
+
+	// Index skmers
+	unordered_map<uint8_t *, vector<uint8_t *> *> sk_index;
+	for(auto & kv: rev_skmers_index) {
+		vector<uint8_t *> * sk = kv.second;
+		// Index by kmer
+		for (uint8_t * kmer: *sk)
+			sk_index[kmer] = sk;
+	}
+
+
+	// Add iteratively the skmers into the sorted list
+		// Select the skmer to add
 
 	cerr << "TODO polish_sort" << endl;
 
