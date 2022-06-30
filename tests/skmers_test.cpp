@@ -182,6 +182,38 @@ const lest::test module[] = {
             
             cout << "\t\tOK" << endl;
         }
+    },
+
+    CASE("Min interleaved") {
+
+        cout << "Test minimum between interleaved" << endl;
+        SETUP( "One Byte skmer minimum" ) {
+            //                    TA|AA       A|AGT       AGC|T       |AGTC       ACCC|
+            uint8_t skmers[] = {0b10000000, 0b00001110, 0b00110110, 0b00111001, 0b00010101};
+            uint8_t inter_mems[] = {0, 0, 0, 0, 0};
+            vector<interleved_t> interleaves;
+            interleaves.push_back(interleaved(skmers, inter_mems, 4, 2));
+            interleaves.push_back(interleaved(skmers+1, inter_mems+1, 4, 1));
+            interleaves.push_back(interleaved(skmers+2, inter_mems+2, 4, 3));
+            interleaves.push_back(interleaved(skmers+3, inter_mems+3, 4, 0));
+            interleaves.push_back(interleaved(skmers+4, inter_mems+4, 4, 4));
+            
+            SECTION( "Successive minimum" )
+            {
+                cout << "\tSuccessive minimum tests" << endl;
+
+                interleved_t min = min_interleaved(interleaves.begin(), interleaves.end());
+                EXPECT(min.nucl[0] == 0b00000010);
+
+                min = min_interleaved(interleaves.begin()+1, interleaves.end());
+                EXPECT(min.nucl[0] == 0b00001110);
+
+                min = min_interleaved(interleaves.begin()+2, interleaves.end());
+                EXPECT(min.nucl[0] == 0b00111001);
+            }
+            
+            cout << "\t\tOK" << endl;
+        }
     }
 };
 

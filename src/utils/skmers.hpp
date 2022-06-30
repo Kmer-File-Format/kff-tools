@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <vector>
+#include <iterator>
 
 
 #ifndef SKMERS_H
@@ -35,13 +36,24 @@ interleved_t interleaved(const uint8_t * skmer, uint8_t * interleaved_skmer, std
 bool inf_interleaved(interleved_t i1, interleved_t i2);
 
 
-/** Selecte the min interleaved in a list
+/** Selecte the min interleaved along an iterator
  * 
- * @param A list of superkmers interleaved
+ * @param begin Start of the iterator to explore
+ * @param end End of the iterator to explore
  * 
- * @return The first one in the interleaved order
+ * @return The first element in the interleaved order
  */
-interleved_t min_interleaved(std::vector<interleved_t> skmers);
+template<typename Iterator>
+interleved_t min_interleaved(Iterator begin, Iterator end) {
+	interleved_t min_i = *begin;
+	for (Iterator it = ++begin; it != end; it++) {
+		if (inf_interleaved(*it, min_i))
+			min_i = *it;
+	}
+	return min_i;
+}
+
+
 
 
 #endif
