@@ -275,12 +275,23 @@ const lest::test module[] = {
             {
                 cout << "\t\tPolish super-kmers test" << endl;
 
+                vector<vector<uint8_t *> > true_skmers;
+                true_skmers.push_back({cg, gc, ct});
+                true_skmers.push_back({gg, gt, tt});
+
                 vector<vector<uint8_t *> > skmers = comp.polish_sort(matrix, colinear_chainings);
 
                 // Verify
-                EXPECT( skmers.size() == 2u );
-                // for (pair<uint64_t, uint64_t> & p : co_chain)
-                //     EXPECT( real_colinear[p.first] == p.second );
+                EXPECT( skmers.size() == true_skmers.size() );
+                for (size_t sk_idx=0 ; sk_idx<true_skmers.size() ; sk_idx++) {
+                    vector<uint8_t *> & skmer = skmers[sk_idx];
+                    vector<uint8_t *> & true_sk = true_skmers[sk_idx];
+
+                    EXPECT(skmer.size() == true_sk.size());
+
+                    for (size_t kmer_idx=0 ; kmer_idx<true_sk.size() ; kmer_idx++)
+                        EXPECT( skmer[kmer_idx] == true_sk[kmer_idx] );
+                }
             }
 
             cout << "\t\tOK" << endl;

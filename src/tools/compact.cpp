@@ -559,6 +559,11 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+	// Index the kmer columns
+	unordered_map<uint8_t *, size_t> columns;
+	for (size_t col=0 ; col<matrix.size() ; col++)
+		for (uint8_t * kmer : matrix[col])
+			columns[kmer] = col;
 
 	// Unify kmers into skmers
 	unordered_map<uint8_t *, vector<uint8_t *> *> rev_skmers_index;
@@ -601,13 +606,101 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			sk_index[kmer] = sk;
 	}
 
+	// Init the kmer per superkmer counters
+	unordered_map<vector<uint8_t *> *, uint64_t> sk_counts;
+	for (size_t col_idx=0 ; col_idx<matrix.size() ; col_idx++) {
+		uint8_t * kmer = matrix[col_idx][0];
+		auto skmer = sk_index[kmer];
+		if (sk_counts.find(skmer) == sk_counts.end())
+			sk_counts[skmer] = 0;
+		sk_counts[skmer] += 1;
+	}
+
+	bool matrix_consumed = false;
+	// Row indexes for each or the columns in the kmer matrix.
+	vector<size_t> current_kmers(matrix.size(), 0);
+	// Memory to strore interleaves
+	vector<uint8_t *> memory;
+	// Interleaves of current pointed kmers
+	vector<interleved_t> current_interleaves;
+
+	size_t num_sk_nucl = 2 * (this->k - this->m);
+	// Fill the first interleaves
+	for (size_t i=0 ; i<matrix.size() ; i++) {
+		memory.push_back(new uint8_t[(this->k - this->m + 3) / 4]);
+		current_interleaves.push_back((interleved_t){0,0,0});
+		if (matrix[i].size() > 0)
+			current_interleaves[i] = interleaved(matrix[i][0], memory[i],
+												num_sk_nucl, num_sk_nucl + 1 - i);
+	}
+
+	vector<vector<uint8_t *> > result;
 
 	// Add iteratively the skmers into the sorted list
-		// Select the skmer to add
+	while(not matrix_consumed) {
+		vector<interleved_t> candidates;
+		// Construct the list of compatible kmers
+		for (size_t i=0 ; i<matrix.size() ; i++) {
+			// Add the interleaved kmer with also a position interleaved.
+			// The one in the middle is first in the list and then alternate left-right
+			size_t position = matrix.size()/2;
+			if (i % 2 == 0)
+				position += i/2;
+			else
+				position -= i/2;
+			
+			if (current_kmers[position] < matrix[position].size()) {
+				// Get the related skmer
+				uint8_t * kmer = matrix[position][current_kmers[position]];
+				vector<uint8_t *> * sk = sk_index[kmer];
 
-	cerr << "TODO polish_sort" << endl;
+				// Add the skmer only if all the related kmers are present
+				if (sk_counts[sk] == sk->size()) {
+					candidates.push_back(current_interleaves[position]);
+				}
+			}
+		}
 
-	return vector<vector<uint8_t *> >();
+		// Select the min kmer and add the related skmer to the output
+		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
+		candidates = vector<interleved_t>();
+		size_t col = selected.suf_size;
+		uint8_t * selected_kmer = matrix[col][current_kmers[col]];
+		vector<uint8_t *> * selected_sk = sk_index[selected_kmer];
+
+		result.push_back(*selected_sk);
+
+		// remove selected kmers from the counts
+		sk_counts.erase(selected_sk);
+
+		// Jump over selected kmers in the matrix
+		for (uint8_t * kmer : *selected_sk) {
+			col = columns[kmer];
+			current_kmers[col] += 1;
+			
+			size_t row = current_kmers[col];
+			if (row < matrix[col].size()) {
+				// Update the interleaved value
+				current_interleaves[col] = interleaved(matrix[col][row], memory[col],
+													num_sk_nucl, num_sk_nucl + 1 - col);
+				// Update the sk counts
+				auto sk = sk_index[matrix[col][row]];
+				if (sk_counts.find(sk) == sk_counts.end())
+					sk_counts[sk] = 0;
+				sk_counts[sk] += 1;
+			}
+		}
+
+		// Is it over
+		matrix_consumed = true;
+		for (size_t i=0 ; i<matrix.size() ; i++)
+			if (current_kmers[i] < matrix[i].size()) {
+				matrix_consumed = false;
+				break;
+			}
+	}
+
+	return result;
 }
 
 
