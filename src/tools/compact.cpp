@@ -149,7 +149,7 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
 		paths = this->sorted_assembly(kmers_per_index);
-		cout << "---------- " << paths.size() << " ----------" << endl;
+		// cout << "---------- " << paths.size() << " ----------" << endl;
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
@@ -494,9 +494,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			return a.second < b.second;
 	});
 
-	for (auto & p : treeSorted)
-		cout << p.first << " " << p.second << endl;
-
 	// Traceback list
 	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
 	// Datastruct to remember the scores
@@ -515,7 +512,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			else
 				break;
 		}
-		cout << "first_collision " << first_collision << endl;
 
 		// Find the max key/value that does not collide with the current candidate.
 		uint64_t prev_no_collision_score = 0;
@@ -536,7 +532,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 		// Update score and traceback datastructure
 		if (prev_no_collision_score > prev_collision_score) {
-			// cout << "tree position " << tree_position << endl;
 			// cout << "traceback_array " << traceback_array.size() << endl;
 			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
 			rmt.update(p, prev_no_collision_score);
@@ -555,12 +550,17 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
     }
 
     while (true) {
-        selected.push_back(treeSorted[idxMax]);
-        idxMax = traceback_array[idxMax];
+    	// Last element in the chain
         if (traceback_array[idxMax] == idxMax) {
             selected.push_back(treeSorted[idxMax]);
             break;
         }
+
+        uint64_t prev_idx = traceback_array[idxMax];
+        //      prev score              ==       current score
+        if (rmt.tree[prev_idx*2].second != rmt.tree[idxMax*2].second)
+        	selected.push_back(treeSorted[idxMax]);
+        idxMax = traceback_array[idxMax];
     }
 
 	return selected;
@@ -568,10 +568,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
-
-	cout << "first col " << pairs[0].size() << endl;
-	for (size_t i=0 ; i<pairs[0].size() ; i++)
-		cout << "\t" << pairs[0][i].first << " " << pairs[0][i].second << endl;
 
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
@@ -620,9 +616,9 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		for (uint8_t * kmer: *sk)
 			sk_index[kmer] = sk;
 
-		cout << sk << " -> " << sk->size() << endl;
-		for (uint8_t * kmer : *sk)
-			cout << "\t" << (uint64_t *)kmer << endl;
+		// cout << sk << " -> " << sk->size() << endl;
+		// for (uint8_t * kmer : *sk)
+		// 	cout << "\t" << (uint64_t *)kmer << endl;
 	}
 
 	// Index lonely kmers
