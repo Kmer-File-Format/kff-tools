@@ -115,6 +115,7 @@ const lest::test module[] = {
 
             // Create the kmer matrix
             vector<vector<uint8_t *> > matrix(3, vector<uint8_t *>());
+            vector<vector<uint8_t *> > matrix_trio(3, vector<uint8_t *>());
 
             // Add the kmers to compact
             uint8_t encoding[] = {0, 1, 3, 2};
@@ -192,7 +193,12 @@ const lest::test module[] = {
             matrix[2].push_back(ct);
             matrix[2].push_back(tt);
 
+            matrix_trio[0].push_back(gg);
+            matrix_trio[1].push_back(gc);
+            matrix_trio[1].push_back(gt);
+
             comp.sort_matrix(matrix);
+            comp.sort_matrix(matrix_trio);
             SECTION( "Matrix sorting" )
             {
                 cout << "\t\tMatrix sorting" << endl;
@@ -215,6 +221,8 @@ const lest::test module[] = {
             vector<vector<pair<uint64_t, uint64_t> > > pairs_by_column;
             pairs_by_column.push_back(comp.pair_kmers(matrix[0], matrix[1]));
             pairs_by_column.push_back(comp.pair_kmers(matrix[1], matrix[2]));
+
+            vector<pair<uint64_t, uint64_t> > trio_pairs = comp.pair_kmers(matrix_trio[0], matrix_trio[1]);
 
             SECTION( "kmer pairing tests" )
             {
@@ -242,32 +250,57 @@ const lest::test module[] = {
             for (const auto & pair : pairs_by_column)
                 colinear_chainings.push_back(comp.colinear_chaining(pair));
 
-            SECTION( "colinear chaining test" )
+            // SECTION( "colinear chaining test 1" )
+            // {
+            //     cout << "\t\tBasic colinear chaining test 1" << endl;
+            //     matrix[0].push_back(aa1);
+            //     matrix[1].push_back(aa2);
+
+            //     vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
+
+            //     EXPECT( pairs.size() == 5u );
+
+            //     // Prepare real pairs to test
+            //     unordered_map<uint64_t, uint64_t> real_colinear;
+            //     //           cg    gc
+            //     real_colinear[0] = 0;
+            //     //           gg    gt
+            //     real_colinear[1] = 1;
+            //     //           aa    aa
+            //     real_colinear[2] = 2;
+
+            //     // Perform colinear chaining
+            //     vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
+
+            //     // Verify
+            //     EXPECT( co_chain.size() == 3u );
+            //     for (pair<uint64_t, uint64_t> & p : co_chain)
+            //         EXPECT( real_colinear[p.first] == p.second );
+            // }
+
+
+            SECTION( "colinear chaining test 2" )
             {
-                cout << "\t\tBasic colinear chaining test" << endl;
-                matrix[0].push_back(aa1);
-                matrix[1].push_back(aa2);
+                cout << "\t\tBasic colinear chaining test 2" << endl;
 
-                vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
-
-                EXPECT( pairs.size() == 5u );
+                EXPECT( trio_pairs.size() == 2u );
 
                 // Prepare real pairs to test
                 unordered_map<uint64_t, uint64_t> real_colinear;
-                //           cg    gc
-                real_colinear[0] = 0;
-                //           gg    gt
-                real_colinear[1] = 1;
-                //           aa    aa
-                real_colinear[2] = 2;
+                // //           cg    gc
+                // real_colinear[0] = 0;
+                // //           gg    gt
+                // real_colinear[1] = 1;
+                // //           aa    aa
+                // real_colinear[2] = 2;
 
                 // Perform colinear chaining
-                vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
+                vector<pair<uint64_t, uint64_t> > trio_chain = comp.colinear_chaining(trio_pairs);
 
                 // Verify
-                EXPECT( co_chain.size() == 3u );
-                for (pair<uint64_t, uint64_t> & p : co_chain)
-                    EXPECT( real_colinear[p.first] == p.second );
+                EXPECT( trio_chain.size() == 1u );
+                // for (pair<uint64_t, uint64_t> & p : co_chain)
+                //     EXPECT( real_colinear[p.first] == p.second );
             }
 
 

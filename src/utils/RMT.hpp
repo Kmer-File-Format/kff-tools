@@ -15,7 +15,7 @@ public:
 	uint64_t next_2pow;
 
 	RangeMaxTree(const vector<K> keys) {
-		this->max_real_leaf = keys.size();
+		this->max_real_leaf = keys.size()-1;
 		// Compute the size for a perfect binary tree
 		this->next_2pow = ceil(log2(keys.size()));
 		uint64_t max_leaf_idx = (1 << next_2pow) - 1;
@@ -41,7 +41,8 @@ public:
 	 */
 	uint64_t find(K key) {
 		uint64_t begin = 0;
-		uint64_t end = (this->tree.size() + 1) / 2;
+		// uint64_t end = (this->tree.size() + 1) / 2;
+		uint64_t end = this->max_real_leaf;
 
 		while (begin <= end) {
 			uint64_t middle = (begin + end) / 2;

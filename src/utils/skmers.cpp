@@ -79,8 +79,8 @@ interleved_t interleaved(const uint8_t * skmer, uint8_t * interleaved_skmer, siz
 	interleved_t interleaved;
 	interleaved.nucl = interleaved_skmer;
 	interleaved.pref_size = mini_position;
-	interleaved.suf_size = size - mini_position;
-
+	interleaved.suf_size = size - interleaved.pref_size;
+	
 	// Alias usefull variables
 	size_t pref = interleaved.pref_size;
 	size_t suf = interleaved.suf_size;

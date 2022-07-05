@@ -149,7 +149,7 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
 		paths = this->sorted_assembly(kmers_per_index);
-		exit(0);
+		cout << "---------- " << paths.size() << " ----------" << endl;
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
@@ -480,6 +480,9 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
+	if (candidates.size() == 0)
+		return vector<pair<uint64_t, uint64_t> >();
+
 	vector<PairInt> selected;
 	// Sort the pairs for the RMT structure
 	auto treeSorted = vector<PairInt>(candidates);
@@ -490,6 +493,9 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 		else
 			return a.second < b.second;
 	});
+
+	for (auto & p : treeSorted)
+		cout << p.first << " " << p.second << endl;
 
 	// Traceback list
 	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
@@ -509,6 +515,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			else
 				break;
 		}
+		cout << "first_collision " << first_collision << endl;
 
 		// Find the max key/value that does not collide with the current candidate.
 		uint64_t prev_no_collision_score = 0;
@@ -529,6 +536,8 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 		// Update score and traceback datastructure
 		if (prev_no_collision_score > prev_collision_score) {
+			// cout << "tree position " << tree_position << endl;
+			// cout << "traceback_array " << traceback_array.size() << endl;
 			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
 			rmt.update(p, prev_no_collision_score);
 		} else {
@@ -559,6 +568,11 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+
+	cout << "first col " << pairs[0].size() << endl;
+	for (size_t i=0 ; i<pairs[0].size() ; i++)
+		cout << "\t" << pairs[0][i].first << " " << pairs[0][i].second << endl;
+
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
 	for (size_t col=0 ; col<matrix.size() ; col++)
@@ -597,6 +611,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		}
 	}
 
+
 	// Index skmers
 	unordered_map<uint8_t *, vector<uint8_t *> *> sk_index;
 	for(auto & kv: rev_skmers_index) {
@@ -604,16 +619,29 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		// Index by kmer
 		for (uint8_t * kmer: *sk)
 			sk_index[kmer] = sk;
+
+		cout << sk << " -> " << sk->size() << endl;
+		for (uint8_t * kmer : *sk)
+			cout << "\t" << (uint64_t *)kmer << endl;
 	}
 
-	// Init the kmer per superkmer counters
+	// Index lonely kmers
+	for(size_t col=0 ; col<matrix.size() ; col++) {
+		for (uint8_t * kmer : matrix[col]) {
+			if (sk_index.find(kmer) == sk_index.end())
+				sk_index[kmer] = new vector<uint8_t *>{kmer};
+		}
+	}
+
+	// Init the kmer per superkmer counters with the first row
 	unordered_map<vector<uint8_t *> *, uint64_t> sk_counts;
-	for (size_t col_idx=0 ; col_idx<matrix.size() ; col_idx++) {
-		uint8_t * kmer = matrix[col_idx][0];
-		auto skmer = sk_index[kmer];
-		if (sk_counts.find(skmer) == sk_counts.end())
-			sk_counts[skmer] = 0;
-		sk_counts[skmer] += 1;
+	for (const vector<uint8_t *> & col: matrix) {
+		if (col.size() == 0) continue;
+
+		auto & sk = sk_index[col[0]];
+		if (sk_counts.find(sk) == sk_counts.end())
+			sk_counts[sk] = 0;
+		sk_counts[sk] += 1;
 	}
 
 	bool matrix_consumed = false;
@@ -624,14 +652,15 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 	// Interleaves of current pointed kmers
 	vector<interleved_t> current_interleaves;
 
-	size_t num_sk_nucl = 2 * (this->k - this->m);
+	size_t num_kmer_nucl = this->k - this->m;
 	// Fill the first interleaves
 	for (size_t i=0 ; i<matrix.size() ; i++) {
-		memory.push_back(new uint8_t[(this->k - this->m + 3) / 4]);
+		memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
 		current_interleaves.push_back((interleved_t){0,0,0});
-		if (matrix[i].size() > 0)
+		if (matrix[i].size() > 0) {
 			current_interleaves[i] = interleaved(matrix[i][0], memory[i],
-												num_sk_nucl, num_sk_nucl + 1 - i);
+												num_kmer_nucl, num_kmer_nucl - i);
+		}
 	}
 
 	vector<vector<uint8_t *> > result;
@@ -647,15 +676,18 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			if (i % 2 == 0)
 				position += i/2;
 			else
-				position -= i/2;
+				position -= 1 + i/2;
 			
 			if (current_kmers[position] < matrix[position].size()) {
 				// Get the related skmer
 				uint8_t * kmer = matrix[position][current_kmers[position]];
 				vector<uint8_t *> * sk = sk_index[kmer];
 
+				// cout << i << " " << position << endl;
+				// cout << "current kmer " << current_kmers[position] << endl;
+				
 				// Add the skmer only if all the related kmers are present
-				if (sk_counts[sk] == sk->size()) {
+				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
 					candidates.push_back(current_interleaves[position]);
 				}
 			}
@@ -682,7 +714,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			if (row < matrix[col].size()) {
 				// Update the interleaved value
 				current_interleaves[col] = interleaved(matrix[col][row], memory[col],
-													num_sk_nucl, num_sk_nucl + 1 - col);
+													num_kmer_nucl, num_kmer_nucl - col);
 				// Update the sk counts
 				auto sk = sk_index[matrix[col][row]];
 				if (sk_counts.find(sk) == sk_counts.end())
@@ -705,9 +737,11 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 
 
 vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
-
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
+	for (size_t i=0 ; i<kmers.size() ; i++)
+		cout << kmers[i].size() << " ";
+	cout << endl;
 
 	vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
 
@@ -725,7 +759,7 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 	const vector<vector<uint8_t *> > skmers = polish_sort(kmers, kmer_pairs);
 
 	// return skmers;
-	return vector<vector<uint8_t *> >();
+	return skmers;
 }
 
 
