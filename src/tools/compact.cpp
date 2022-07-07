@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <queue>
 #include <cassert>
+#include <unordered_set>
 
 #include "compact.hpp"
 #include "encoding.hpp"
@@ -189,8 +190,7 @@ long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint
 }
 
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
-	vector<vector<long> > pos_matrix;
-	pos_matrix.resize(sm.k - sm.m + 1);
+	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
 	
 	uint64_t max_nucl = sm.k + sm.max - 1;
 	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
@@ -224,6 +224,7 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 			memcpy(this->kmer_buffer + next_free + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
 			// Write mini position
 			uint kmer_mini_pos = mini_pos - kmer_idx;
+
 			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
 				*(this->kmer_buffer + next_free + kmer_bytes + sm.data_size + b) = kmer_mini_pos & 0xFF;
 				kmer_mini_pos >>= 8;
@@ -238,13 +239,13 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 	delete[] data_buffer;
 
 	// Transform the position matrix into the kmer matrix
-	vector<vector<uint8_t *> > kmer_matrix;
+	vector<vector<uint8_t *> > kmer_matrix(sm.k - sm.m + 1, vector<uint8_t *>());
+	size_t idx = 0;
 	for (vector<long> & positions : pos_matrix) {
-		vector<uint8_t *> column(positions.size(), nullptr);
-		uint idx = 0;
-		for (long pos : positions)
-			column[idx++] = this->kmer_buffer + pos;
-		kmer_matrix.push_back(column);
+		for (long pos : positions) {
+			kmer_matrix[idx].push_back(this->kmer_buffer + pos);
+		}
+		idx += 1;
 	}
 
 	return kmer_matrix;
@@ -483,6 +484,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	if (candidates.size() == 0)
 		return vector<pair<uint64_t, uint64_t> >();
 
+
 	vector<PairInt> selected;
 	// Sort the pairs for the RMT structure
 	auto treeSorted = vector<PairInt>(candidates);
@@ -498,7 +500,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
 	// Datastruct to remember the scores
 	RangeMaxTree<PairInt> rmt = RangeMaxTree<PairInt>(treeSorted);
-	rmt.update(treeSorted[0], 1);
+	rmt.update(treeSorted[rmt.find(candidates[0])/2], 1);
 
 	// Colinear chaining
 	for (const PairInt & p : candidates) {
@@ -521,13 +523,13 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			prev_no_collision_score = rmt.zero_range(last_no_collision);
 			no_collision_max_key = rmt.first_max_key(prev_no_collision_score);
 
-			if (no_collision_max_key.first != p.first)
+			if (no_collision_max_key.first != p.first or prev_no_collision_score == 0)
 				prev_no_collision_score += 1;
 		}
 
 		// Find the max key/value that collides with the current candidate.
 		PairInt first_pair_collision = rmt.tree[first_collision].first;
-		uint64_t prev_collision_score = rmt.range(first_pair_collision, p);
+		uint64_t prev_collision_score = max((uint64_t)1u, rmt.range(first_pair_collision, p));
 		PairInt collision_max_key = rmt.bounded_first_max_key(prev_collision_score, first_pair_collision);
 
 		// Update score and traceback datastructure
@@ -577,6 +579,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 
 	// Unify kmers into skmers
 	unordered_map<uint8_t *, vector<uint8_t *> *> rev_skmers_index;
+	unordered_set<vector<uint8_t *> *> skmers;
 	for (size_t col_idx = 0 ; col_idx<pairs.size() ; col_idx++) {
 		// Get the current column
 		const vector<pair<uint64_t, uint64_t> > & column = pairs[col_idx];
@@ -590,6 +593,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			if (rev_skmers_index.find(lkmer) == rev_skmers_index.end()) {
 				// Create a new superkmer
 				vector<uint8_t *> * new_sk = new vector<uint8_t *>();
+				skmers.insert(new_sk);
 				new_sk->push_back(lkmer); new_sk->push_back(rkmer);
 				// Insert it in the rev index
 				rev_skmers_index[rkmer] = new_sk;
@@ -624,8 +628,10 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 	// Index lonely kmers
 	for(size_t col=0 ; col<matrix.size() ; col++) {
 		for (uint8_t * kmer : matrix[col]) {
-			if (sk_index.find(kmer) == sk_index.end())
+			if (sk_index.find(kmer) == sk_index.end()) {
 				sk_index[kmer] = new vector<uint8_t *>{kmer};
+				skmers.insert(sk_index[kmer]);
+			}
 		}
 	}
 
@@ -681,6 +687,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 
 				// cout << i << " " << position << endl;
 				// cout << "current kmer " << current_kmers[position] << endl;
+				// cout << (uint64_t)(matrix[position][0][0]) << endl;
 				
 				// Add the skmer only if all the related kmers are present
 				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
@@ -690,6 +697,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		}
 
 		// Select the min kmer and add the related skmer to the output
+		// cout << candidates.size() << endl;
 		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
 		candidates = vector<interleved_t>();
 		size_t col = selected.suf_size;
@@ -728,6 +736,12 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			}
 	}
 
+	// free memory
+	for (uint8_t * mem : memory)
+		delete[](mem);
+	for (vector<uint8_t *> * sk : skmers)
+		delete(sk);
+
 	return result;
 }
 
@@ -735,9 +749,6 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
-	for (size_t i=0 ; i<kmers.size() ; i++)
-		cout << kmers[i].size() << " ";
-	cout << endl;
 
 	vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
 
