@@ -529,8 +529,9 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 		// Find the max key/value that collides with the current candidate.
 		PairInt first_pair_collision = rmt.tree[first_collision].first;
-		uint64_t prev_collision_score = max((uint64_t)1u, rmt.range(first_pair_collision, p));
+		uint64_t prev_collision_score = rmt.range(first_pair_collision, p);
 		PairInt collision_max_key = rmt.bounded_first_max_key(prev_collision_score, first_pair_collision);
+
 
 		// Update score and traceback datastructure
 		if (prev_no_collision_score > prev_collision_score) {
@@ -539,9 +540,22 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 			rmt.update(p, prev_no_collision_score);
 		} else {
 			traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
+			if (prev_collision_score == 0)
+				prev_collision_score = 1;
 			rmt.update(p, prev_collision_score);
 		}
 	}
+
+
+	cout << "scores" << endl;
+	for (size_t i=0 ; i<rmt.tree.size() ; i+=2) {
+		cout << rmt.tree[i].second << " ";
+	} cout << endl;
+
+	cout << "traceback" << endl;
+	for (size_t i=0 ; i<traceback_array.size() ; i++) {
+		cout << traceback_array[i] << " ";
+	} cout << endl;
 
     uint64_t idxMax = 0;
     for (ulong i = 0; i < traceback_array.size() ; i++) {
@@ -570,6 +584,17 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+
+	for (size_t i=0 ; i<matrix.size() ; i++) {
+		cout << matrix[i].size() << " ";
+	}cout << endl;
+
+	for (size_t i=0 ; i<pairs.size() ; i++) {
+		cout << pairs[i].size() << " ";
+	}cout << endl;
+
+	cout << pairs[0][0] << endl;
+	cout << pairs[0][1] << endl;
 
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
