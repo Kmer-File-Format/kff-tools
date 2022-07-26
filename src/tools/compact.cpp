@@ -460,8 +460,8 @@ struct pair_hash {
 // Redefine pair operators
 typedef  std::pair<uint64_t, uint64_t> PairInt;
 // template<>
-// bool std::operator==(const PairInt& l, const PairInt& r) 
-// { return l.second == r.second && ; }
+// bool std::operator==(const PairInt& l, const PairInt& r)
+// { return l.second == r.second; }
 template<>
 bool std::operator<(const PairInt& l, const PairInt& r) 
 { 
@@ -473,7 +473,7 @@ bool std::operator<(const PairInt& l, const PairInt& r)
 
 ostream& operator<<(ostream& os, const PairInt& p)
 {
-    os << p.first << "," << p.second;
+    os << p.first << ", " << p.second;
     return os;
 }
 
@@ -495,50 +495,58 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
 	// Datastruct to remember the scores
 	RangeMaxTree<PairInt> rmt = RangeMaxTree<PairInt>(treeSorted);
-	rmt.update(treeSorted[0], 1);
 
-	// Colinear chaining
-	for (const PairInt & p : candidates) {
-		uint64_t tree_position = rmt.find(p);
+    PairInt no_collision_max_key = treeSorted[0];
+    PairInt collision_max_key = treeSorted[0];
 
-		// Search for the first position in the tree that collides with the current second pair value
-		uint64_t first_collision = tree_position;
-		for (int64_t position=tree_position - 2; position>= 0 ; position -= 2) {
-			if (rmt.tree[position].first.second == p.second)
-				first_collision = position;
-			else
-				break;
-		}
+
+    // Colinear chaining
+    for (const PairInt & p : candidates) {
+//        rmt.print();
+//        cout << "current pair = " << p << endl;
+        uint64_t tree_position = rmt.find(p);
 
 		// Find the max key/value that does not collide with the current candidate.
 		uint64_t prev_no_collision_score = 0;
-		PairInt no_collision_max_key;
-		if (first_collision > 0) {
-			PairInt last_no_collision = rmt.tree[first_collision - 2].first;
-			prev_no_collision_score = rmt.zero_range(last_no_collision);
-			no_collision_max_key = rmt.first_max_key(prev_no_collision_score);
+        PairInt searcher;
+        if (p.second == 0) {
+            searcher = PairInt(p.first, 0);
+        } else {
+            searcher = PairInt(p.first, p.second - 1);
+        }
 
-			if (no_collision_max_key.first != p.first)
-				prev_no_collision_score += 1;
-		}
+        prev_no_collision_score = rmt.range_between(PairInt(0, 0), searcher);
+        vector<PairInt> all_keys_no_collision = rmt.all_max_key(prev_no_collision_score, searcher);
+
+        for (auto & it : all_keys_no_collision) {
+//            cout << "in all key no col : " <<  it << endl;
+            if (p == it || (it.first != p.first && it.second != p.second) ) {
+                prev_no_collision_score += 1;
+                no_collision_max_key = it;
+                break;
+            }
+        }
+
 
 		// Find the max key/value that collides with the current candidate.
-		PairInt first_pair_collision = rmt.tree[first_collision].first;
-		uint64_t prev_collision_score = rmt.range(first_pair_collision, p);
-		PairInt collision_max_key = rmt.bounded_first_max_key(prev_collision_score, first_pair_collision);
-
-		// cout << "scores " << prev_no_collision_score << " " << prev_collision_score << endl;
-		// cout << "tree position " << tree_position << endl;
+		uint64_t prev_collision_score = rmt.range_between(p, p);
+        collision_max_key = rmt.bounded_first_max_key(prev_collision_score, p);
+//        if (collision_max_key == PairInt())
+//            collision_max_key = treeSorted[0];
 
 		// Update score and traceback datastructure
 		if (prev_no_collision_score > prev_collision_score) {
 			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
 			rmt.update(p, prev_no_collision_score);
 		} else {
-			traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
+            traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
 			rmt.update(p, prev_collision_score);
 		}
+
 	}
+
+//    rmt.print();
+
 
     uint64_t idxMax = 0;
     for (ulong i = 0; i < traceback_array.size() ; i++) {
@@ -548,20 +556,20 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
         }
     }
 
+    uint64_t current_score = 0;
     while (true) {
-        selected.push_back(treeSorted[idxMax]);
+        if (current_score != rmt.tree[idxMax * 2].second) {
+            selected.push_back(treeSorted[idxMax]);
+            current_score = rmt.tree[idxMax * 2].second;
+        }
         idxMax = traceback_array[idxMax];
         if (traceback_array[idxMax] == idxMax) {
-            selected.push_back(treeSorted[idxMax]);
+            if (current_score != rmt.tree[idxMax * 2].second)
+                selected.push_back(treeSorted[idxMax]);
             break;
         }
     }
 
-    // cout << "selected : ";
-    // for (ulong i = 0; i < selected.size() ; i++) {
-    //     cout << "\t" << selected[i];
-    // }
-    // cout << endl;
 
 	return selected;
 }
