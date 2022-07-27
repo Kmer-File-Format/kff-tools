@@ -5,7 +5,7 @@
 #include "lest.hpp"
 #include "encoding.hpp"
 #include "compact.hpp"
-#include "RangeMaxTree.hpp"
+#include "RMT.hpp"
 
 using namespace std;
 
