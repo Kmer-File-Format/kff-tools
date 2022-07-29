@@ -2,9 +2,24 @@
 
 #include "lest.hpp"
 #include "RMT.hpp"
+#include "compact.hpp"
 
 
 using namespace std;
+
+inline bool operator<(const PairInt& l, const PairInt& r)
+{
+    if (l.second == r.second)
+        return l.first < r.first;
+    else
+        return l.second < r.second;
+}
+
+inline ostream& operator<<(ostream& os, const PairInt& p)
+{
+    os << p.first << ", " << p.second;
+    return os;
+}
 
 const lest::test module[] = {
 
@@ -96,8 +111,52 @@ const lest::test module[] = {
             }
         }
 
-    }
-};
+        SETUP("With pair") {
+
+            vector<PairInt> keys{PairInt(4, 0), PairInt(1, 1), PairInt(2, 1), PairInt(3, 1), PairInt(1, 3), PairInt(3, 3), PairInt(0, 5)};
+            RangeMaxTree<PairInt> rmt(keys);
+            uint64_t pos = 10;
+
+            SECTION("find_second_coordinates") {
+                cout << "\tfind_second_coordinates" << endl;
+                EXPECT(rmt.find_second_coordinates(PairInt(4, 0), true) / 2u == 0u);
+                EXPECT(rmt.find_second_coordinates(PairInt(4, 0), false) / 2u == 0u);
+
+                EXPECT(rmt.find_second_coordinates(PairInt(1, 1), true) / 2u == 1u);
+                EXPECT(rmt.find_second_coordinates(PairInt(1, 1), false) / 2u == 3u);
+
+                EXPECT(rmt.find_second_coordinates(PairInt(1, 3), true) / 2u == 4u);
+                EXPECT(rmt.find_second_coordinates(PairInt(1, 3), false) / 2u == 5u);
+
+                EXPECT(rmt.find_second_coordinates(PairInt(2, 2), true) / 2u == 4u);
+                EXPECT(rmt.find_second_coordinates(PairInt(2, 2), false) / 2u == 3u);
+
+                EXPECT(rmt.find_second_coordinates(PairInt(2, 4), true) / 2u == 6u);
+                EXPECT(rmt.find_second_coordinates(PairInt(2, 4), false) / 2u == 5u);
+
+                cout << "\t\tOK" << endl;
+            }
+
+            SECTION("range_between") {
+                cout << "\trange_between" << endl;
+
+                rmt.update(PairInt(1, 1), 7u);
+                rmt.update(PairInt(3, 1), 2u);
+                rmt.update(PairInt(1, 3), 9u);
+                rmt.update(PairInt(0, 5), 10u);
+
+                EXPECT(rmt.range_between(PairInt(1, 1), PairInt(1, 1), pos) == 7u); EXPECT(pos == 1u);
+                EXPECT(rmt.range_between(PairInt(1, 0), PairInt(1, 3), pos) == 9u); EXPECT(pos == 4u);
+                EXPECT(rmt.range_between(PairInt(1, 3), PairInt(1, 3), pos) == 9u); EXPECT(pos == 4u);
+                EXPECT(rmt.range_between(PairInt(1, 3), PairInt(0, 5), pos) == 10u); EXPECT(pos == 6u);
+                EXPECT(rmt.range_between(PairInt(0, 5), PairInt(0, 5), pos) == 10u); EXPECT(pos == 6u);
+
+                cout << "\t\tOK" << endl;
+                }
+            }
+        }
+
+    };
 
 extern lest::tests & specification();
 

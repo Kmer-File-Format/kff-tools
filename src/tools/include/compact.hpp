@@ -155,4 +155,8 @@ public:
 
 };
 
+// Redefine pair operators
+typedef  std::pair<uint64_t, uint64_t> PairInt;
+
+
 #endif

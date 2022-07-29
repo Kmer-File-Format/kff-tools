@@ -14,7 +14,7 @@ public:
 	vector<pair<K, uint64_t> > tree;
 	uint64_t next_2pow;
 
-	RangeMaxTree(const vector<K> keys) {
+	RangeMaxTree(const vector<K> & keys) {
 		this->max_real_leaf = keys.size()-1;
 		// Compute the size for a perfect binary tree
 		this->next_2pow = ceil(log2(keys.size()));
@@ -277,6 +277,7 @@ public:
         uint64_t middle = 0u;
         uint64_t last_match = this->tree.size();
 
+
         while (begin <= end && end >= 0 && begin < (tree.size() + 1) / 2) {
             middle = (begin + end) / 2;
 //            cout << "begin = " << begin << ", end = " << end << endl;
@@ -294,6 +295,7 @@ public:
             else if (this->tree[middle*2].first.second < key.second) {
                 begin = middle + 1;
             } else {
+                if (middle == 0) break;
                 end = middle - 1;
             }
         }
@@ -301,6 +303,7 @@ public:
         if (last_match != this->tree.size()) {
             return last_match;
         } else {
+            if (middle == 0) return middle;
             return (middle + (this->tree[middle*2].first.second < key.second) - not left) * 2;
         }
 
@@ -312,23 +315,22 @@ public:
      * @param right second key
      * @return range between the two keys and store maxK
      */
-    uint64_t range_between(K left, K right) {
+    uint64_t range_between(K left, K right, uint64_t & pos) {
 
         // Key positions
-//        cout << "left = " << left.first << ", " << left.second << endl;
         uint64_t current_left = this->find_second_coordinates(left);
         uint64_t left_position = current_left / 2;
-//        cout << "right = " << right.first << ", " << right.second << endl;
         uint64_t current_right = this->find_second_coordinates(right, false);
         uint64_t right_position = current_right / 2;
         uint64_t diff = left_position ^ right_position;
+        uint64_t left_max_pos = current_left;
+        uint64_t right_max_pos = current_right;
 
         if (diff == 0) { // range on one leaf
             return this->tree[current_right].second;
         }
 
         uint64_t leftmost_common_bit = floor(log2(diff));
-
 
         // Init
         uint64_t left_max = this->tree[current_left].second;
@@ -348,7 +350,7 @@ public:
                 // Change the max if left child is better
                 if (this->tree[current_left + shift].second > this->tree[current_left - shift].second) {
                     left_max = this->tree[current_left + shift].second;
-                    current_left += shift;
+                    left_max_pos = current_left + shift;
                 }
             }
             left_position >>= 1;
@@ -363,15 +365,28 @@ public:
                 // Change the max if left child is better
                 if (this->tree[current_right - shift].second > this->tree[current_right + shift].second) {
                     right_max = this->tree[current_right - shift].second;
-                    current_right -= shift;
+                    right_max_pos = current_right - shift;
                 }
             }
             right_position >>= 1;
         }
 
+//        cout << "left max = " << left_max << endl;
+//        cout << "right max = " << right_max << endl;
+//        cout << "left pos = " << left_position << endl;
+//        cout << "right_position = " << right_position << endl;
+//        cout << "left max pos = " << left_max_pos << endl;
+//        cout << "right max pos = " << right_max_pos << endl;
 
         // Combine max and set index
-        return max(left_max, right_max);
+        if (left_max >= right_max) {
+            pos = left_max_pos / 2;
+            return left_max;
+        } else {
+            pos = right_max_pos / 2;
+            return right_max;
+        }
+//        return max(left_max, right_max);
 
     }
 
