@@ -29,6 +29,7 @@ public:
 	uint64_t buffer_size;
 	uint64_t next_free;
 
+    Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
 	~Compact();
 

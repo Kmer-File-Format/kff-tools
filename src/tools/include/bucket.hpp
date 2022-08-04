@@ -26,6 +26,7 @@ public:
 	bool singleside;
 
 	Bucket(uint8_t m=2, bool revcomp=true);
+    Bucket(std::string input_filename, std::string output_filename, uint8_t m = 2, bool revcomp = true);
 	~Bucket();
 	void cli_prepare(CLI::App * subapp);
 	void exec();

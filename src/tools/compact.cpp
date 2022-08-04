@@ -33,6 +33,22 @@ Compact::Compact() {
 	this->offset_idx = 0;
 }
 
+Compact::Compact(std::string input_filename, std::string output_filename, bool sorted) {
+    this->input_filename = input_filename;
+    this->output_filename = output_filename;
+    this->sorted = sorted;
+
+    this->buffer_size = 1 << 10;
+    this->next_free = 0;
+    this->kmer_buffer = (uint8_t *)malloc(this->buffer_size);
+    memset(this->kmer_buffer, 0, this->buffer_size);
+
+    this->k = 0;
+    this->m = 0;
+    this->bytes_compacted = 0;
+    this->offset_idx = 0;
+}
+
 
 Compact::~Compact() {
 	free(this->kmer_buffer);
@@ -958,4 +974,5 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 	delete[] skmer_buffer;
 	delete[] data_buffer;
 }
+
 
