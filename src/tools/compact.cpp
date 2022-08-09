@@ -155,18 +155,20 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	this->m = m;
 	this->data_size = data_size;
 	this->bytes_compacted = (k - m + 3) / 4;
-	uint64_t max_nucl = (k - m) + 1;
+	uint64_t max_nucl = (k - m) + 1; // not sure about this one, maybe try (ism.k + ism.max - 1) ?
 	this->mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
-	
-	// 1 - Load the input section
+
+
+    // 1 - Load the input section
 	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(ism);
 	
 	// 2 - Compact kmers
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
+        this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - 1))) + 7) / 8; // FIXME ? DISCUSS WITH YOANN ABOUT mini_pos_size
 		paths = this->sorted_assembly(kmers_per_index);
-		// cout << "---------- " << paths.size() << " ----------" << endl;
+//		 cout << "---------- " << paths.size() << " ----------" << endl;
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
@@ -176,6 +178,8 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	osm.write_minimizer(ism.minimizer);
 	this->write_paths(paths, osm, data_size);
 	osm.close();
+
+
 }
 
 
@@ -208,14 +212,13 @@ long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
 	
-	uint64_t max_nucl = sm.k + sm.max - 1;
+	uint64_t max_nucl = sm.k + sm.max - 1; // is it right ? why not k-m+1 ?
 	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
 	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
 	uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
 
 	uint8_t * seq_buffer = new uint8_t[max_seq_bytes];
 	uint8_t * data_buffer = new uint8_t[sm.data_size * sm.max];
-
 
 	// 1 - Load the input section
 	for (uint n=0 ; n<sm.nb_blocks ; n++) {
@@ -227,6 +230,7 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 		// Add kmer by index
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
 			uint kmer_pos = sm.k - (uint)sm.m - mini_pos + kmer_idx;
+//            cout << "kmer pos = " << kmer_pos << endl;
 
 			// Realloc if needed
 			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size) {
@@ -242,7 +246,7 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 			// Write mini position
 			uint kmer_mini_pos = mini_pos - kmer_idx;
 
-			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
+            for (int b=mini_pos_size-1 ; b>=0 ; b--) {
 				*(this->kmer_buffer + next_free + kmer_bytes + sm.data_size + b) = kmer_mini_pos & 0xFF;
 				kmer_mini_pos >>= 8;
 			}
@@ -281,7 +285,7 @@ uint Compact::mini_pos_from_buffer(const uint8_t * kmer) const {
 	return mini_pos;
 }
 
-
+#include <bitset>
 int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const {
 	const uint mini_pos1 = this->mini_pos_from_buffer(kmer1);
 	const uint mini_pos2 = this->mini_pos_from_buffer(kmer2);
@@ -331,7 +335,6 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 		}
 	}
 
-
 	// --- Suffix ---
 	int first_suffix_divergence = suff_nucl;
 	int current_divergence_idx = 0;
@@ -340,20 +343,22 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 	// Iterate over all the bytes from the suffix
 	for (uint suff_byte=suff_first_byte ; suff_byte<total_bytes and first_suffix_divergence==(int)suff_nucl ; suff_byte++) {
 		// Extract and compare bytes
+
 		uint8_t byte1 = kmer1[suff_byte];
 		uint8_t byte2 = kmer2[suff_byte];
 		uint8_t result = byte1 xor byte2;
 
-		for (uint8_t i=4 ; i>0 ; i--) {
+        for (uint8_t i=4 ; i>0 ; i--) {
 
 			// Skip the first nucleotides of the first byte
-			if (suff_byte == suff_first_byte and i == 4) {
-				i = ((suff_nucl - 1) % 4) + 1;
+            if (suff_byte == suff_first_byte and i == 4) {
+                i = ((suff_nucl - 1) % 4) + 1;
 			}
 
 			// Check for divergeance
 			if ((result & (0b11 << (2 * (i-1)))) != 0) {
 				first_suffix_divergence = current_divergence_idx;
+                break;
 			} else {
 				current_divergence_idx += 1;
 			}
@@ -384,6 +389,7 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 			nucl_pos += pref_nucl + first_suffix_divergence;
 		}
 
+
 		// Extract the divergent nucleotides
 		uint byte_pos = nucl_pos / 4;
 		uint nucl_shift = 2 * (3 - (nucl_pos % 4));
@@ -403,7 +409,6 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	// Sort by column
 
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
-
 		// Comparison function (depends on minimizer position)
 		auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
 			return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
@@ -411,13 +416,13 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 
 		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
 	}
+
 }
 
-
+#include <bitset>
 vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
 	const uint nb_nucl = k - m;
-
-	vector<pair<uint64_t, uint64_t> > pairs;
+    vector<pair<uint64_t, uint64_t> > pairs;
 	pairs.reserve(max(column1.size(), column2.size()));
 
 	// Index the second column by their prefix hash
@@ -440,27 +445,26 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 	// Looks for suffix matches of the first column
 	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
 		uint8_t * kmer = column1[idx];
+
 		// Get the hash corresponding to the k-m-1 suffix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 
 		// Test for hash collision
 		if (index.find(hash) != index.end()) {
-			// Test each of the 
-			for (uint64_t candidate_lst_idx=0 ; candidate_lst_idx<index[hash].size() ; candidate_lst_idx++) {
+//			Test each of the
+			for (uint64_t candidate_lst_idx=0 ; candidate_lst_idx < index[hash].size() ; candidate_lst_idx++) {
 				uint64_t candidate_vect_idx = index[hash][candidate_lst_idx];
 				uint8_t * candidate = column2[candidate_vect_idx];
-				if (sequence_compare(
+                if (sequence_compare(
 							candidate, nb_nucl, 0, nb_nucl-2,
 							kmer, nb_nucl, 1, nb_nucl-1
 						) == 0) {
-					
 					pairs.emplace_back(idx, candidate_vect_idx);
 					used[candidate_vect_idx] = true;
 				}
 			}
 		}
 	}
-
 
 	return pairs;
 }
@@ -497,6 +501,7 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
+
     if (candidates.empty()) {
         return {};
     }
@@ -525,8 +530,8 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
     for (const PairInt & p : candidates) {
         uint64_t tree_position = rmt.find(p);
 
-		// Find the max key/value that does not collide with the current candidate.
-		uint64_t prev_no_collision_score = 0;
+        // Find the max key/value that does not collide with the current candidate.
+        uint64_t prev_no_collision_score = 0;
         PairInt searcher;
         if (p.second == 0) {
             searcher = PairInt(p.first, 0);
@@ -536,32 +541,37 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
         uint64_t pos = 0;
         prev_no_collision_score = rmt.range_between(PairInt(0, 0), searcher, pos);
-        vector<PairInt> all_keys_no_collision = rmt.all_max_key(prev_no_collision_score, searcher);
 
-        for (auto & it : all_keys_no_collision) {
-            if (p == it || (it.first != p.first && it.second != p.second) ) {
-                prev_no_collision_score += 1;
-                no_collision_max_key = it;
-                break;
+        if (prev_no_collision_score > 0) {
+            vector<PairInt> all_keys_no_collision = rmt.all_max_key(prev_no_collision_score, searcher);
+
+            for (auto &it: all_keys_no_collision) {
+                if (p == it || (it.first != p.first && it.second != p.second)) {
+                    prev_no_collision_score += 1;
+                    no_collision_max_key = it;
+                    break;
+                }
             }
+        } else {
+            prev_no_collision_score += 1;
+            no_collision_max_key = p;
         }
 
 
-		// Find the max key/value that collides with the current candidate.
-		uint64_t prev_collision_score = rmt.range_between(p, p, pos);
+        // Find the max key/value that collides with the current candidate.
+        uint64_t prev_collision_score = rmt.range_between(p, p, pos);
         collision_max_key = rmt.tree[2 * pos].first;
 
-		// Update score and traceback datastructure
-		if (prev_no_collision_score > prev_collision_score) {
-			traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
-			rmt.update(p, prev_no_collision_score);
-		} else {
+        // Update score and traceback datastructure
+        if (prev_no_collision_score > prev_collision_score) {
+            traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
+            rmt.update(p, prev_no_collision_score);
+        } else {
             traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
-			rmt.update(p, prev_collision_score);
-		}
+            rmt.update(p, prev_collision_score);
+        }
 
-	}
-
+    }
 
     uint64_t idxMax = 0;
     for (ulong i = 0; i < traceback_array.size() ; i++) {
@@ -730,7 +740,9 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		}
 
 		// Select the min kmer and add the related skmer to the output
-		// cout << candidates.size() << endl;
+//        if (candidates.empty()) { // seg fault if empty so a little check
+//            break;
+//        }
 		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
 		candidates = vector<interleved_t>();
 		size_t col = selected.suf_size;
@@ -783,16 +795,16 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
 
-	vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
+    vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
 
 	// Pair columns
 	for (uint i=0 ; i<this->k-this->m ; i++) {
-
 		// 2 - Find all the possible overlaps of kmers
-		const vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
+        const vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
 		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
+
 		kmer_pairs.push_back(colinear_links);
 	}
 
