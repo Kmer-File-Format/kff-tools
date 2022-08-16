@@ -155,8 +155,7 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	this->m = m;
 	this->data_size = data_size;
 	this->bytes_compacted = (k - m + 3) / 4;
-	uint64_t max_nucl = (k - m) + 1; // not sure about this one, maybe try (ism.k + ism.max - 1) ?
-	this->mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
+    this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - ism.m))) + 7) / 8;
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 
 
@@ -166,7 +165,7 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	// 2 - Compact kmers
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
-        this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - 1))) + 7) / 8; // FIXME ? DISCUSS WITH YOANN ABOUT mini_pos_size
+        this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - ism.m))) + 7) / 8;
 		paths = this->sorted_assembly(kmers_per_index);
 //		 cout << "---------- " << paths.size() << " ----------" << endl;
 	} else {
@@ -212,10 +211,11 @@ long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
 	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
 	
-	uint64_t max_nucl = sm.k + sm.max - 1; // is it right ? why not k-m+1 ?
+	uint64_t max_nucl = sm.k + sm.max - 1 - sm.m;
 	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
 	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
-	uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(max_nucl))) + 7) / 8;
+    uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
+
 
 	uint8_t * seq_buffer = new uint8_t[max_seq_bytes];
 	uint8_t * data_buffer = new uint8_t[sm.data_size * sm.max];
@@ -285,7 +285,6 @@ uint Compact::mini_pos_from_buffer(const uint8_t * kmer) const {
 	return mini_pos;
 }
 
-#include <bitset>
 int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const {
 	const uint mini_pos1 = this->mini_pos_from_buffer(kmer1);
 	const uint mini_pos2 = this->mini_pos_from_buffer(kmer2);
