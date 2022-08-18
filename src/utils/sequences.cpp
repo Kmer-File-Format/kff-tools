@@ -159,7 +159,6 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	return return_val;
 }
 
-
 void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_size) {
 	if (seq_size > this->max_seq_size) {
 		this->max_seq_size = seq_size;
@@ -194,7 +193,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_rev_value = (current_rev_value >> 2) + this->nucl_rev[idx%4][seq[byte_idx]];//(this->rc.reverse[nucl] << (2 * (m - 1)));
 		this->mini_buffer[kmer_idx] = current_value;
 		this->mini_buffer[this->mini_buffer.size()/2 + kmer_idx] = current_rev_value;
-	}
+    }
 }
 
 
@@ -225,39 +224,55 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 // 	}
 // }
 
+#include <bitset>
+
 void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
-	// Compute the minimizer of each sliding window of size k - m
-	uint max_nb_candidates = this->mini_buffer.size()/2;
-	for (uint i=0 ; i<nb_kmers ; i++) {
-		auto smallest_fwd = min_element(
+    // Compute the minimizer of each sliding window of size k - m
+    uint max_nb_candidates = this->mini_buffer.size()/2;
+    for (uint i=0 ; i<nb_kmers ; i++) {
+        auto smallest_fwd = min_element(
 			this->mini_buffer.begin() + i,
 			this->mini_buffer.begin()+i+(k-m)+1
 		);
-		auto smallest_rev = smallest_fwd;
-		if (not this->single_side) {
-			smallest_rev = min_element(
+        auto smallest_rev = smallest_fwd;
+        if (not this->single_side) {
+            smallest_rev = min_element(
 				this->mini_buffer.begin()+max_nb_candidates+i,
 				this->mini_buffer.begin()+max_nb_candidates+i+(k-m)+1
 			);
-		}
+        }
 
-		int mini_pos;
+        int64_t mini_pos = INT64_MAX;
+
+
 		if (this->single_side or (*smallest_fwd) < (*smallest_rev)) {
 			mini_pos = smallest_fwd - this->mini_buffer.begin();
-		} 
-		else if ((*smallest_fwd) == (*smallest_rev)) {
-			if (smallest_fwd - smallest_rev <= 0) {
-				mini_pos = smallest_fwd - this->mini_buffer.begin();
-			} else {
-				mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
-			}
-		}
-		else {
-			mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
 		}
 
-		this->mini_pos[i] = mini_pos;
-	}
+		else if ((*smallest_fwd) == (*smallest_rev)) {
+			if (smallest_fwd < smallest_rev) {
+				mini_pos = smallest_fwd - this->mini_buffer.begin();
+			} else if (smallest_fwd > smallest_rev) {
+				mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+			} else { // smallest_fwd == smallest_rev, taking the smallest one
+                for (uint64_t j = 0; j < k - m + 1; j++) {
+                    if (mini_buffer[i + j] < mini_buffer[i + max_nb_candidates + j]) {
+                        mini_pos = smallest_fwd - this->mini_buffer.begin();
+                        break;
+                    } else if (mini_buffer[i + j] > mini_buffer[i + max_nb_candidates + j]) {
+                        mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+                        break;
+                    }
+                }
+            }
+		}
+
+        else {
+            mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+        }
+
+        this->mini_pos[i] = mini_pos;
+    }
 }
 
 void MinimizerSearcher::compute_skmers(const uint nb_kmers) {
