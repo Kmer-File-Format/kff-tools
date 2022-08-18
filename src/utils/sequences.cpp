@@ -68,7 +68,6 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 	// Align the bits
 	uint extract_left_offset = (seq_left_offset + begin_nucl) % 4;
 	uint extract_right_offset = (seq_size - end_nucl - 1) % 4;
-	
 
 	if (extract_right_offset < 4 - extract_left_offset) {
 		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, extract_right_offset * 2);
@@ -77,6 +76,46 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 	}
 }
 
+
+void subsequence_bis(const uint8_t * sequence, const uint seq_size, uint8_t * extracted, const uint begin_nucl, const uint end_nucl) {
+	// Extract the correct slice
+	uint seq_left_offset = (4 - seq_size % 4) % 4;
+	uint extract_start_byte = (seq_left_offset + begin_nucl) / 4;
+
+    uint64_t reads = end_nucl - begin_nucl + 1; // number of nucls to read
+    uint64_t position = (seq_left_offset + begin_nucl) % 4; // the position of the nucls to read
+    uint64_t mask = 0b11 << ((3 - position) * 2); // the mask to read the wanted bits
+    uint64_t section = 0;
+
+    for (uint i = 0; i < reads; i++) {
+        extracted[section] <<= 2;
+        extracted[section] |= ((sequence[extract_start_byte]) & mask) >> ((3 - position) * 2);
+        if (position == 3) { // we arrive at the end of the section of the vector
+            extract_start_byte++;
+            position = 0;
+            mask = 0b11000000;
+        } else { // we continue to read in the same section of the vector
+            mask >>= 2;
+            position++;
+        }
+        if (i % 3 == 0 && i > 0) { // end of the section of extracted
+            section++;
+        }
+    }
+
+
+//	// Align the bits
+//	uint extract_left_offset = (seq_left_offset + begin_nucl) % 4;
+//	uint extract_right_offset = (seq_size - end_nucl - 1) % 4;
+//
+//	cout << "right offset = " << extract_right_offset << endl;
+//
+//	if (extract_right_offset < 4 - extract_left_offset) {
+//		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, extract_right_offset * 2);
+//	} else {
+//		leftshift8(extracted, extract_stop_byte - extract_start_byte + 1, (4 - extract_right_offset) * 2);
+//	}
+}
 
 int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 											const uint seq1_start, const uint seq1_stop,
@@ -90,12 +129,14 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	// Extraction of subsequences
 	uint subseq_size = seq1_stop - seq1_start + 1;
 	uint subseq_bytes = 1 + (subseq_size + 3) / 4;
-	uint8_t * subseq1 = new uint8_t[subseq_bytes];
+
+
+    uint8_t * subseq1 = new uint8_t[subseq_bytes];
 	memset(subseq1, 0, subseq_bytes);
-	subsequence(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
+	subsequence_bis(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
 	uint8_t * subseq2 = new uint8_t[subseq_bytes];
 	memset(subseq2, 0, subseq_bytes);
-	subsequence(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
+	subsequence_bis(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
 
 	// comparison of the subsequences (same size)
 	uint return_val = 0;
@@ -104,6 +145,7 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	uint mask = (1 << (2 * (4 - offset))) - 1;
 	if ((subseq1[0] & mask) != (subseq2[0] & mask))
 		return_val = (subseq1[0] & mask) < (subseq2[0] & mask) ? -1 : 1;
+
 
 	// All following bytes
 	for (uint b=1 ; b<subseq_bytes and return_val==0 ; b++) {

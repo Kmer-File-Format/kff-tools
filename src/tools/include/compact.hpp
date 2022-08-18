@@ -29,6 +29,7 @@ public:
 	uint64_t buffer_size;
 	uint64_t next_free;
 
+    Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
 	~Compact();
 
@@ -154,5 +155,9 @@ public:
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
 
 };
+
+// Redefine pair operators
+typedef  std::pair<uint64_t, uint64_t> PairInt;
+
 
 #endif

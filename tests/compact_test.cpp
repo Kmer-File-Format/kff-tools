@@ -5,7 +5,7 @@
 #include "lest.hpp"
 #include "encoding.hpp"
 #include "compact.hpp"
-#include "RangeMaxTree.hpp"
+#include "RMT.hpp"
 
 using namespace std;
 
@@ -129,7 +129,6 @@ const lest::test module[] = {
             bz.translate("AA", k-m, seq);
             long aa_pos2 = comp.add_kmer_to_buffer(seq, nullptr, 2);
             uint8_t * aa2 = comp.kmer_buffer + aa_pos2;
-
             // GGAAA
             bz.translate("GG", k-m, seq);
             long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
@@ -276,6 +275,89 @@ const lest::test module[] = {
                 EXPECT( co_chain.size() == 3u );
                 for (pair<uint64_t, uint64_t> & p : co_chain)
                     EXPECT( real_colinear[p.first] == p.second );
+
+                cout << "\t\tSecond colinear chaining test" << endl;
+
+                pairs = {{0, 1}, {0, 2}, {1, 1}, {1, 2}, {2, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u );
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 2u);
+
+                /// Other case
+
+                pairs = {{0, 1}, {0, 2}, {1, 1}, {2, 0}, {2, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 2u);
+
+                /// One more case
+
+                pairs = {{0, 1}, {0, 2}, {1, 0}, {1, 1}, {2, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 2u); EXPECT(co_chain[1].second == 1u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {0, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {1, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
+
+                /// One more case
+
+                pairs = {{0, 1}, {1, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 1u);
+
+
             }
 
 
@@ -290,7 +372,36 @@ const lest::test module[] = {
 
                 // Verify
                 EXPECT( trio_chain.size() == 1u );
-                EXPECT( 0u == trio_chain[0].second );
+                EXPECT( 1u == trio_chain[0].second ); // 0 needed ?
+            }
+
+            SECTION(" colinear chaining test 3") {
+                cout << "\t\tBasic colinear chaining test 3" << endl;
+
+                // Making pairs
+                vector<pair<uint64_t, uint64_t> > pairs = {{0, 0}, {0, 1}, {1, 1}, {1, 2}, {1, 3}};
+
+                // Perform colinear chaining
+                vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 3u);
+
+                /// Reverse exemple
+
+                // Making pairs
+                pairs = {{0, 0}, {1, 1}, {2, 1}, {3, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 3u); EXPECT(co_chain[1].second == 1u);
             }
 
 

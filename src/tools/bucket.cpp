@@ -1,3 +1,4 @@
+#include <utility>
 #include <vector>
 #include <string>
 #include <cstring>
@@ -29,6 +30,19 @@ Bucket::Bucket(uint8_t m, bool revcomp) {
 	copy_buffer = new uint8_t[1];
 }
 
+Bucket::Bucket(std::string input_filename, std::string outpur_filename, uint8_t m, bool revcomp) {
+    this->input_filename = std::move(input_filename);
+    this->output_filename = std::move(outpur_filename);
+
+    this->m = m;
+    this->singleside = !revcomp;
+
+    kmer_buffer = new uint8_t[1];
+    data_buffer = new uint8_t[1];
+
+    copy_buffer = new uint8_t[1];
+}
+
 
 Bucket::~Bucket() {
 	delete[] kmer_buffer;
@@ -57,7 +71,6 @@ void Bucket::exec() {
 	KffSeqStream stream(this->input_filename);
 	vector<unordered_map<uint64_t, Section_Minimizer *> > buckets;
 	buckets.resize(nb_mutex);
-
 
 	RevComp rc(stream.reader.get_encoding());
 	Stringifyer strif(stream.reader.get_encoding());
@@ -122,9 +135,9 @@ void Bucket::exec() {
 			searcher = new MinimizerSearcher(k, m, stream.reader.get_encoding());
 		}
 
-		// Skmer deduction
-		vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
-		for (skmer sk : skmers) {
+        // Skmer deduction
+        vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
+        for (skmer sk : skmers) {
 			uint mutex_idx = sk.minimizer % nb_mutex;
 			omp_set_lock(&bucket_mutexes[mutex_idx]);
 			// cout << "mutex " << mutex_id << endl;
@@ -218,3 +231,4 @@ void Bucket::exec() {
 	for (Kff_file * file : files)
 		delete file;
 }
+

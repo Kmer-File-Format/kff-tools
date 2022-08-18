@@ -34,7 +34,6 @@ target_link_libraries(test
     kff
     kfftl
     kffutils
-    RangeMaxTree
 )
 
 target_include_directories(test
