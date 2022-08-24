@@ -1,0 +1,91 @@
+=== Header ===
+-> KFF file version 1.0
+-> Encoding: A=0 C=1 G=3 T=2
+-> Uniqueness: 0
+-> Metadata (11B)
+77	101	114	103	101	100	32	102	105	108	101	
+
+=== Section v ===
+Start Byte 23
+-> 4 variables
+data_size = 1
+k = 25
+m = 10
+max = 255
+
+=== Section m ===
+Start Byte 82
+-> Minimizer: AAAAAAACAG
+-> Number of blocks: 18
+
+* minimizer position: 0	Number of kmers: 1
+|CACCACATACAAAAA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CACCGCATACAAAAA
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+C|CACCGCATACAAAA
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+G|CACCACATACAAAA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CATTCGGGAGAGTAT
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CCGCATAATGAGCAT
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+T|CATTCGGGAGAGTA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CCACGCGGAATAAAA
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+T|CCACGCGGAATAAA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CAAAACCGATGTGTT
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CAAATCCGGTGGTCG
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+G|CAAATCCGGTGGTC
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|AGTTTATATGCTATT
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|AGTTTGAGTCTATGA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|GAATAACCCATGCAA
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+T|AGTTTATATGCTAT
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+C|GAATAACCCATGCA
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+T|AGTTTGAGTCTATG
+data array: [1],	
+
+=== Section i ===
+Start Byte 238
+Section	relative	absolute
+v	-250	23
+m	-191	82
+Next index position 0
+
+=== Section v ===
+Start Byte 273
+-> 2 variables
+first_index = 238
+footer_size = 49
+
+=== End of the file ===
+
+No problem detected

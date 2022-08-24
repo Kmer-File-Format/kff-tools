@@ -1,0 +1,41 @@
+=== Section m ===
+Start Byte 12214082
+-> Minimizer: AAAAAAACAG
+-> Number of blocks: 18
+
+* minimizer position: 0	Number of kmers: 1
+|CACCACATACAAAAA
+* minimizer position: 0	Number of kmers: 1
+|CACCGCATACAAAAA
+* minimizer position: 1	Number of kmers: 1
+C|CACCGCATACAAAA
+* minimizer position: 1	Number of kmers: 1
+G|CACCACATACAAAA
+* minimizer position: 0	Number of kmers: 1
+|CATTCGGGAGAGTAT
+* minimizer position: 0	Number of kmers: 1
+|CCGCATAATGAGCAT
+* minimizer position: 1	Number of kmers: 1
+T|CATTCGGGAGAGTA
+* minimizer position: 0	Number of kmers: 1
+|CCACGCGGAATAAAA
+* minimizer position: 1	Number of kmers: 1
+T|CCACGCGGAATAAA
+* minimizer position: 0	Number of kmers: 1
+|CAAAACCGATGTGTT
+* minimizer position: 0	Number of kmers: 1
+|CAAATCCGGTGGTCG
+* minimizer position: 1	Number of kmers: 1
+G|CAAATCCGGTGGTC
+* minimizer position: 0	Number of kmers: 1
+|AGTTTATATGCTATT
+* minimizer position: 0	Number of kmers: 1
+|AGTTTGAGTCTATGA
+* minimizer position: 0	Number of kmers: 1
+|GAATAACCCATGCAA
+* minimizer position: 1	Number of kmers: 1
+T|AGTTTATATGCTAT
+* minimizer position: 1	Number of kmers: 1
+C|GAATAACCCATGCA
+* minimizer position: 1	Number of kmers: 1
+T|AGTTTGAGTCTATG

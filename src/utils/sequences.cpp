@@ -225,42 +225,101 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 // }
 
 #include <bitset>
+int64_t min_minimizer_fwd(int64_t first, int64_t last, const vector<uint64_t>& buffer) {
+//    cout << "### fwd ###" << endl;
+    if (first == last) return last;
+    double middle;
+    if ((last - first) % 2 == 0) {
+        middle = (last - first - 1) / 2.0;
+    } else {
+        middle = (last - first) / 2.0;
+    }
+
+    int64_t smallest = first;
+//    cout << "start at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+    first++;
+    for (; first != last ;first++) {
+        if (buffer[first] < buffer[smallest]) {
+//            cout << "mod by value at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+            smallest = first;
+        } else if (buffer[first] == buffer[smallest]) {
+            if (abs(middle - first) < abs(middle - smallest)) {
+//                cout << "mod by dist at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+                smallest = first;
+            }
+        }
+    }
+//    cout << "### end fwd ###" << endl;
+    return smallest;
+}
+
+int64_t min_minimizer_rev(int64_t first, int64_t last, const vector<uint64_t>& buffer) {
+//    cout << "### rev ###" << endl;
+    if (first == last) return last;
+    double middle;
+    if ((last - first) % 2 == 0) {
+        middle = (last - first - 1) / 2.0;
+    } else {
+        middle = (last - first) / 2.0;
+    }
+
+    int64_t smallest = first;
+    first++;
+//    cout << "start at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+    for (; first != last ;first++) {
+        if (buffer[first] < buffer[smallest]) {
+//            cout << "mod by value at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+            smallest = first;
+        } else if (buffer[first] == buffer[smallest]) {
+            if (abs(middle - first) <= abs(middle - smallest)) {
+//                cout << "mod by dist at : " << first << " value = " << buffer[first] << " -> " << bitset<20>(buffer[first]) << endl;
+                smallest = first;
+            }
+        }
+    }
+//    cout << "### end rev ###" << endl;
+    return smallest;
+}
 
 void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
     // Compute the minimizer of each sliding window of size k - m
     uint max_nb_candidates = this->mini_buffer.size()/2;
     for (uint i=0 ; i<nb_kmers ; i++) {
-        auto smallest_fwd = min_element(
-			this->mini_buffer.begin() + i,
-			this->mini_buffer.begin()+i+(k-m)+1
-		);
-        auto smallest_rev = smallest_fwd;
+        int64_t smallest_fwd_idx = min_minimizer_fwd(i, i+(k-m)+1, this->mini_buffer);
+        int64_t smallest_rev_idx = smallest_fwd_idx;
         if (not this->single_side) {
-            smallest_rev = min_element(
-				this->mini_buffer.begin()+max_nb_candidates+i,
-				this->mini_buffer.begin()+max_nb_candidates+i+(k-m)+1
-			);
+            smallest_rev_idx = min_minimizer_rev(max_nb_candidates+i, max_nb_candidates+i+(k-m)+1, this->mini_buffer);
         }
 
         int64_t mini_pos = INT64_MAX;
+        uint64_t smallest_fwd = this->mini_buffer[smallest_fwd_idx];
+        uint64_t smallest_rev = this->mini_buffer[smallest_rev_idx];
 
-
-		if (this->single_side or (*smallest_fwd) < (*smallest_rev)) {
-			mini_pos = smallest_fwd - this->mini_buffer.begin();
+		if (this->single_side or (smallest_fwd) < (smallest_rev)) {
+//            cout << "fwd" << endl;
+            mini_pos = smallest_fwd_idx;
 		}
 
-		else if ((*smallest_fwd) == (*smallest_rev)) {
-			if (smallest_fwd < smallest_rev) {
-				mini_pos = smallest_fwd - this->mini_buffer.begin();
-			} else if (smallest_fwd > smallest_rev) {
-				mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
-			} else { // smallest_fwd == smallest_rev, taking the smallest one
+		else if ((smallest_fwd) == (smallest_rev)) {
+//            cout << "EQU" << endl;
+//            cout << "fwd idx = " << smallest_fwd_idx << " rev idx = " << smallest_rev_idx << " buf = " <<  - (2 * max_nb_candidates - smallest_rev_idx - 1)  << endl;
+//            cout << "mini buffer size  / 2 = " << mini_buffer.size() / 2 << endl;
+            int64_t middle = (k - m) / 2;
+//            cout << "middle = " << middle << endl;
+            uint64_t dist_fwd = abs(smallest_fwd_idx - middle);
+            uint64_t dist_rev = abs(smallest_rev_idx - (middle + max_nb_candidates + 1));
+//            cout << "dist fwd = " << dist_fwd << " dist rev = " << dist_rev << endl;
+            if (dist_fwd < dist_rev) {
+                mini_pos = smallest_fwd_idx;
+			} else if (dist_fwd > dist_rev) {
+				mini_pos = - (smallest_rev_idx - max_nb_candidates) - 1;//- (2 * max_nb_candidates - smallest_rev_idx - 1);
+			} else { // dist_fwd == dist_rev
                 for (uint64_t j = 0; j < k - m + 1; j++) {
                     if (mini_buffer[i + j] < mini_buffer[i + max_nb_candidates + j]) {
-                        mini_pos = smallest_fwd - this->mini_buffer.begin();
+                        mini_pos = smallest_fwd_idx;
                         break;
                     } else if (mini_buffer[i + j] > mini_buffer[i + max_nb_candidates + j]) {
-                        mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+                        mini_pos = - (smallest_rev_idx - max_nb_candidates) - 1;//- (2 * max_nb_candidates - smallest_rev_idx - 1);
                         break;
                     }
                 }
@@ -268,9 +327,11 @@ void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
 		}
 
         else {
-            mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+//            cout << "rev" << endl;
+            mini_pos = - (smallest_rev_idx - max_nb_candidates) - 1;//- (2 * max_nb_candidates - smallest_rev_idx - 1);
         }
 
+//        cout << "mini _pos = " << mini_pos << endl;
         this->mini_pos[i] = mini_pos;
     }
 }

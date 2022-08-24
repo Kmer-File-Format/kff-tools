@@ -1,0 +1,49 @@
+=== Header ===
+-> KFF file version 1.0
+-> Encoding: A=0 C=1 G=3 T=2
+-> Uniqueness: 0
+-> Metadata (11B)
+77	101	114	103	101	100	32	102	105	108	101	
+
+=== Section v ===
+Start Byte 23
+-> 4 variables
+data_size = 1
+k = 25
+m = 10
+max = 255
+
+=== Section m ===
+Start Byte 82
+-> Minimizer: AAAAAAACAG
+-> Number of blocks: 4
+
+* minimizer position: 1	Number of kmers: 2
+T|AGTTTATATGCTATT
+data array: [1],	[1],	
+* minimizer position: 0	Number of kmers: 1
+|AGTTTGAGTCTATGA
+data array: [1],	
+* minimizer position: 0	Number of kmers: 1
+|CAAAACCGATGTGTT
+data array: [1],	
+* minimizer position: 1	Number of kmers: 1
+T|AGTTTGAGTCTATG
+data array: [1],	
+
+=== Section i ===
+Start Byte 127
+Section	relative	absolute
+v	-139	23
+m	-80	82
+Next index position 0
+
+=== Section v ===
+Start Byte 162
+-> 2 variables
+first_index = 127
+footer_size = 49
+
+=== End of the file ===
+
+No problem detected

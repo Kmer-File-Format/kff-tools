@@ -605,13 +605,17 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 //	for (size_t i=0 ; i<matrix.size() ; i++) {
 //		cout << matrix[i].size() << " ";
 //	}cout << endl;
-
+//
 //	for (size_t i=0 ; i<pairs.size() ; i++) {
 //		cout << pairs[i].size() << " ";
 //	}cout << endl;
-
+//
 //	cout << pairs[0][0] << endl;
 //	cout << pairs[0][1] << endl;
+
+    uint8_t encoding[] = {0, 1, 3, 2};
+    Stringifyer strif(encoding);
+
 
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
@@ -677,6 +681,11 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		}
 	}
 
+    for (auto & it : sk_index) {
+        cout << strif.translate(it.first, 15) << " " << it.second->size() << endl;
+    }
+    exit(0);
+
 	// Init the kmer per superkmer counters with the first row
 	unordered_map<vector<uint8_t *> *, uint64_t> sk_counts;
 	for (const vector<uint8_t *> & col: matrix) {
@@ -711,6 +720,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 
 	// Add iteratively the skmers into the sorted list
 	while(not matrix_consumed) {
+        cout << "start while loop" << endl;
 		vector<interleved_t> candidates;
 		// Construct the list of compatible kmers
 		for (size_t i=0 ; i<matrix.size() ; i++) {
@@ -722,31 +732,73 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 			else
 				position -= 1 + i/2;
 
-			if (current_kmers[position] < matrix[position].size()) {
-				// Get the related skmer
-				uint8_t * kmer = matrix[position][current_kmers[position]];
-				vector<uint8_t *> * sk = sk_index[kmer];
 
-				// cout << i << " " << position << endl;
-				// cout << "current kmer " << current_kmers[position] << endl;
+            if (current_kmers[position] < matrix[position].size()) {
+                // Get the related skmer
+                uint8_t * kmer = matrix[position][current_kmers[position]];
+                vector<uint8_t *> * sk = sk_index[kmer];
+                cout << strif.translate(kmer, 15) << endl;
+
+				 cout << "i = " << i << " position = " << position << endl;
+				 cout << "current kmer " << current_kmers[position] << endl;
 				// cout << (uint64_t)(matrix[position][0][0]) << endl;
 
 				// Add the skmer only if all the related kmers are present
 				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
 					candidates.push_back(current_interleaves[position]);
 				}
+//                else if ((sk_counts.find(sk) == sk_counts.end())) {
+//                    cout << "not found" << endl;
+//                    for (auto it : *sk) {
+//                        cout << (uint64_t) *it << "\t";
+//                    }
+//                    cout << endl << "in" << endl;
+//                    for (auto it : sk_counts) {
+//                        for (auto j : *it.first) {
+//                            cout << (uint64_t) *j << "\t";
+//                        }
+//                        cout << endl;
+//                    }
+//                    cout << endl;
+//                } else {
+//                    cout << "bad size" << endl;
+//                    for (auto it : *sk) {
+//                        cout << (uint64_t) *it << "\t";
+//                    }
+//                    cout << " -> " << sk->size() << endl << "in" << endl;
+//                    for (auto it : sk_counts) {
+//                        for (auto j : *it.first) {
+//                            cout << (uint64_t) *j << "\t";
+//                        }
+//                        cout << " -> " << it.second<<  endl;
+//                    }
+//                    cout << endl;
+//                }
 			}
 		}
 
-		// Select the min kmer and add the related skmer to the output
-//        if (candidates.empty()) { // seg fault if empty so a little check
-//            break;
-//        }
+        // Select the min kmer and add the related skmer to the output
+        if (candidates.empty()) { // seg fault if empty so a little check
+            cout << "err" << endl;
+            for (size_t i=0 ; i<matrix.size() ; i++) {
+                cout << "current kmer : " << current_kmers[i] << " matrix : " << matrix[i].size() << endl;
+            }
+            break;
+        }
+
+        for (auto & candidate : candidates) {
+            cout << "interleaved " << strif.translate(candidate.nucl, 15) << endl;
+        } cout << endl;
+
+//        cout << "no err" << endl;
+
 		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
 		candidates = vector<interleved_t>();
 		size_t col = selected.suf_size;
 		uint8_t * selected_kmer = matrix[col][current_kmers[col]];
 		vector<uint8_t *> * selected_sk = sk_index[selected_kmer];
+
+        cout << "selected " << selected_sk->size() << endl;
 
 		result.push_back(*selected_sk);
 
