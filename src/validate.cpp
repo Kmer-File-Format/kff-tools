@@ -34,6 +34,7 @@ void Validate::exec() {
 			cout << "-> KFF file version " << (uint)infile.major_version << "." << (uint)infile.minor_version << endl;
 			cout << "-> Encoding: A=" << (uint)infile.encoding[0] << " C=" << (uint)infile.encoding[1] << " G=" << (uint)infile.encoding[2] << " T=" << (uint)infile.encoding[3] << endl;
 			cout << "-> Uniqueness: " << (uint)infile.uniqueness << endl;
+			cout << "-> Canonicity: " << (uint)infile.canonicity << endl;
 
 
 			// Metadata
