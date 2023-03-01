@@ -11,6 +11,7 @@ using namespace std;
 
 Outstr::Outstr() {
 	input_filename = "";
+	revcomp = false;
 }
 
 void Outstr::cli_prepare(CLI::App * app) {
