@@ -244,7 +244,6 @@ const lest::test module[] = {
                 }
             }
 
-
             vector<vector<pair<uint64_t, uint64_t> > > colinear_chainings;
             for (const auto & pair : pairs_by_column)
                 colinear_chainings.push_back(comp.colinear_chaining(pair));
