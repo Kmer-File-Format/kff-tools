@@ -602,13 +602,15 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
 
-//	for (size_t i=0 ; i<matrix.size() ; i++) {
-//		cout << matrix[i].size() << " ";
-//	}cout << endl;
+	cout << "matrix " << endl;
+	for (size_t i=0 ; i<matrix.size() ; i++) {
+		cout << matrix[i].size() << " ";
+	}cout << endl;
 
-//	for (size_t i=0 ; i<pairs.size() ; i++) {
-//		cout << pairs[i].size() << " ";
-//	}cout << endl;
+	cout << "pairs" << endl;
+	for (size_t i=0 ; i<pairs.size() ; i++) {
+		cout << pairs[i].size() << " ";
+	}cout << endl;
 
 //	cout << pairs[0][0] << endl;
 //	cout << pairs[0][1] << endl;
@@ -742,6 +744,7 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 //        if (candidates.empty()) { // seg fault if empty so a little check
 //            break;
 //        }
+		cout << "candidates " << candidates.size() << endl;
 		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
 		candidates = vector<interleved_t>();
 		size_t col = selected.suf_size;
