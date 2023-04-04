@@ -458,6 +458,7 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 							candidate, nb_nucl, 0, nb_nucl-2,
 							kmer, nb_nucl, 1, nb_nucl-1
 						) == 0) {
+                	cout << " " << idx << " " << candidate_vect_idx << endl;
 					pairs.emplace_back(idx, candidate_vect_idx);
 					used[candidate_vect_idx] = true;
 				}
@@ -601,16 +602,25 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+	uint8_t encoding[4] = {0, 1, 3, 2};
+	Stringifyer strif(encoding);
 
 	cout << "matrix " << endl;
 	for (size_t i=0 ; i<matrix.size() ; i++) {
+		if (matrix[i].size() == 0)
+			continue;
+
 		cout << matrix[i].size() << " ";
+		for (uint8_t * kmer : matrix[i])
+		{
+			cout << strif.translate(kmer, 31 - 5) << endl;
+		} cout << endl;
 	}cout << endl;
 
-	cout << "pairs" << endl;
-	for (size_t i=0 ; i<pairs.size() ; i++) {
-		cout << pairs[i].size() << " ";
-	}cout << endl;
+	// cout << "pairs" << endl;
+	// for (size_t i=0 ; i<pairs.size() ; i++) {
+	// 	cout << pairs[i].size() << " ";
+	// }cout << endl;
 
 //	cout << pairs[0][0] << endl;
 //	cout << pairs[0][1] << endl;
@@ -801,13 +811,23 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 
 	// Pair columns
 	for (uint i=0 ; i<this->k-this->m ; i++) {
+		cout << "col " << i << endl;
 		// 2 - Find all the possible overlaps of kmers
         const vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
+    	
+    	cout << " " << candidate_links.size() << " pairs" << endl;
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
 		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
 
+		cout << " " << colinear_links.size() << " colinear compatible" << endl;
+		for (auto p : colinear_links)
+		{
+			cout << p.first << " " << p.second << endl;
+		}
+
 		kmer_pairs.push_back(colinear_links);
+		cout << endl;
 	}
 
 	// // 4 - Finish the ordering by sorting skmers that could have been interchanged
