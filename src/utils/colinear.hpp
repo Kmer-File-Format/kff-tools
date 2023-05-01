@@ -28,12 +28,19 @@ private:
 public:
 	// Non coliding tree
 	std::vector<Node> nc_tree;
+	// Previous compatible nodes (one by leaf)
+	std::vector<uint64_t> chains;
 
 	/** Create the structure for kmer colinear chaining.
 	 * @param pairs kmer pair coordinates. This list is modified by the algorithm.
 	 **/
 	Colinear(std::vector<PairInt> & pairs);
 	~Colinear();
+
+	/** Compute the scores from the pairs used for construction. This function is out of the constructor as it can take a while to be computed.
+	 * @param pairs The pairs here should be the same used as construction time.
+	 **/
+	void compute_scores(std::vector<PairInt> & pairs);
 
 	/** Get the longest list of compatible kmer pairs.
 	 * @return List of compatible pairs
@@ -52,6 +59,10 @@ public:
 	 * @param pair Pair to update
 	 **/
 	void update_score(PairInt & pair);
+
+	/**
+	 **/
+	void propagate_up(uint64_t idx, uint64_t score);
 
 	// --- Tree functions ---
 	uint64_t up_tree(uint64_t idx);

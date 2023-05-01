@@ -55,8 +55,8 @@ const lest::test module[] = {
         SETUP("4 pairs basic tests") {
             cout << "\t4 pairs tests" << endl;
 
-            SECTION( "No collision" ) {
-                cout << "\t\tNo collision" << endl;
+            SECTION( "No crossing no collision" ) {
+                cout << "\t\tNo crossing no collision" << endl;
                 vector<PairInt> pairs(
                     {PairInt(0, 0), PairInt(2, 2), PairInt(1, 1), PairInt(3, 3)}
                 );
@@ -65,38 +65,36 @@ const lest::test module[] = {
                 );
 
                 Colinear col(pairs);
+                col.compute_scores(pairs);
                 vector<PairInt> chain = col.longest_chain();
                 
                 EXPECT(chain.size() == expected_chain.size());
 
                 for (uint64_t i(0) ; i<chain.size() ; i++)
                     EXPECT(chain[i] == expected_chain[i]);
-
-                cout << "\t\tOK" << endl;
             }
 
-            SECTION( "Middle collision" ) {
-                cout << "\t\tMiddle collision" << endl;
+            SECTION( "Middle crossing" ) {
+                cout << "\t\tMiddle crossing" << endl;
                 vector<PairInt> pairs(
                     {PairInt(0, 0), PairInt(2, 1), PairInt(1, 2), PairInt(3, 3)}
                 );
                 vector<PairInt> expected_chain(
-                    {PairInt(0, 0), PairInt(1, 2), PairInt(3, 3)}
+                    {PairInt(0, 0), PairInt(2, 1), PairInt(3, 3)}
                 );
 
                 Colinear col(pairs);
+                col.compute_scores(pairs);
                 vector<PairInt> chain = col.longest_chain();
                 
                 EXPECT(chain.size() == expected_chain.size());
 
                 for (uint64_t i(0) ; i<chain.size() ; i++)
                     EXPECT(chain[i] == expected_chain[i]);
-
-                cout << "\t\tOK" << endl;
             }
 
-            SECTION( "External collision" ) {
-                cout << "\t\tMiddle collision" << endl;
+            SECTION( "External crossing" ) {
+                cout << "\t\tExternal crossing" << endl;
                 vector<PairInt> pairs(
                     {PairInt(0, 3), PairInt(2, 2), PairInt(1, 1), PairInt(3, 0)}
                 );
@@ -105,6 +103,7 @@ const lest::test module[] = {
                 );
 
                 Colinear col(pairs);
+                col.compute_scores(pairs);
                 vector<PairInt> chain = col.longest_chain();
                 
                 EXPECT(chain.size() == expected_chain.size());
@@ -112,8 +111,125 @@ const lest::test module[] = {
                 for (uint64_t i(0) ; i<chain.size() ; i++)
                     EXPECT(chain[i] == expected_chain[i]);
 
-                cout << "\t\tOK" << endl;
             }
+
+            SECTION( "Double left crossing" ) {
+                cout << "\t\tDouble left crossing" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 2), PairInt(2, 3), PairInt(3, 1)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(1, 2), PairInt(2, 3)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+
+            }
+
+            SECTION( "Double right crossing" ) {
+                cout << "\t\tDouble right crossing" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 3), PairInt(2, 1), PairInt(3, 2)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(2, 1), PairInt(3, 2)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+
+            }
+
+            SECTION( "Left collision" ) {
+                cout << "\t\tLeft collision" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(1, 2), PairInt(2, 3)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(2, 3)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+            }
+
+            SECTION( "Right collision" ) {
+                cout << "\t\tRight collision" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(2, 1), PairInt(3, 2)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(2, 1), PairInt(3, 2)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+            }
+
+            SECTION( "Left collision bottom cross" ) {
+                cout << "\t\tLeft collision bottom cross" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(1, 3), PairInt(2, 2)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(2, 2)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+            }
+
+            SECTION( "Right collision bottom cross" ) {
+                cout << "\t\tRight collision bottom cross" << endl;
+                vector<PairInt> pairs(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(2, 2), PairInt(3, 1)}
+                );
+                vector<PairInt> expected_chain(
+                    {PairInt(0, 0), PairInt(1, 1), PairInt(2, 2)}
+                );
+
+                Colinear col(pairs);
+                col.compute_scores(pairs);
+                vector<PairInt> chain = col.longest_chain();
+                
+                EXPECT(chain.size() == expected_chain.size());
+
+                for (uint64_t i(0) ; i<chain.size() ; i++)
+                    EXPECT(chain[i] == expected_chain[i]);
+            }
+
+            cout << "\t\t\tOK" << endl;
         }
     }
 };
