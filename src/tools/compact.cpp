@@ -516,6 +516,9 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 		else
 			return a.second < b.second;
 	});
+	for (PairInt & p : treeSorted)
+		cout << p.first << "-" << p.second << " ";
+	cout << endl;
 
 	// Traceback list
 	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
@@ -541,9 +544,14 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
 
         uint64_t pos = 0;
         prev_no_collision_score = rmt.range_between(PairInt(0, 0), searcher, pos);
+        cout << "Prev no colision " << prev_no_collision_score << endl;
 
         if (prev_no_collision_score > 0) {
             vector<PairInt> all_keys_no_collision = rmt.all_max_key(prev_no_collision_score, searcher);
+            cout << "keys no colision ";
+            for (PairInt & p : all_keys_no_collision)
+            	cout << p.first << "-" << p.second << " ";
+            cout << endl;
 
             for (auto &it: all_keys_no_collision) {
                 if (p == it || (it.first != p.first && it.second != p.second)) {
@@ -563,6 +571,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<u
         collision_max_key = rmt.tree[2 * pos].first;
 
         // Update score and traceback datastructure
+        cout << "UPDATE " << p.first << "-" << p.second << " " << prev_no_collision_score << " " << prev_collision_score << endl;
         if (prev_no_collision_score > prev_collision_score) {
             traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
             rmt.update(p, prev_no_collision_score);

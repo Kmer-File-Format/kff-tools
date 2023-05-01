@@ -6,6 +6,9 @@
 
 using namespace std;
 
+// Redefine pair operators
+typedef  std::pair<uint64_t, uint64_t> PairInt;
+
 
 template <class K>
 class RangeMaxTree {
