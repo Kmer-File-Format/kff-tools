@@ -43,6 +43,7 @@ public:
 	void compute_scores(std::vector<PairInt> & pairs);
 
 	/** Get the longest list of compatible kmer pairs.
+	 * The compute_scores function needs to be called before extracting the longest chain.
 	 * @return List of compatible pairs
 	 **/
 	std::vector<PairInt> longest_chain();

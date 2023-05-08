@@ -11,7 +11,7 @@
 #include "encoding.hpp"
 #include "sequences.hpp"
 #include "merge.hpp"
-#include "RMT.hpp"
+#include "colinear.hpp"
 #include "skmers.hpp"
 
 using namespace std;
@@ -458,7 +458,7 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 							candidate, nb_nucl, 0, nb_nucl-2,
 							kmer, nb_nucl, 1, nb_nucl-1
 						) == 0) {
-                	cout << " " << idx << " " << candidate_vect_idx << endl;
+                	// cout << " " << idx << " " << candidate_vect_idx << endl;
 					pairs.emplace_back(idx, candidate_vect_idx);
 					used[candidate_vect_idx] = true;
 				}
@@ -500,139 +500,22 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 
-vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(const vector<pair<uint64_t, uint64_t> > & candidates) const {
+vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates) const {
 
     if (candidates.empty()) {
         return {};
     }
 
-	vector<PairInt> selected;
-	// Sort the pairs for the RMT structure
-	auto treeSorted = vector<PairInt>(candidates);
-	sort(treeSorted.begin(), treeSorted.end(), [](const pair<uint64_t, uint64_t> &a, const pair<uint64_t, uint64_t> &b) -> bool
-	{
-		if (a.second == b.second)
-			return a.first < b.first;
-		else
-			return a.second < b.second;
-	});
-	for (PairInt & p : treeSorted)
-		cout << p.first << "-" << p.second << " ";
-	cout << endl;
-
-	// Traceback list
-	vector<uint64_t> traceback_array; traceback_array.resize(treeSorted.size());
-	// Datastruct to remember the scores
-	RangeMaxTree<PairInt> rmt = RangeMaxTree<PairInt>(treeSorted);
-
-    PairInt no_collision_max_key = treeSorted[0];
-    PairInt collision_max_key = treeSorted[0];
-
-
-    // Colinear chaining
-    for (const PairInt & p : candidates) {
-        uint64_t tree_position = rmt.find(p);
-
-        // Find the max key/value that does not collide with the current candidate.
-        uint64_t prev_no_collision_score = 0;
-        PairInt searcher;
-        if (p.second == 0) {
-            searcher = PairInt(p.first, 0);
-        } else {
-            searcher = PairInt(p.first, p.second - 1);
-        }
-
-        uint64_t pos = 0;
-        prev_no_collision_score = rmt.range_between(PairInt(0, 0), searcher, pos);
-        cout << "Prev no colision " << prev_no_collision_score << endl;
-
-        if (prev_no_collision_score > 0) {
-            vector<PairInt> all_keys_no_collision = rmt.all_max_key(prev_no_collision_score, searcher);
-            cout << "keys no colision ";
-            for (PairInt & p : all_keys_no_collision)
-            	cout << p.first << "-" << p.second << " ";
-            cout << endl;
-
-            for (auto &it: all_keys_no_collision) {
-                if (p == it || (it.first != p.first && it.second != p.second)) {
-                    prev_no_collision_score += 1;
-                    no_collision_max_key = it;
-                    break;
-                }
-            }
-        } else {
-            prev_no_collision_score += 1;
-            no_collision_max_key = p;
-        }
-
-
-        // Find the max key/value that collides with the current candidate.
-        uint64_t prev_collision_score = rmt.range_between(p, p, pos);
-        collision_max_key = rmt.tree[2 * pos].first;
-
-        // Update score and traceback datastructure
-        cout << "UPDATE " << p.first << "-" << p.second << " " << prev_no_collision_score << " " << prev_collision_score << endl;
-        if (prev_no_collision_score > prev_collision_score) {
-            traceback_array[tree_position/2] = rmt.find(no_collision_max_key) / 2;
-            rmt.update(p, prev_no_collision_score);
-        } else {
-            traceback_array[tree_position/2] = rmt.find(collision_max_key) / 2;
-            rmt.update(p, prev_collision_score);
-        }
-
-    }
-
-    uint64_t idxMax = 0;
-    for (ulong i = 0; i < traceback_array.size() ; i++) {
-        uint64_t nodeScore = rmt.tree[i*2].second;
-        if (nodeScore == rmt.tree[rmt.tree.size() / 2].second) {
-            idxMax = i;
-        }
-    }
-
-
-    uint64_t current_score = 0;
-    while (true) {
-        if (current_score != rmt.tree[idxMax * 2].second) {
-            selected.push_back(treeSorted[idxMax]);
-            current_score = rmt.tree[idxMax * 2].second;
-        }
-        idxMax = traceback_array[idxMax];
-        if (traceback_array[idxMax] == idxMax) {
-            if (current_score != rmt.tree[idxMax * 2].second)
-                selected.push_back(treeSorted[idxMax]);
-            break;
-        }
-    }
-
-    std::reverse(selected.begin(), selected.end());
-	return selected;
+    Colinear colinear(candidates);
+    colinear.compute_scores(candidates);
+    
+	return colinear.longest_chain();
 }
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
 	uint8_t encoding[4] = {0, 1, 3, 2};
 	Stringifyer strif(encoding);
-
-	cout << "matrix " << endl;
-	for (size_t i=0 ; i<matrix.size() ; i++) {
-		if (matrix[i].size() == 0)
-			continue;
-
-		cout << matrix[i].size() << " ";
-		for (uint8_t * kmer : matrix[i])
-		{
-			cout << strif.translate(kmer, 31 - 5) << endl;
-		} cout << endl;
-	}cout << endl;
-
-	// cout << "pairs" << endl;
-	// for (size_t i=0 ; i<pairs.size() ; i++) {
-	// 	cout << pairs[i].size() << " ";
-	// }cout << endl;
-
-//	cout << pairs[0][0] << endl;
-//	cout << pairs[0][1] << endl;
 
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
@@ -682,10 +565,6 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		// Index by kmer
 		for (uint8_t * kmer: *sk)
 			sk_index[kmer] = sk;
-
-		// cout << sk << " -> " << sk->size() << endl;
-		// for (uint8_t * kmer : *sk)
-		// 	cout << "\t" << (uint64_t *)kmer << endl;
 	}
 
 	// Index lonely kmers
@@ -748,10 +627,6 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 				uint8_t * kmer = matrix[position][current_kmers[position]];
 				vector<uint8_t *> * sk = sk_index[kmer];
 
-				// cout << i << " " << position << endl;
-				// cout << "current kmer " << current_kmers[position] << endl;
-				// cout << (uint64_t)(matrix[position][0][0]) << endl;
-
 				// Add the skmer only if all the related kmers are present
 				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
 					candidates.push_back(current_interleaves[position]);
@@ -760,10 +635,6 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		}
 
 		// Select the min kmer and add the related skmer to the output
-//        if (candidates.empty()) { // seg fault if empty so a little check
-//            break;
-//        }
-		cout << "candidates " << candidates.size() << endl;
 		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
 		candidates = vector<interleved_t>();
 		size_t col = selected.suf_size;
@@ -820,23 +691,13 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 
 	// Pair columns
 	for (uint i=0 ; i<this->k-this->m ; i++) {
-		cout << "col " << i << endl;
 		// 2 - Find all the possible overlaps of kmers
-        const vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
-    	
-    	cout << " " << candidate_links.size() << " pairs" << endl;
+        vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
 		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
 
-		cout << " " << colinear_links.size() << " colinear compatible" << endl;
-		for (auto p : colinear_links)
-		{
-			cout << p.first << " " << p.second << endl;
-		}
-
 		kmer_pairs.push_back(colinear_links);
-		cout << endl;
 	}
 
 	// // 4 - Finish the ordering by sorting skmers that could have been interchanged

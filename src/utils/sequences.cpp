@@ -98,7 +98,7 @@ void subsequence_bis(const uint8_t * sequence, const uint seq_size, uint8_t * ex
             mask >>= 2;
             position++;
         }
-        if (i % 3 == 0 && i > 0) { // end of the section of extracted
+        if (i % 4 == 0 && i > 0) { // end of the section of extracted
             section++;
         }
     }

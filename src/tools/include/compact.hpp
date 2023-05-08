@@ -111,7 +111,7 @@ public:
 	 * 
 	 * @return The list of selected links. All other links are removed to keep the order.
 	 **/
-	std::vector<std::pair<uint64_t, uint64_t> > colinear_chaining(const std::vector<std::pair<uint64_t, uint64_t> > & candidates) const;
+	std::vector<std::pair<uint64_t, uint64_t> > colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates) const;
 
 	/** From the kmer matrix and the list of all the colinear chained pairs of kmers, generate the ordered list of superkmers.
 	 * 

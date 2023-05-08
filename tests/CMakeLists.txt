@@ -23,13 +23,11 @@ set(SRCS
     sequence_test.cpp
     compact_test.cpp
     skmers_test.cpp
-    RMT_test.cpp
 )
     
 
 # add the executable
-# add_executable(test ${SRCS})
-add_executable(test main.cpp colinear_test.cpp)
+add_executable(test ${SRCS})
 
 # link libraries
 target_link_libraries(test

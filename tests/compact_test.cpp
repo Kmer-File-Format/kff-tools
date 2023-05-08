@@ -5,7 +5,6 @@
 #include "lest.hpp"
 #include "encoding.hpp"
 #include "compact.hpp"
-#include "RMT.hpp"
 
 using namespace std;
 
@@ -246,7 +245,7 @@ const lest::test module[] = {
 
 
             vector<vector<pair<uint64_t, uint64_t> > > colinear_chainings;
-            for (const auto & pair : pairs_by_column)
+            for (auto & pair : pairs_by_column)
                 colinear_chainings.push_back(comp.colinear_chaining(pair));
 
             SECTION( "colinear chaining test 1" )
@@ -297,7 +296,7 @@ const lest::test module[] = {
 
                 // Verify
                 EXPECT( co_chain.size() == 1u);
-                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 2u);
+                EXPECT( co_chain[0].first == 2u); EXPECT(co_chain[0].second == 0u);
 
                 /// One more case
 
@@ -320,7 +319,7 @@ const lest::test module[] = {
 
                 // Verify
                 EXPECT( co_chain.size() == 1u);
-                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
 
                 /// One more case
 
@@ -343,7 +342,7 @@ const lest::test module[] = {
 
                 // Verify
                 EXPECT( co_chain.size() == 1u);
-                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
 
                 /// One more case
 
@@ -372,7 +371,7 @@ const lest::test module[] = {
 
                 // Verify
                 EXPECT( trio_chain.size() == 1u );
-                EXPECT( 1u == trio_chain[0].second ); // 0 needed ?
+                EXPECT( 0u == trio_chain[0].second ); // 0 needed ?
             }
 
             SECTION(" colinear chaining test 3") {
@@ -387,7 +386,7 @@ const lest::test module[] = {
                 // Verify
                 EXPECT( co_chain.size() == 2u);
                 EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
-                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 3u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 1u);
 
                 /// Reverse exemple
 
