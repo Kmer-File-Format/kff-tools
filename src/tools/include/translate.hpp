@@ -2,22 +2,22 @@
 #include <iostream>
 #include <vector>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef SORT_H
-#define SORT_H
+#ifndef TRANSLATE_H
+#define TRANSLATE_H
 
-class Sort: public KffTool {
+class Translate: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
+	std::string encoding_str;
 
 public:
-	Sort();
+	Translate();
 	void cli_prepare(CLI::App * subapp);
-	void sort(std::string input, std::string output);
 	void exec();
 };
 

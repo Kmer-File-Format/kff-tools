@@ -2,21 +2,20 @@
 #include <iostream>
 #include <vector>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef TRANSLATE_H
-#define TRANSLATE_H
+#ifndef DATARM_H
+#define DATARM_H
 
-class Translate: public KffTool {
+class DataRm: public KffTool {
 private:
 	std::string input_filename;
 	std::string output_filename;
-	std::string encoding_str;
 
 public:
-	Translate();
+	DataRm();
 	void cli_prepare(CLI::App * subapp);
 	void exec();
 };

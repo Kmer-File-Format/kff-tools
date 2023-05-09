@@ -3,8 +3,8 @@
 #include <string>
 
 #include "lest.hpp"
-#include "../src/encoding.hpp"
-#include "../src/compact.hpp"
+#include "encoding.hpp"
+#include "compact.hpp"
 
 using namespace std;
 
@@ -114,10 +114,20 @@ const lest::test module[] = {
 
             // Create the kmer matrix
             vector<vector<uint8_t *> > matrix(3, vector<uint8_t *>());
+            vector<vector<uint8_t *> > matrix_trio(3, vector<uint8_t *>());
 
             // Add the kmers to compact
             uint8_t encoding[] = {0, 1, 3, 2};
             Binarizer bz(encoding);
+            
+            // AAAAA
+            bz.translate("AA", k-m, seq);
+            long aa_pos1 = comp.add_kmer_to_buffer(seq, nullptr, 1);
+            uint8_t * aa1 = comp.kmer_buffer + aa_pos1;
+            // AAAAA
+            bz.translate("AA", k-m, seq);
+            long aa_pos2 = comp.add_kmer_to_buffer(seq, nullptr, 2);
+            uint8_t * aa2 = comp.kmer_buffer + aa_pos2;
             // GGAAA
             bz.translate("GG", k-m, seq);
             long gg_pos = comp.add_kmer_to_buffer(seq, nullptr, 2);
@@ -181,7 +191,12 @@ const lest::test module[] = {
             matrix[2].push_back(ct);
             matrix[2].push_back(tt);
 
+            matrix_trio[0].push_back(gg);
+            matrix_trio[1].push_back(gc);
+            matrix_trio[1].push_back(gt);
+
             comp.sort_matrix(matrix);
+            comp.sort_matrix(matrix_trio);
             SECTION( "Matrix sorting" )
             {
                 cout << "\t\tMatrix sorting" << endl;
@@ -201,48 +216,215 @@ const lest::test module[] = {
             }
 
 
+            vector<vector<pair<uint64_t, uint64_t> > > pairs_by_column;
+            pairs_by_column.push_back(comp.pair_kmers(matrix[0], matrix[1]));
+            pairs_by_column.push_back(comp.pair_kmers(matrix[1], matrix[2]));
+
+            vector<pair<uint64_t, uint64_t> > trio_pairs = comp.pair_kmers(matrix_trio[0], matrix_trio[1]);
+
             SECTION( "kmer pairing tests" )
             {
                 cout << "\t\tkmer pairing" << endl;
 
                 // Prepare real pairs to test
-                unordered_map<uint8_t *, uint8_t *> real_pairs;
-                real_pairs[gc] = ct;
-                real_pairs[gt] = tt;
+                unordered_map<uint64_t, uint64_t> real_pairs;
+                //         gc   ct
+                real_pairs[0] = 0;
+                //         gt   tt
+                real_pairs[1] = 1;
 
                 // Perform pairing
-                vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[1], matrix[2]);
+                vector<pair<uint64_t, uint64_t> > & pairs = pairs_by_column[1];
 
                 // Verify
                 EXPECT( pairs.size() == 2u );
-                for (pair<uint8_t *, uint8_t *> & pair : pairs) {
+                for (pair<uint64_t, uint64_t> & pair : pairs) {
                     EXPECT( pair.second == real_pairs[pair.first]);
                 }
             }
 
-            // SECTION( "colinear chaining test" )
-            // {
-            //     cout << "\t\tBasic colinear chaining test" << endl;
+            vector<vector<pair<uint64_t, uint64_t> > > colinear_chainings;
+            for (auto & pair : pairs_by_column)
+                colinear_chainings.push_back(comp.colinear_chaining(pair));
 
-            //     vector<pair<uint8_t *, uint8_t *> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
+            SECTION( "colinear chaining test 1" )
+            {
+                cout << "\t\tBasic colinear chaining test 1" << endl;
+                matrix[0].push_back(aa1);
+                matrix[1].push_back(aa2);
 
-            //     EXPECT( pairs.size() == 4u );
+                vector<pair<uint64_t, uint64_t> > pairs = comp.pair_kmers(matrix[0], matrix[1]);
 
-            //     // Prepare real pairs to test
-            //     unordered_map<uint8_t *, uint8_t *> real_colinear;
-            //     real_colinear[cg] = gc;
-            //     real_colinear[gg] = gt;
+                EXPECT( pairs.size() == 5u );
 
-            //     // Perform colinear chaining
-            //     vector<pair<uint8_t *, uint8_t *> > co_chain = comp.colinear_chaining(pairs);
+                // Prepare real pairs to test
+                unordered_map<uint64_t, uint64_t> real_colinear;
+                //           cg    gc
+                real_colinear[0] = 0;
+                //           gg    gt
+                real_colinear[1] = 1;
+                //           aa    aa
+                real_colinear[2] = 2;
 
-            //     // Verify
-            //     EXPECT( co_chain.size() == 2u );
-            //     EXPECT( co_chain[0].first == cg );
-            //     EXPECT( co_chain[0].second == gc );
-            //     EXPECT( co_chain[1].first == gg );
-            //     EXPECT( co_chain[1].second == gt );
-            // }
+                // Perform colinear chaining
+                vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 3u );
+                for (pair<uint64_t, uint64_t> & p : co_chain)
+                    EXPECT( real_colinear[p.first] == p.second );
+
+                cout << "\t\tSecond colinear chaining test" << endl;
+
+                pairs = {{0, 1}, {0, 2}, {1, 1}, {1, 2}, {2, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u );
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 1u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 2u);
+
+                /// Other case
+
+                pairs = {{0, 1}, {0, 2}, {1, 1}, {2, 0}, {2, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 2u); EXPECT(co_chain[0].second == 0u);
+
+                /// One more case
+
+                pairs = {{0, 1}, {0, 2}, {1, 0}, {1, 1}, {2, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 2u); EXPECT(co_chain[1].second == 1u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {0, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {1, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
+
+                /// One more case
+
+                pairs = {{0, 1}, {1, 0}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 1u);
+                EXPECT( co_chain[0].first == 1u); EXPECT(co_chain[0].second == 0u);
+
+                /// One more case
+
+                pairs = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 1u);
+
+
+            }
+
+
+            SECTION( "colinear chaining test 2" )
+            {
+                cout << "\t\tBasic colinear chaining test 2" << endl;
+
+                EXPECT( trio_pairs.size() == 2u );
+
+                // Perform colinear chaining
+                vector<pair<uint64_t, uint64_t> > trio_chain = comp.colinear_chaining(trio_pairs);
+
+                // Verify
+                EXPECT( trio_chain.size() == 1u );
+                EXPECT( 0u == trio_chain[0].second ); // 0 needed ?
+            }
+
+            SECTION(" colinear chaining test 3") {
+                cout << "\t\tBasic colinear chaining test 3" << endl;
+
+                // Making pairs
+                vector<pair<uint64_t, uint64_t> > pairs = {{0, 0}, {0, 1}, {1, 1}, {1, 2}, {1, 3}};
+
+                // Perform colinear chaining
+                vector<pair<uint64_t, uint64_t> > co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 1u); EXPECT(co_chain[1].second == 1u);
+
+                /// Reverse exemple
+
+                // Making pairs
+                pairs = {{0, 0}, {1, 1}, {2, 1}, {3, 1}};
+
+                // Perform colinear chaining
+                co_chain = comp.colinear_chaining(pairs);
+
+                // Verify
+
+                EXPECT( co_chain.size() == 2u);
+                EXPECT( co_chain[0].first == 0u); EXPECT(co_chain[0].second == 0u);
+                EXPECT( co_chain[1].first == 3u); EXPECT(co_chain[1].second == 1u);
+            }
+
+
+            SECTION( "polish super-kmers" )
+            {
+                cout << "\t\tPolish super-kmers test" << endl;
+
+                vector<vector<uint8_t *> > true_skmers;
+                true_skmers.push_back({cg, gc, ct});
+                true_skmers.push_back({gg, gt, tt});
+
+                vector<vector<uint8_t *> > skmers = comp.polish_sort(matrix, colinear_chainings);
+
+                // Verify
+                EXPECT( skmers.size() == true_skmers.size() );
+                for (size_t sk_idx=0 ; sk_idx<true_skmers.size() ; sk_idx++) {
+                    vector<uint8_t *> & skmer = skmers[sk_idx];
+                    vector<uint8_t *> & true_sk = true_skmers[sk_idx];
+
+                    EXPECT(skmer.size() == true_sk.size());
+
+                    for (size_t kmer_idx=0 ; kmer_idx<true_sk.size() ; kmer_idx++)
+                        EXPECT( skmer[kmer_idx] == true_sk[kmer_idx] );
+                }
+            }
 
             cout << "\t\tOK" << endl;
         }

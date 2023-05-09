@@ -2,20 +2,20 @@
 #include <iostream>
 #include <vector>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
-#ifndef DATARM_H
-#define DATARM_H
+#ifndef OUTSTR_H
+#define OUTSTR_H
 
-class DataRm: public KffTool {
+class Outstr: public KffTool {
 private:
 	std::string input_filename;
-	std::string output_filename;
+	bool revcomp;
 
 public:
-	DataRm();
+	Outstr();
 	void cli_prepare(CLI::App * subapp);
 	void exec();
 };

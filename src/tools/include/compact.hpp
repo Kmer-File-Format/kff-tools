@@ -3,7 +3,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "kfftools.hpp"
 
 
@@ -29,6 +29,7 @@ public:
 	uint64_t buffer_size;
 	uint64_t next_free;
 
+    Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
 	~Compact();
 
@@ -95,11 +96,10 @@ public:
 	 * 
 	 * @param column1 column of the matrix for left kmers
 	 * @param column2 column of the matrix for right kmers
-	 * @return A vector of all overlaping pairs. Unpaired kmers are paired with
-	 * nullpointers. The list is given in the same order than the first column
-	 * kmers.
+	 * @return A vector of all overlaping pairs. A pair corresponds to both kmer positions in
+	 * their original vector.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> > pair_kmers(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2) const;
+	std::vector<std::pair<uint64_t, uint64_t> > pair_kmers(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2) const;
 
 	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
 	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
@@ -111,14 +111,15 @@ public:
 	 * 
 	 * @return The list of selected links. All other links are removed to keep the order.
 	 **/
-	std::vector<std::pair<uint8_t *, uint8_t *> > colinear_chaining(const std::vector<std::pair<uint8_t *, uint8_t *> > & candidates) const;
+	std::vector<std::pair<uint64_t, uint64_t> > colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates) const;
 
-	/** From the list of all the preserved pairs of kmers, generate the ordered list of superkmers.
+	/** From the kmer matrix and the list of all the colinear chained pairs of kmers, generate the ordered list of superkmers.
 	 * 
-	 * @param colinear_chainings
-	 * @return The list of sorted skmers.
+	 * @param matrix The full kmer matrix 2D sorted
+	 * @param colinear_chainings sorted pairs of kmers to assemble (number of matrix columns - 1 lists)
+	 * @return The list of sorted linked kmers. They can be compacted in a skmers style.
 	 **/
-	std::vector<std::vector<uint8_t *> > polish_sort(const std::vector<std::vector<std::pair<uint8_t *, uint8_t *> > > & colinear_chainings) const;
+	std::vector<std::vector<uint8_t *> > polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 
@@ -154,5 +155,6 @@ public:
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
 
 };
+
 
 #endif

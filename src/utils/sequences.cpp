@@ -68,7 +68,6 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 	// Align the bits
 	uint extract_left_offset = (seq_left_offset + begin_nucl) % 4;
 	uint extract_right_offset = (seq_size - end_nucl - 1) % 4;
-	
 
 	if (extract_right_offset < 4 - extract_left_offset) {
 		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, extract_right_offset * 2);
@@ -78,21 +77,66 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
+void subsequence_bis(const uint8_t * sequence, const uint seq_size, uint8_t * extracted, const uint begin_nucl, const uint end_nucl) {
+	// Extract the correct slice
+	uint seq_left_offset = (4 - seq_size % 4) % 4;
+	uint extract_start_byte = (seq_left_offset + begin_nucl) / 4;
+
+    uint64_t reads = end_nucl - begin_nucl + 1; // number of nucls to read
+    uint64_t position = (seq_left_offset + begin_nucl) % 4; // the position of the nucls to read
+    uint64_t mask = 0b11 << ((3 - position) * 2); // the mask to read the wanted bits
+    uint64_t section = 0;
+
+    for (uint i = 0; i < reads; i++) {
+        extracted[section] <<= 2;
+        extracted[section] |= ((sequence[extract_start_byte]) & mask) >> ((3 - position) * 2);
+        if (position == 3) { // we arrive at the end of the section of the vector
+            extract_start_byte++;
+            position = 0;
+            mask = 0b11000000;
+        } else { // we continue to read in the same section of the vector
+            mask >>= 2;
+            position++;
+        }
+        if (i % 4 == 0 && i > 0) { // end of the section of extracted
+            section++;
+        }
+    }
+
+
+//	// Align the bits
+//	uint extract_left_offset = (seq_left_offset + begin_nucl) % 4;
+//	uint extract_right_offset = (seq_size - end_nucl - 1) % 4;
+//
+//	cout << "right offset = " << extract_right_offset << endl;
+//
+//	if (extract_right_offset < 4 - extract_left_offset) {
+//		rightshift8(extracted, extract_stop_byte - extract_start_byte + 1, extract_right_offset * 2);
+//	} else {
+//		leftshift8(extracted, extract_stop_byte - extract_start_byte + 1, (4 - extract_right_offset) * 2);
+//	}
+}
+
 int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 											const uint seq1_start, const uint seq1_stop,
 											const uint8_t * seq2, const uint seq2_size,
 											const uint seq2_start, const uint seq2_stop) {
+
 	// If inequal size
 	if (seq1_stop - seq1_start != seq2_stop - seq2_start)
 		return (seq1_stop - seq1_start) < (seq2_stop - seq2_start) ? -1 : 1;
 
 	// Extraction of subsequences
 	uint subseq_size = seq1_stop - seq1_start + 1;
-	uint subseq_bytes = (subseq_size + 3) / 4;
-	uint8_t * subseq1 = new uint8_t[subseq_bytes];
-	subsequence(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
+	uint subseq_bytes = 1 + (subseq_size + 3) / 4;
+
+
+    uint8_t * subseq1 = new uint8_t[subseq_bytes];
+	memset(subseq1, 0, subseq_bytes);
+	subsequence_bis(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
 	uint8_t * subseq2 = new uint8_t[subseq_bytes];
-	subsequence(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
+	memset(subseq2, 0, subseq_bytes);
+	subsequence_bis(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
 
 	// comparison of the subsequences (same size)
 	uint return_val = 0;
@@ -101,6 +145,7 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	uint mask = (1 << (2 * (4 - offset))) - 1;
 	if ((subseq1[0] & mask) != (subseq2[0] & mask))
 		return_val = (subseq1[0] & mask) < (subseq2[0] & mask) ? -1 : 1;
+
 
 	// All following bytes
 	for (uint b=1 ; b<subseq_bytes and return_val==0 ; b++) {
@@ -113,7 +158,6 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	delete[] subseq2;
 	return return_val;
 }
-
 
 void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_size) {
 	if (seq_size > this->max_seq_size) {
@@ -149,7 +193,7 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 		current_rev_value = (current_rev_value >> 2) + this->nucl_rev[idx%4][seq[byte_idx]];//(this->rc.reverse[nucl] << (2 * (m - 1)));
 		this->mini_buffer[kmer_idx] = current_value;
 		this->mini_buffer[this->mini_buffer.size()/2 + kmer_idx] = current_rev_value;
-	}
+    }
 }
 
 
@@ -180,39 +224,55 @@ void MinimizerSearcher::compute_candidates(const uint8_t * seq, const uint seq_s
 // 	}
 // }
 
+#include <bitset>
+
 void MinimizerSearcher::compute_minimizers(const uint nb_kmers) {
-	// Compute the minimizer of each sliding window of size k - m
-	uint max_nb_candidates = this->mini_buffer.size()/2;
-	for (uint i=0 ; i<nb_kmers ; i++) {
-		auto smallest_fwd = min_element(
+    // Compute the minimizer of each sliding window of size k - m
+    uint max_nb_candidates = this->mini_buffer.size()/2;
+    for (uint i=0 ; i<nb_kmers ; i++) {
+        auto smallest_fwd = min_element(
 			this->mini_buffer.begin() + i,
 			this->mini_buffer.begin()+i+(k-m)+1
 		);
-		auto smallest_rev = smallest_fwd;
-		if (not this->single_side) {
-			smallest_rev = min_element(
+        auto smallest_rev = smallest_fwd;
+        if (not this->single_side) {
+            smallest_rev = min_element(
 				this->mini_buffer.begin()+max_nb_candidates+i,
 				this->mini_buffer.begin()+max_nb_candidates+i+(k-m)+1
 			);
-		}
+        }
 
-		int mini_pos;
+        int64_t mini_pos = INT64_MAX;
+
+
 		if (this->single_side or (*smallest_fwd) < (*smallest_rev)) {
 			mini_pos = smallest_fwd - this->mini_buffer.begin();
-		} 
-		else if ((*smallest_fwd) == (*smallest_rev)) {
-			if (smallest_fwd - smallest_rev <= 0) {
-				mini_pos = smallest_fwd - this->mini_buffer.begin();
-			} else {
-				mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
-			}
-		}
-		else {
-			mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
 		}
 
-		this->mini_pos[i] = mini_pos;
-	}
+		else if ((*smallest_fwd) == (*smallest_rev)) {
+			if (smallest_fwd < smallest_rev) {
+				mini_pos = smallest_fwd - this->mini_buffer.begin();
+			} else if (smallest_fwd > smallest_rev) {
+				mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+			} else { // smallest_fwd == smallest_rev, taking the smallest one
+                for (uint64_t j = 0; j < k - m + 1; j++) {
+                    if (mini_buffer[i + j] < mini_buffer[i + max_nb_candidates + j]) {
+                        mini_pos = smallest_fwd - this->mini_buffer.begin();
+                        break;
+                    } else if (mini_buffer[i + j] > mini_buffer[i + max_nb_candidates + j]) {
+                        mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+                        break;
+                    }
+                }
+            }
+		}
+
+        else {
+            mini_pos = - (smallest_rev - (this->mini_buffer.begin() + this->mini_buffer.size() / 2)) - 1;
+        }
+
+        this->mini_pos[i] = mini_pos;
+    }
 }
 
 void MinimizerSearcher::compute_skmers(const uint nb_kmers) {
@@ -479,6 +539,13 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 	uint seq_offset = (4 - (seq_size % 4)) % 4;
 	uint first_sub_byte = (seq_offset + start_nucl) / 4;
 	uint last_sub_byte = (seq_offset + end_nucl) / 4;
+
+	if (first_sub_byte == last_sub_byte) {
+		uint64_t val = seq[first_sub_byte];
+		uint shift = 2 * (3 - seq_offset - end_nucl);
+		uint mask = (1 << ((end_nucl - start_nucl + 1) * 2)) - 1;
+		return (val >> shift) & mask;
+	}
 
 	// First byte integration
 	uint mask = (1 << (2 * (4 - ((seq_offset + start_nucl) % 4)))) - 1;

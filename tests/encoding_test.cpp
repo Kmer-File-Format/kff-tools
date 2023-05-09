@@ -3,7 +3,7 @@
 #include <string>
 
 #include "lest.hpp"
-#include "../src/encoding.hpp"
+#include "encoding.hpp"
 
 
 using namespace std;
@@ -48,7 +48,7 @@ const lest::test module[] = {
                 EXPECT( (uint)bin[1] == (uint)0b10000111 );
             }
 
-            cout << "OK" << endl;
+            cout << "\t\tOK" << endl;
         }
     }
 };
