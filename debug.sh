@@ -5,8 +5,8 @@ set -e
 cmake . && make -j
 
 name=sars
-k=31
-m=5
+k=63
+m=10
 # name=small
 # k=5
 # m=3
