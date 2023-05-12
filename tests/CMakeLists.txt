@@ -27,7 +27,8 @@ set(SRCS
     
 
 # add the executable
-add_executable(test ${SRCS})
+# add_executable(test ${SRCS})
+add_executable(test main.cpp sequence_test.cpp)
 
 # link libraries
 target_link_libraries(test

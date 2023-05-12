@@ -4,6 +4,7 @@
 #include <fstream>
 #include <vector>
 #include <utility>
+#include <cassert>
 
 #include "encoding.hpp"
 #include "kff_io.hpp"
@@ -108,6 +109,33 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 void uint_to_seq(uint seq, uint8_t * bin_seq, uint size);
 
 
+class SlidingWindow
+{
+public:
+  uint64_t fwd;
+  uint64_t rev;
+
+  uint8_t * seq;
+  uint64_t seq_idx;
+
+  uint64_t window_size;
+  uint64_t mask;
+
+  uint64_t complement[4];
+
+  /** Create a sliding window on the sequence seq, starting at nucleotide position seq_offset.
+   * The sliding window has a maximal size of 32.
+   * @param window_size Size of the window (in nucleotides)
+   * @param seq 2-bit encoded sequence.
+   * @param sequence_offset Number of nucleotides to skip at the beginning of the sequence.
+   **/
+  SlidingWindow(uint64_t window_size, uint8_t * seq, uint64_t seq_offset, uint8_t encoding[4]);
+  /** Compute the next forward and reverse sequence. You have to be sure that there are remaining nucleotides in the sequence.
+   **/
+  void next_char();
+};
+
+
 // ----- Minimizer search related functions -----
 
 typedef struct {
@@ -121,6 +149,7 @@ class MinimizerSearcher {
 public:
   uint k;
   uint m;
+  uint64_t m_mask;
   uint add_count;
   uint use_count;
   uint max_seq_size;
@@ -133,15 +162,21 @@ public:
   std::vector<std::pair<uint64_t, uint64_t> > skmers;
   uint64_t nucl_fwd[4][256];
   uint64_t nucl_rev[4][256];
+  uint8_t * encoding;
   RevComp rc;
-  MinimizerSearcher(const uint k, const uint m, const uint8_t encoding[4], const uint max_seq_size = 0, const bool single_side = false)
+  MinimizerSearcher(const uint k, const uint m, uint8_t encoding[4], const uint max_seq_size = 0, const bool single_side = false)
           : k(k), m(m), add_count(0), use_count(0), max_seq_size(max_seq_size), single_side(single_side)
           , mini_buffer(max_seq_size < m - 1 ? 0 : (max_seq_size - m + 1) * 2, 0)
           , minis(max_seq_size < k - 1 ? 0 : max_seq_size - k + 1, 0)
           , mini_pos(max_seq_size < k - 1 ? 0 : max_seq_size - k + 1, 0)
           , skmers()
+          , encoding(encoding)
           , rc(encoding)
   {
+    // Compute the minimizer mask
+    assert(m < 32);
+    this->m_mask = (1ul << (2 * m)) - 1;
+
     for (uint byte=0 ; byte<256 ; byte++) {
       for (uint nucl_pos=0 ; nucl_pos<4 ; nucl_pos++) {
         nucl_fwd[nucl_pos][byte] = (byte >> (2 * (3 - nucl_pos))) & 0b11;
@@ -175,6 +210,16 @@ public:
    **/
   void compute_skmers(const uint nb_kmers);
 
+  /** Compute the position of the minimizer inside of the kmer starting at position start_idx.
+   * WARNING: If there are empty nucleotides at the beginning, they are still taken into account
+   * in this function.
+   * @param seq A 2-bits encoded sequence of nucleotides
+   * @param start_idx First nucleotide to look at inside the sequence
+   * @return index of the minimizer in the sequence. If the minimizer is on the reverse side, the 
+   * return value is (- 1 - index)
+   **/
+  int64_t kmer_minimizer_compute(uint8_t * seq, uint64_t start_idx);
+
   /** Get a vector of all the skmers in a sequence.
    * All the other methods of this class are called by this function.
    * No precomputation needed.
@@ -185,7 +230,6 @@ public:
    * @return A vector containing object of type skmer.
    **/
   std::vector<skmer> get_skmers(const uint8_t * seq, const uint seq_size);
-  std::vector<skmer> get_skmers_fast(const uint8_t * seq, const uint seq_size);
 };
 
 

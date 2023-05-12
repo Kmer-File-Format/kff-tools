@@ -13,6 +13,83 @@ const lest::test module[] = {
 
     CASE("Testing sequence minimizer search") {
 
+        cout << "Test minimizer search inside of single kmers" << endl;
+        SETUP("kmer minimizer search odd sizes")
+        {
+            SECTION( "Odd kmer size" )
+            {
+                cout << "\tOdd kmer size" << endl;
+                uint8_t encoding[] = {0, 1, 3, 2};
+                uint k = 5;
+                uint m = 3;
+                bool single_side = true;
+                uint max_seq_size = 3 * k;
+
+                MinimizerSearcher ms(k, m, encoding, max_seq_size, single_side);
+                Binarizer bz(encoding);
+
+                string sequences[] = {
+                    string("ATAGC"), string("CATAG"), string("GCATA"),
+                    string("TATCG"), string("GTATC"), string("CATGT"),
+                    string("AAAAC"), string("CAAAA"), string("AAAAA")
+                };
+                int64_t positions[] = {
+                     0,  1,  2,
+                    -1, -2, -3,
+                     1,  1,  1
+                };
+                uint64_t num_sequences = sizeof(positions) / sizeof(int64_t);
+
+                for (uint64_t i(0) ; i<num_sequences ; i++)
+                {
+                    uint64_t seq_offset = (4 - (sequences[i].length() % 4)) % 4;
+                    uint8_t bin[2];
+                    bz.translate(sequences[i], sequences[i].length(), bin);
+                    int64_t position = ms.kmer_minimizer_compute(bin, seq_offset);
+                    if (position >= 0)
+                        EXPECT( positions[i] + static_cast<int64_t>(seq_offset) == position );
+                    else
+                        EXPECT( positions[i] - static_cast<int64_t>(seq_offset) == position );
+                }
+            }
+
+            SECTION("Even kmer size")
+            {
+                cout << "\tEven kmer size" << endl;
+                uint8_t encoding[] = {0, 1, 3, 2};
+                uint k = 6;
+                uint m = 3;
+                bool single_side = true;
+                uint max_seq_size = 3 * k;
+
+                MinimizerSearcher ms(k, m, encoding, max_seq_size, single_side);
+                Binarizer bz(encoding);
+
+                string sequences[] = {
+                    string("CAAAAC"), string("GAATTG"), string("TTGCAA")
+                };
+                int64_t positions[] = {
+                     1, -3,  3
+                };
+                uint64_t num_sequences = sizeof(positions) / sizeof(int64_t);
+
+                for (uint64_t i(0) ; i<num_sequences ; i++)
+                {
+                    uint64_t seq_offset = (4 - (sequences[i].length() % 4)) % 4;
+                    uint8_t bin[2];
+                    bz.translate(sequences[i], sequences[i].length(), bin);
+                    int64_t position = ms.kmer_minimizer_compute(bin, seq_offset);
+                    if (position >= 0)
+                        EXPECT( positions[i] + static_cast<int64_t>(seq_offset) == position );
+                    else
+                        EXPECT( positions[i] - static_cast<int64_t>(seq_offset) == position );
+                }
+            }
+
+            cout << "\t\tOK" << endl;
+        }
+
+
         cout << "Test minimizer search k=5, m=3\n\tsingle side minimizer search" << endl;
         SETUP( "single side minimizer search" ) {
             uint8_t encoding[] = {0, 1, 3, 2};

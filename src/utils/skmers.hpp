@@ -14,6 +14,15 @@ typedef struct interleved_s {
 } interleved_t;
 
 
+/** Compute the size of the interleaved part of a kmer.
+ * @param k kmer size
+ * @param m minimizer size
+ * @mini_pos position of the minimizer inside of the kmer (also prefix size)
+ * @return Number of nucleotides that can be included in interleaved sequences.
+ **/
+uint64_t interleaved_size(const uint64_t k, const uint64_t m, const uint64_t mini_pos);
+
+
 /** Translate a superkmer into its interleaved representation.
  * 
  * @param skmer A Byte array containing the superkmer without its minimizer

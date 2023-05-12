@@ -74,6 +74,18 @@ bool inf_interleaved(interleved_t i1, interleved_t i2) {
 }
 
 
+uint64_t interleaved_size(const uint64_t k, const uint64_t m, const uint64_t mini_pos)
+{
+	uint64_t pref_size = mini_pos;
+	uint64_t suff_size = k - m - pref_size;
+
+	if (pref_size < suff_size)
+		return pref_size * 2 + 1;
+	else
+		return suff_size * 2;
+}
+
+
 interleved_t interleaved(const uint8_t * skmer, uint8_t * interleaved_skmer, size_t size, size_t mini_position) {
 	// Init the interleaved struct
 	interleved_t interleaved;
