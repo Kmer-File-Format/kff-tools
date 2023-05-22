@@ -43,6 +43,8 @@
 # performances tests
 **/perf.data*
 debug.sh
+benchmarks/results
+benchmarks/vtune
 
 # project related
 bin/
