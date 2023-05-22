@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <algorithm>
 #include <queue>
-#include "omp.h"
 
 #include "bucket.hpp"
 #include "sequences.hpp"
@@ -52,7 +51,7 @@ Bucket::~Bucket() {
 
 
 void Bucket::cli_prepare(CLI::App * app) {
-	this->subapp = app->add_subcommand("bucket", "Read a kff file and split the kmers into buckets. Each bucket corresponds to all the kmers sharing the same minimizer. The minimizer of size m is the one that minimize the alphabetic order regarding the encoding. WARNING: If the minimzer is on the reverse strand of a kmer, the kmer will be reverse complemented in the output. To avoid such thing, you can use the single-side flag.");
+	this->subapp = app->add_subcommand("bucket", "Read a kff file and split the kmers into buckets. Each bucket corresponds to all the kmers sharing the same minimizer. The minimizer of size m is the one that minimize the alphabetic order regarding the encoding. WARNING: If the minimzer is on the reverse strand of a kmer, the kmer will be reverse complemented in the output.");//" To avoid such thing, you can use the single-side flag.");
 	CLI::Option * input_option = subapp->add_option("-i, --infile", input_filename, "Input kff file to bucket.");
 	input_option->required();
 	input_option->check(CLI::ExistingFile);
@@ -60,7 +59,7 @@ void Bucket::cli_prepare(CLI::App * app) {
 	out_option->required();
 	CLI::Option * mini_size = subapp->add_option("-m, --minimizer-size", m, "Minimizer size [Max 31].");
 	mini_size->required();
-	subapp->add_flag("-s, --single-side", singleside, "Look for the minimizer only on the forward strand.");
+	// subapp->add_flag("-s, --single-side", singleside, "Look for the minimizer only on the forward strand.");
 }
 
 
@@ -75,14 +74,6 @@ void Bucket::exec() {
 	RevComp rc(stream.reader.get_encoding());
 	Stringifyer strif(stream.reader.get_encoding());
 
-	// Prepare synchronisation locks
-	vector<omp_lock_t> bucket_mutexes;
-	bucket_mutexes.resize(nb_mutex);
-	for (uint64_t i(0); i < nb_mutex; ++i) {
-		omp_init_lock(&bucket_mutexes[i]);
-	}
-
-	// #pragma omp parallel num_threads(8)
 	{
 	// Variables init by thread
 	MinimizerSearcher * searcher = new MinimizerSearcher(0, m, stream.reader.get_encoding());
@@ -96,10 +87,7 @@ void Bucket::exec() {
 	// Read the stream line by line
 	while(true) {
 		int nb_kmers = 0;
-		#pragma omp critical
-		{
-			nb_kmers = stream.next_sequence(seq, max_seq, data, max_data);
-		}
+		nb_kmers = stream.next_sequence(seq, max_seq, data, max_data);
 
 		if (nb_kmers == 0)
 			break;
@@ -135,11 +123,18 @@ void Bucket::exec() {
 			searcher = new MinimizerSearcher(k, m, stream.reader.get_encoding());
 		}
 
+		// typedef struct {
+		//   uint64_t start_position;
+		//   uint64_t stop_position;
+		//   int64_t minimizer_position;
+		//   uint64_t minimizer;
+		// } skmer;
+
         // Skmer deduction
         vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
         for (skmer sk : skmers) {
+        	// cout << sk.start_position << " " << sk.stop_position << " " << sk.minimizer_position << " " << sk.minimizer << endl;
 			uint mutex_idx = sk.minimizer % nb_mutex;
-			omp_set_lock(&bucket_mutexes[mutex_idx]);
 			// cout << "mutex " << mutex_id << endl;
 			// New bucket
 			if (buckets[mutex_idx].find(sk.minimizer) == buckets[mutex_idx].end()) {
@@ -172,7 +167,6 @@ void Bucket::exec() {
 			} else {
 				// cout << "No new bucket" << endl;
 			}
-			omp_unset_lock(&bucket_mutexes[mutex_idx]);
 
 			uint seq_size = k - 1 + nb_kmers;
 			uint mini_pos = k + 2;
@@ -193,14 +187,10 @@ void Bucket::exec() {
 
 			// cout << "File write " << sk.minimizer << " " << sk.minimizer % 1024 << endl;
 			// Save the skmer and its related data
-			omp_set_lock(&bucket_mutexes[mutex_idx]);
 			buckets[mutex_idx][sk.minimizer]->write_compacted_sequence(
 					subseq, subseq_size, mini_pos,
 					data + sk.start_position * data_size
 			);
-
-			// cout << "Xmutex " << sk.minimizer % 1024 << endl;
-			omp_unset_lock(&bucket_mutexes[mutex_idx]);
 		}
 	}
 

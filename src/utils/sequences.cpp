@@ -393,12 +393,12 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 
 	// Init the first minimizer value
 	uint64_t minimizer = min(window.fwd, window.rev);
-	int64_t mini_pos = 0;
+	int64_t mini_pos = window.fwd < window.rev ? 0 : -1;
 	bool multi_mini = window.fwd == window.rev;
 	uint64_t left_multi_idx = 0;
 
 	// --- Init the first kmer minimizer ---
-	for (uint64_t idx=1 ; idx<k-m ; idx++)
+	for (uint64_t idx=1 ; idx<=k-m ; idx++)
 	{
 		window.next_char();
 
@@ -407,15 +407,6 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 		bool current_rev = window.rev < window.fwd;
 		int64_t current_mini_pos = idx;
 		bool current_double_mini = window.rev == window.fwd;
-		// if (window.rev < window.fwd)
-		// {
-		// 	current_mini = window.rev;
-		// 	current_mini_pos = -1 - idx;
-		// }
-		// else if (window.rev == window.fwd)
-		// {
-		// 	current_double_mini = true;
-		// }
 
 		// New minimizer
 		if (current_mini < minimizer)
@@ -438,7 +429,7 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 	uint64_t skmer_start = 0;
 
 	// Go through all the kmers to split super kmers
-	for(int64_t idx=k-m ; idx<=seq_size-m ; idx++)
+	for(int64_t idx=k-m+1 ; idx<=seq_size-m ; idx++)
 	{
 		window.next_char();
 

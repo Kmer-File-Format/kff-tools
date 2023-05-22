@@ -211,7 +211,7 @@ class TestBucketting(unittest.TestCase):
         txt = f"txt_test.txt"
         kff_raw = f"kff_raw_test.kff"
         kff_bucket = f"kff_bucket_test.kff"
-        kg.generate_sequences_file(txt, 1000, 32, size_max=42)
+        kg.generate_sequences_file(txt, 10000, 32, size_max=42)
         # kg.generate_sequences_file(txt, 1, 32, size_max=32)
 
         # Prepare a file with sections
