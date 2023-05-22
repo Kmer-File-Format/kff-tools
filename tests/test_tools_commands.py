@@ -315,5 +315,46 @@ class TestCompaction(unittest.TestCase):
         os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}* {kff_compacted}* {kff_disjoin}")
 
 
+    def test_sorted_compaction(self):
+        print(f"\n-- TestCompaction - sorted compaction")
+        print("  init - generate a random sequence file")
+        txt = "test.txt"
+        kff_raw = "raw_test.kff"
+        kff_disjoin = "disjoin_test.kff"
+        kff_bucket = "bucket_test.kff"
+        kff_compacted = "compact_test.kff"
+        kg.generate_sequences_file(txt, 10000, 32, size_max=42, max_count=255)
+
+        # Prepare a file with sections
+        print(f"  1/4 Generate the kff raw file.")
+        self.assertEqual(0, os.system(f"./bin/kff-tools instr -i {txt} -o {kff_raw} -k 32 -m 5 -d 1"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools disjoin -i {kff_raw} -o {kff_disjoin}"))
+
+        print(f"  2/4 Bucket the file")
+        self.assertEqual(0, os.system(f"./bin/kff-tools bucket -i {kff_disjoin} -o {kff_bucket} -m 5"))
+
+        print(f"  3/4 Compact kmers")
+        # print(f"./bin/kff-tools compact -i {kff_bucket} -o {kff_compacted}")
+        self.assertEqual(0, os.system(f"./bin/kff-tools compact -s -i {kff_bucket} -o {kff_compacted}"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools validate --infile {kff_compacted}"))
+        
+
+        print(f"  4/4 Compare outputs")
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -c -i {kff_raw} | sort > {kff_raw}_sorted.txt"))
+        self.assertEqual(0, os.system(f"./bin/kff-tools outstr -c -i {kff_compacted} | sort > {kff_compacted}_sorted.txt"))
+        stream = os.popen(f"diff {kff_raw}_sorted.txt {kff_compacted}_sorted.txt")
+        stream_val = stream.read()
+        stream.close()
+
+        if len(stream_val) > 0:
+            print("\n".join(stream_val.split("\n")[:10]), "\n[...]")
+
+        self.assertEqual(stream_val, "")
+
+
+        print("  clean the test area")
+        os.system(f"rm -r {txt} {kff_raw}* {kff_bucket}* {kff_compacted}* {kff_disjoin}")
+
+
 if __name__ == '__main__':
   unittest.main()
