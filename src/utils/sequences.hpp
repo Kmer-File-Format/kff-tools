@@ -115,8 +115,9 @@ public:
   uint64_t fwd;
   uint64_t rev;
 
-  uint8_t * seq;
-  uint64_t seq_idx;
+  const uint8_t * seq;
+  uint64_t seq_offset;
+  uint64_t idx;
 
   uint64_t window_size;
   uint64_t mask;
@@ -128,8 +129,9 @@ public:
    * @param window_size Size of the window (in nucleotides)
    * @param seq 2-bit encoded sequence.
    * @param sequence_offset Number of nucleotides to skip at the beginning of the sequence.
+   * @param encoding The 2-bits encoding used for the nucleotides.
    **/
-  SlidingWindow(uint64_t window_size, uint8_t * seq, uint64_t seq_offset, uint8_t encoding[4]);
+  SlidingWindow(uint64_t window_size, const uint8_t * seq, uint64_t seq_size, uint64_t seq_offset, uint8_t encoding[4]);
   /** Compute the next forward and reverse sequence. You have to be sure that there are remaining nucleotides in the sequence.
    **/
   void next_char();
@@ -218,7 +220,20 @@ public:
    * @return index of the minimizer in the sequence. If the minimizer is on the reverse side, the 
    * return value is (- 1 - index)
    **/
-  int64_t kmer_minimizer_compute(uint8_t * seq, uint64_t start_idx);
+  int64_t kmer_minimizer_compute(const uint8_t * seq, uint64_t seq_size, uint64_t start_idx);
+
+  /** Compute the position of the minimizer inside of the kmer starting at position start_idx
+   * @param seq A 2-bits encoded sequence of nucleotides
+   * @param seq_size Size of the sequence in nucleotides. If not multiple of 4, the first seq byte
+   * contains non used bits.
+   * @param start_idx First nucleotide to look at inside the sequence. Non used bits are 
+   * automatically skipped.
+   * @param mini_value Minimizer value
+   * @param multiple_mini True if the minimizer value is present at multiple spots
+   * @return index of the minimizer in the sequence. If the minimizer is on the reverse side, the 
+   * return value is (- 1 - index)
+   **/
+  int64_t kmer_minimizer_compute(const uint8_t * seq, uint64_t seq_size, uint64_t start_idx, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini);
 
   /** Get a vector of all the skmers in a sequence.
    * All the other methods of this class are called by this function.
@@ -228,6 +243,17 @@ public:
    * @param seq_size Sequence size in nucleotides.
    * 
    * @return A vector containing object of type skmer.
+   **/
+  std::vector<skmer> get_skmers_old(const uint8_t * seq, const uint seq_size);
+
+  /** Get a vector of all the skmers in a sequence.
+   * All the other methods of this class are called by this function.
+   * No precomputation needed.
+   * 
+   * @param seq Sequence to analyse
+   * @param seq_size Sequence size in nucleotides.
+   * 
+   * @return A vector containing all superkmer coordinates.
    **/
   std::vector<skmer> get_skmers(const uint8_t * seq, const uint seq_size);
 };

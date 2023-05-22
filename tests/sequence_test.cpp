@@ -42,14 +42,13 @@ const lest::test module[] = {
 
                 for (uint64_t i(0) ; i<num_sequences ; i++)
                 {
-                    uint64_t seq_offset = (4 - (sequences[i].length() % 4)) % 4;
                     uint8_t bin[2];
                     bz.translate(sequences[i], sequences[i].length(), bin);
-                    int64_t position = ms.kmer_minimizer_compute(bin, seq_offset);
+                    int64_t position = ms.kmer_minimizer_compute(bin, sequences[i].length(), 0);
                     if (position >= 0)
-                        EXPECT( positions[i] + static_cast<int64_t>(seq_offset) == position );
+                        EXPECT( positions[i] == position );
                     else
-                        EXPECT( positions[i] - static_cast<int64_t>(seq_offset) == position );
+                        EXPECT( positions[i] == position );
                 }
             }
 
@@ -75,14 +74,13 @@ const lest::test module[] = {
 
                 for (uint64_t i(0) ; i<num_sequences ; i++)
                 {
-                    uint64_t seq_offset = (4 - (sequences[i].length() % 4)) % 4;
                     uint8_t bin[2];
                     bz.translate(sequences[i], sequences[i].length(), bin);
-                    int64_t position = ms.kmer_minimizer_compute(bin, seq_offset);
+                    int64_t position = ms.kmer_minimizer_compute(bin, sequences[i].length(), 0);
                     if (position >= 0)
-                        EXPECT( positions[i] + static_cast<int64_t>(seq_offset) == position );
+                        EXPECT( positions[i] == position );
                     else
-                        EXPECT( positions[i] - static_cast<int64_t>(seq_offset) == position );
+                        EXPECT( positions[i] == position );
                 }
             }
 
@@ -163,8 +161,11 @@ const lest::test module[] = {
             SECTION( "Skmer get" )
             {
                 cout << "\t\tSkmers list" << endl;
+                // CATTGCA k:5 m:3
+                // CATTGC  mini:AAT
+                //   TTGCA mini:CAA
 
-                skmer awaited_skmers[] = {{0, k, 1, 0b001010}, {2, k+1, 2, 0b101011}};
+                skmer awaited_skmers[] = {{0, 5, -2, 0b000010}, {2, 6, -3, 0b010000}};
                 vector<skmer> skmers = ms.get_skmers(bin, seq.length());
 
                 EXPECT( skmers.size() == 2u );
