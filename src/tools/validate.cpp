@@ -1,7 +1,9 @@
 #include <vector>
 #include <string>
+#include <cstring>
 
 #include "validate.hpp"
+#include "sequences.hpp"
 
 
 using namespace std;
@@ -11,6 +13,7 @@ using namespace std;
 Validate::Validate() : input_filename(" ")
 										 , index_only(false)
 										 , verbose(false)
+										 , sort_verif(false)
 {};
 
 void Validate::cli_prepare(CLI::App * app) {
@@ -21,6 +24,7 @@ void Validate::cli_prepare(CLI::App * app) {
 
 	subapp->add_flag("--index-only", index_only, "Restrict the verification to the index only.");
 	subapp->add_flag("-v, --verbose", verbose, "Print all the validation process instead of only unexpected values.");
+	subapp->add_flag("-s, --is-sorted", sort_verif, "Verify if the kmers in each seactions are sorted. The tool looks for encoding order. For R sections, blocks have to be composed of 1 kmer. For M sections, the verification is done by column. The comparison is done between kmers sharing the same minimizer position.");
 }
 
 void Validate::exec() {
@@ -123,6 +127,7 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 	uint k = infile.global_vars["k"];
 	uint max = infile.global_vars["max"];
 	uint data_size = infile.global_vars["data_size"];
+	bool verif_sorting = this->sort_verif;
 
 	if (verbose) {
 		cout << "Start Byte " << sr.beginning << endl;
@@ -130,7 +135,10 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 	}
 
 	uint max_nucl = k + max - 1;
-	uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
+	uint64_t seq_max_bytes = (max_nucl + 3) / 4;
+	uint8_t * seq_bytes = new uint8_t[seq_max_bytes];
+	uint8_t * prev_bytes = new uint8_t[seq_max_bytes];
+	memset(prev_bytes, 0, seq_max_bytes);
 	uint8_t * data_bytes = new uint8_t[data_size * max];
 
 	for (uint64_t i=0 ; i<sr.nb_blocks ; i++) {
@@ -140,9 +148,33 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 		}
 		uint nb_kmers = sr.read_compacted_sequence(seq_bytes, data_bytes);
 
-		if (nb_kmers == 0) {
+		if (nb_kmers == 0)
+		{
 			cerr << "Block containing 0 kmer detected." << endl;
 			exit(1);
+		}
+		// Sort verif
+		else if (verif_sorting)
+		{
+			if (nb_kmers > 1)
+			{
+				cerr << "WARNING: R block at position " << sr.beginning << " not sorted." << endl;
+				cerr << "\tcause: compacted kmers cannot be sorted" << endl;
+				verif_sorting = false;
+			}
+			else
+			{
+				int comp = sequence_compare( prev_bytes, k, 0, k-1,
+                                             seq_bytes , k, 0, k-1 );
+				if (comp > 0)
+				{
+					cerr << "WARNING: R block at position " << sr.beginning << " not sorted." << endl;
+					cerr << "\tcause: kmers not in the encoging order:" << endl;
+					cerr << strif.translate(prev_bytes, k) << endl;
+					cerr << strif.translate(seq_bytes, k) << endl;
+					verif_sorting = false;
+				}
+			}
 		}
 
 		if (verbose) {
@@ -166,9 +198,14 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 				cout << endl;
 			}
 		}
+
+		uint8_t * tmp = prev_bytes;
+		prev_bytes = seq_bytes;
+		seq_bytes = tmp;
 	}
 
 	delete[] seq_bytes;
+	delete[] prev_bytes;
 	delete[] data_bytes;
 
 	return true;

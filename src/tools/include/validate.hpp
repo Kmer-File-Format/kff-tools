@@ -15,6 +15,7 @@ private:
 	std::string input_filename;
 	bool index_only;
 	bool verbose;
+	bool sort_verif;
 	Stringifyer strif;
 
 public:
