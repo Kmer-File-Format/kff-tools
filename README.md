@@ -9,7 +9,7 @@ Each following part describes one of these tools.
 ## Install
 
     git clone https://github.com/Kmer-File-Format/kff-tools.git --recursive
-    mkdir build && cd build && cmake .. && make -j 4
+    cd kff-tools && mkdir build && cd build && cmake .. && make -j 4
 
 
 ## `kff-tools instr`
