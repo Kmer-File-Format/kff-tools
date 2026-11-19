@@ -158,35 +158,42 @@ string Stringifyer::translate(uint64_t sequence, const size_t nucl_length) const
 
 
 Binarizer::Binarizer(const uint8_t encoding[4]) {
+	memset(this->multi_lookup, 0, sizeof(this->multi_lookup));
 	for (uint pos=0 ; pos<4 ; pos++) {
-		this->multi_lookup[pos]['A'] = (encoding[0] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['a'] = (encoding[0] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['C'] = (encoding[1] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['c'] = (encoding[1] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['G'] = (encoding[2] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['g'] = (encoding[2] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['T'] = (encoding[3] & 0b11) << (6 - 2 * pos);
-		this->multi_lookup[pos]['t'] = (encoding[3] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'A'] = (encoding[0] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'a'] = (encoding[0] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'C'] = (encoding[1] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'c'] = (encoding[1] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'G'] = (encoding[2] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'g'] = (encoding[2] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'T'] = (encoding[3] & 0b11) << (6 - 2 * pos);
+		this->multi_lookup[pos][(uint8_t)'t'] = (encoding[3] & 0b11) << (6 - 2 * pos);
 	}
 }
 
 
-void Binarizer::translate(std::string sequence, uint seq_size, uint8_t * binarized) {
+void Binarizer::translate(const std::string & sequence, uint seq_size, uint8_t * binarized) const {
+	this->translate(sequence.c_str(), seq_size, binarized);
+}
+
+
+void Binarizer::translate(const char * sequence, uint seq_size, uint8_t * binarized) const {
+	const uint8_t * chars = (const uint8_t *)sequence;
 	uint bytes_needed = (seq_size + 3) / 4;
 
 	// First Byte
 	binarized[0] = 0;
 	for (uint p=(4-(seq_size%4))%4, n=0 ; p<4 ; p++, n++) {
-		binarized[0] |= this->multi_lookup[p][sequence[n]];
+		binarized[0] |= this->multi_lookup[p][chars[n]];
 	}
 
 	// Following bytes
 	uint offset = ((seq_size-1) % 4) + 1;
 	for (uint b=1 ; b<bytes_needed ; b++) {
-		binarized[b] = this->multi_lookup[0][sequence[offset + 4 * (b-1)]];
-		binarized[b] |= this->multi_lookup[1][sequence[offset + 4 * (b-1) + 1]];
-		binarized[b] |= this->multi_lookup[2][sequence[offset + 4 * (b-1) + 2]];
-		binarized[b] |= this->multi_lookup[3][sequence[offset + 4 * (b-1) + 3]];
+		const uint8_t * quad = chars + offset + 4 * (b-1);
+		binarized[b] = this->multi_lookup[0][quad[0]]
+		             | this->multi_lookup[1][quad[1]]
+		             | this->multi_lookup[2][quad[2]]
+		             | this->multi_lookup[3][quad[3]];
 	}
 }
-

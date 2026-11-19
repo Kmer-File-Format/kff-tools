@@ -100,8 +100,9 @@ public:
 
 class Binarizer {
 private:
-	std::map<std::string, uint8_t> lookup;
-	std::map<char, uint8_t> multi_lookup[4];
+	// Value of each character at each of the 4 positions of a byte.
+	// Characters other than ACGTacgt have the value 0.
+	uint8_t multi_lookup[4][256];
 
 public:
 	/**
@@ -118,7 +119,8 @@ public:
 		* @param binarized array where the binary version is stored.
 		* The space must be allocated outside of the function.
 		*/
-	void translate(std::string sequence, uint seq_size, uint8_t * binarized);
+	void translate(const std::string & sequence, uint seq_size, uint8_t * binarized) const;
+	void translate(const char * sequence, uint seq_size, uint8_t * binarized) const;
 };
 
 #endif
