@@ -6,9 +6,18 @@ k = 21, 31 and 63) and record the SHA-256 of every output file and of the
 standard output. Comparing these hashes with `reference.tsv` proves that a
 modified version still produces **bit-identical** outputs.
 
-`reference.tsv` was produced by kff-tools `9b90270` (main) with kff-cpp-api
-`49dd236`. The times and memory peaks it contains were measured on an Intel
-Core Ultra 7 165H and are only indicative.
+`reference.tsv` was produced by kff-tools `83fff4d` (optimisations and
+fixes) with kff-cpp-api `b733a09`. Its times and memory peaks were measured
+on an Intel Core Ultra 7 165H on AC power, with no other load, and are only
+indicative.
+
+`reference_9b90270.tsv` holds the outputs of the version before the
+optimisations and fixes (kff-tools `9b90270`, kff-cpp-api `49dd236`), with
+their k-mer content. The fixes changed the bytes of 12 outputs (choice of the
+bucket of some k-mers, and the outputs computed from these files) but their
+k-mer content is the same, except for `compact_s_kmers_k63`: the previous
+version lost 82 k-mers and created 82 k-mers that were not in its input.
+Every compacted file of the reference has the k-mer content of its input.
 
 ## Prepare the data (once)
 
