@@ -934,7 +934,8 @@ uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const Mi
 	uint64_t nb_blocks = 0;
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
-	uint mini_pos_size = (static_cast<uint>(ceil(log2(encoder.max + k - m))) + 7) / 8;
+	// Width of the minimizer positions in the kmer buffer (computed from the input section)
+	uint mini_pos_size = this->mini_pos_size;
 
 	uint max_skmer_bytes = (2 * (k - m) + 3) / 4;
 	uint8_t * skmer_buffer = new uint8_t[max_skmer_bytes + 1];
