@@ -624,6 +624,13 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_
         return {};
     }
 
+	// Candidates increasing on both sides (frequent): they are the only longest chain
+	bool increasing = true;
+	for (size_t i=1 ; i<candidates.size() and increasing ; i++)
+		increasing = candidates[i].first > candidates[i-1].first and candidates[i].second > candidates[i-1].second;
+	if (increasing)
+		return candidates;
+
     Colinear colinear(candidates);
     colinear.compute_scores(candidates);
     

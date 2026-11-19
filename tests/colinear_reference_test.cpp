@@ -8,6 +8,7 @@
 
 #include "lest.hpp"
 #include "colinear.hpp"
+#include "compact.hpp"
 
 using namespace std;
 
@@ -77,7 +78,41 @@ const lest::test module[] = {
 			EXPECT( same_longest );
 		}
 	},
+	CASE("Compact::colinear_chaining gives the longest chain of Colinear") {
+		mt19937_64 rnd(53);
+		Compact comp;
+		for (int test = 0; test < 4000; test++) {
+			// Candidates as pair_kmers() gives them: sorted by first, then second. Some of them
+			// increasing on both sides, possibly with a few disorders.
+			const size_t nb = 1 + rnd() % (test % 10 == 0 ? 500 : 30);
+			vector<PairInt> candidates;
+			if (test % 2 == 0) {
+				uint64_t first = rnd() % 3, second = rnd() % 3;
+				for (size_t i = 0; i < nb; i++) {
+					candidates.emplace_back(first, second);
+					first += 1 + rnd() % 2;
+					second += (test % 4 == 0 and rnd() % 50 == 0) ? 0 : 1 + rnd() % 2;
+				}
+			} else {
+				// nb_first * nb_second > nb: enough distinct pairs
+				candidates = random_pairs(rnd, nb, 2 + nb / (1 + rnd() % 3), nb + 2);
+			}
+			sort(candidates.begin(), candidates.end(), [](const PairInt & a, const PairInt & b) {
+				return a.first != b.first ? a.first < b.first : a.second < b.second;
+			});
+
+			vector<PairInt> pairs = candidates;
+			Colinear colinear(pairs);
+			colinear.compute_scores(pairs);
+			const vector<PairInt> expected = colinear.longest_chain();
+
+			vector<PairInt> given = candidates;
+			const bool same_chain = comp.colinear_chaining(given) == expected;
+			EXPECT( same_chain );
+		}
+	},
 };
+
 
 extern lest::tests & specification();
 
