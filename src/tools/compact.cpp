@@ -159,7 +159,8 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 
 
-    // 1 - Load the input section
+    // 1 - Load the input section (the kmers of the previous sections are not needed any more)
+	this->next_free = 0;
 	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(ism);
 	
 	// 2 - Compact kmers
