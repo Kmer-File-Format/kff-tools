@@ -65,6 +65,11 @@ public:
 	 * @param pair Pair to update
 	 **/
 	void update_score(PairInt & pair);
+	/** Max score of the leaves on the left of the leaf idx (0 if none is scored). The leftmost
+	 * subtree that holds this score is returned in leftmost_subtree. */
+	uint64_t left_max(uint64_t idx, uint64_t & leftmost_subtree);
+	/** Leftmost leaf of the subtree with the given score (the score of the subtree) */
+	uint64_t leftmost_leaf(uint64_t subtree, uint64_t score);
 
 	/**
 	 **/

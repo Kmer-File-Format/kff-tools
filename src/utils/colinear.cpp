@@ -38,13 +38,107 @@ Colinear::~Colinear()
 
 void Colinear::compute_scores(vector<PairInt> & pairs)
 {
-	// Update the pair scores one by one
-	sort(pairs.begin(), pairs.end());
-	for (PairInt & p : pairs)
+	// Same result as calling update_score() for each pair in the (first, second) order, in
+	// O(log n) per pair.
+	//
+	// When update_score() processes a pair (a, b), the scored leaves on its left are the pairs
+	// (f, s) with f < a and s < b (compatible) and the previous pairs of its group (a, s) with
+	// s < b (incompatible). update_score() looks, among the leaves with the max score M, for the
+	// leftmost compatible one; if all of them are incompatible, the pair gets the chain of the
+	// rightmost one. The pairs of a group are therefore processed together: their scores are
+	// added to the tree at the end of the group, so that the tree only contains compatible
+	// leaves, and the group max is tracked apart.
+	sort(pairs.begin(), pairs.end(), [](const PairInt & a, const PairInt & b) {
+		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	});
+
+	const uint64_t no_leaf = this->nc_tree.size();
+	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
+	size_t group_start = 0;
+	while (group_start < pairs.size())
 	{
-		// Update score
-		this->update_score(p);
+		size_t group_end = group_start;
+		while (group_end < pairs.size() and pairs[group_end].first == pairs[group_start].first)
+			group_end += 1;
+
+		group.clear();
+		// Max score in the group and rightmost leaf with that score (the group leaves are in
+		// increasing tree order)
+		uint64_t group_max = 0;
+		uint64_t group_max_leaf = no_leaf;
+		for (size_t i=group_start ; i<group_end ; i++)
+		{
+			uint64_t leaf = this->tree_idxs[pairs[i]];
+			uint64_t subtree = no_leaf;
+			uint64_t left_score = this->left_max(leaf, subtree);
+			uint64_t score = 1;
+
+			if (left_score > 0 and left_score >= group_max)
+			{
+				// Leftmost compatible leaf with the max score
+				this->chains[leaf/2] = this->leftmost_leaf(subtree, left_score);
+				score += left_score;
+			}
+			else if (group_max > 0)
+			{
+				// All the leaves with the max score are in the group
+				this->chains[leaf/2] = this->chains[group_max_leaf/2];
+				if (this->chains[leaf/2] < no_leaf)
+					score += this->nc_tree[this->chains[leaf/2]].second;
+			}
+
+			group.emplace_back(leaf, score);
+			if (score >= group_max)
+			{
+				group_max = score;
+				group_max_leaf = leaf;
+			}
+		}
+
+		for (const pair<uint64_t, uint64_t> & leaf_score : group)
+			this->propagate_up(leaf_score.first, leaf_score.second);
+		group_start = group_end;
 	}
+}
+
+
+uint64_t Colinear::left_max(uint64_t idx, uint64_t & leftmost_subtree)
+{
+	uint64_t max_score = 0;
+	leftmost_subtree = this->nc_tree.size();
+
+	// Left subtrees met when going up are further and further on the left: the last one with
+	// the max score is the leftmost.
+	uint64_t up = this->up_tree(idx);
+	while (up < this->nc_tree.size())
+	{
+		if (this->is_right(idx))
+		{
+			uint64_t left = this->left_subtree(up);
+			uint64_t score = this->nc_tree[left].second;
+			if (score > 0 and score >= max_score)
+			{
+				max_score = score;
+				leftmost_subtree = left;
+			}
+		}
+		idx = up;
+		up = this->up_tree(idx);
+	}
+
+	return max_score;
+}
+
+
+uint64_t Colinear::leftmost_leaf(uint64_t idx, uint64_t score)
+{
+	// Go down, on the left as soon as the left subtree has the score
+	while (__builtin_ctz(~idx) != 0)
+	{
+		uint64_t left = this->left_subtree(idx);
+		idx = this->nc_tree[left].second == score ? left : this->right_subtree(idx);
+	}
+	return idx;
 }
 
 
