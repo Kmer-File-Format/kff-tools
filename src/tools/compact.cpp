@@ -722,14 +722,60 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		kmer_value(column1[i], nb_nucl, high, low);
 		xs[i] = Symbol::make(high & mask_hi, low & mask_lo, i);
 	}
-	// Columns of the second column sorted by symbol, then position
-	index.resize(column2.size());
+
+	// Groups of the kmers of the second column with the same symbol (hash table of the symbols:
+	// index holds the symbol of each slot, table_groups its group), numbered by first column
+	const uint64_t none = numeric_limits<uint64_t>::max();
+	vector<uint64_t> & group_of_column = buffers.group_of_column;
+	vector<uint64_t> & group_start = buffers.group_start;
+	vector<uint64_t> & group_columns = buffers.group_columns;
+	vector<uint64_t> & group_of_row = buffers.group_of_row;
+	vector<uint64_t> & table_groups = buffers.table_groups;
+	uint table_bits = 4;
+	while ((uint64_t(1) << table_bits) < 2 * column2.size())
+		table_bits += 1;
+	const uint64_t table_mask = (uint64_t(1) << table_bits) - 1;
+	index.resize(table_mask + 1);
+	table_groups.assign(table_mask + 1, none);
+	// Group of a symbol (none if absent and not inserted)
+	auto find_group = [&](const Symbol & symbol, bool insert) -> uint64_t {
+		uint64_t slot = symbol.hash() >> (64 - table_bits);
+		while (table_groups[slot] != none) {
+			if (index[slot].same(symbol))
+				return table_groups[slot];
+			slot = (slot + 1) & table_mask;
+		}
+		if (not insert)
+			return none;
+		index[slot] = symbol;
+		table_groups[slot] = group_start.size();
+		group_start.push_back(0);
+		return table_groups[slot];
+	};
+	group_start.clear();
+	group_of_column.resize(column2.size());
+	for (size_t j=0 ; j<column2.size() ; j++) {
+		const uint64_t group = find_group(prefix_symbol(column2[j], j), true);
+		group_of_column[j] = group;
+		group_start[group] += 1;
+	}
+	// Columns of each group, in increasing order
+	uint64_t sum = 0;
+	for (uint64_t & start : group_start) {
+		const uint64_t count = start;
+		start = sum;
+		sum += count;
+	}
+	group_start.push_back(sum);
+	group_columns.resize(column2.size());
 	for (size_t j=0 ; j<column2.size() ; j++)
-		index[j] = prefix_symbol(column2[j], j);
-	sort(index.begin(), index.end());
+		group_columns[group_start[group_of_column[j]]++] = j;
+	// group_start[g] is now the end of the group g: shift back
+	for (size_t g=group_start.size() - 1 ; g-- > 0 ; )
+		group_start[g + 1] = group_start[g];
+	group_start[0] = 0;
 
 	// Thresholds and their changes (row, column, level, previous change of the level)
-	const uint64_t none = numeric_limits<uint64_t>::max();
 	vector<uint64_t> & thresholds = buffers.thresholds;
 	vector<uint64_t> & level_head = buffers.level_head;
 	vector<Compact::ChainChange> & changes = buffers.changes;
@@ -747,18 +793,18 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		level_head[level] = changes.size() - 1;
 	};
 
-	size_t match_begin = 0, match_end = 0;      // matches of the current symbol in index
+	size_t match_begin = 0, match_end = 0;      // matches of the current symbol in group_columns
 	size_t previous_begin = 0, previous_end = 0;  // changes of the previous row
+	group_of_row.resize(xs.size());
 	for (size_t i=0 ; i<xs.size() ; i++) {
 		const bool same = i > 0 and xs[i].same(xs[i - 1]);
-		if (not same) {
-			// First entry of the symbol of the row in the index
-			Symbol first = xs[i];
-			first.pos = 0;
-			match_begin = lower_bound(index.begin(), index.end(), first) - index.begin();
-			match_end = match_begin;
-			while (match_end < index.size() and index[match_end].same(first))
-				match_end += 1;
+		if (same)
+			group_of_row[i] = group_of_row[i - 1];
+		else {
+			const uint64_t group = find_group(xs[i], false);
+			group_of_row[i] = group;
+			match_begin = group == none ? 0 : group_start[group];
+			match_end = group == none ? 0 : group_start[group + 1];
 		}
 		const size_t row_begin = changes.size();
 		if (match_begin == match_end) {
@@ -778,10 +824,10 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 				size_t lo = match_begin, hi = match_end;
 				while (lo < hi) {
 					const size_t mid = (lo + hi) / 2;
-					if (index[mid].pos > value) hi = mid; else lo = mid + 1;
+					if (group_columns[mid] > value) hi = mid; else lo = mid + 1;
 				}
-				if (lo < match_end and (level + 1 == thresholds.size() or index[lo].pos < thresholds[level + 1]))
-					pending.emplace_back(level + 1, index[lo].pos);
+				if (lo < match_end and (level + 1 == thresholds.size() or group_columns[lo] < thresholds[level + 1]))
+					pending.emplace_back(level + 1, group_columns[lo]);
 			}
 			// The new level (if any) is the highest one: applied last
 			sort(pending.begin(), pending.end());
@@ -790,7 +836,7 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		} else {
 			// Matches by decreasing column: each one can lower the threshold of its level
 			for (size_t idx=match_end ; idx-- > match_begin ; ) {
-				const uint64_t column = index[idx].pos;
+				const uint64_t column = group_columns[idx];
 				if (thresholds.empty() or column > thresholds.back()) {
 					// After all the thresholds: new level
 					record(i, thresholds.size(), column);
@@ -815,9 +861,9 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		while (changes[c].row >= row_limit)
 			c = changes[c].prev;
 		const uint64_t column = changes[c].column;
-		const Symbol symbol = prefix_symbol(column2[column], 0);
+		const uint64_t group = group_of_column[column];
 		uint64_t row = row_limit - 1;
-		while (not xs[row].same(symbol))
+		while (group_of_row[row] != group)
 			row -= 1;
 		chain[level] = make_pair(row, column);
 		row_limit = row;

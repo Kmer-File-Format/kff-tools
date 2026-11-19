@@ -52,6 +52,7 @@ struct ChainSymbol64 {
 	bool same(const ChainSymbol64 & o) const { return lo == o.lo; }
 	bool operator<(const ChainSymbol64 & o) const { return lo != o.lo ? lo < o.lo : pos < o.pos; }
 	static ChainSymbol64 make(uint64_t, uint64_t lo, uint64_t pos) { return ChainSymbol64{lo, pos}; }
+	uint64_t hash() const { return lo * 0x9E3779B97F4A7C15ULL; }
 };
 
 struct ChainSymbol128 {
@@ -65,6 +66,7 @@ struct ChainSymbol128 {
 		return pos < o.pos;
 	}
 	static ChainSymbol128 make(uint64_t hi, uint64_t lo, uint64_t pos) { return ChainSymbol128{hi, lo, pos}; }
+	uint64_t hash() const { return (lo ^ (hi * 0xBF58476D1CE4E5B9ULL)) * 0x9E3779B97F4A7C15ULL; }
 };
 
 class Compact: public KffTool {
@@ -215,6 +217,9 @@ public:
 		uint64_t row, column, level, prev;
 	};
 	struct ChainBuffers {
+		// Groups of the second column (same symbol): group of each column, first column of each
+		// group in columns, columns of the groups in increasing order, group of each row
+		std::vector<uint64_t> group_of_column, group_start, group_columns, group_of_row, table_groups;
 		std::vector<uint64_t> thresholds, level_head;
 		std::vector<ChainChange> changes;
 		std::vector<std::pair<uint64_t, uint64_t> > pending;
