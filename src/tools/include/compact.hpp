@@ -68,6 +68,11 @@ public:
 	// Buffers of write_path(), kept from path to path
 	std::vector<uint8_t> skmer_bytes;
 	std::vector<uint8_t> skmer_data;
+	// Buffers of sorted_assembly(), kept from section to section: candidate links of 2
+	// columns, index of pair_kmers() and links of each column to the next one
+	std::vector<std::pair<uint64_t, uint64_t> > candidates;
+	std::vector<std::pair<uint64_t, uint64_t> > pair_index;
+	std::vector<std::vector<std::pair<uint64_t, uint64_t> > > links;
 
     Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
@@ -156,6 +161,9 @@ public:
 	 * their original vector.
 	 **/
 	std::vector<std::pair<uint64_t, uint64_t> > pair_kmers(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2) const;
+	/** Same, the pairs are written in pairs (index: buffer of the function) */
+	void pair_kmers(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2,
+	                std::vector<std::pair<uint64_t, uint64_t> > & pairs, std::vector<std::pair<uint64_t, uint64_t> > & index) const;
 
 	/** Performs a Longest increasing subsequence on a sorted vector of potential kmer overlaps.
 	 * The goal here is to select the maximum number of links (to maximize the compaction) preserving
@@ -168,6 +176,8 @@ public:
 	 * @return The list of selected links. All other links are removed to keep the order.
 	 **/
 	std::vector<std::pair<uint64_t, uint64_t> > colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates) const;
+	/** Same, the chain is written in chain (candidates can be modified) */
+	void colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates, std::vector<std::pair<uint64_t, uint64_t> > & chain) const;
 
 	/** From the kmer matrix and the list of all the colinear chained pairs of kmers, generate the ordered list of superkmers.
 	 * 

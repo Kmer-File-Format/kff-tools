@@ -582,8 +582,16 @@ static inline void kmer_value(const uint8_t * kmer, uint nb_nucl, uint64_t & hig
 
 
 vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
+	vector<pair<uint64_t, uint64_t> > pairs, index;
+	this->pair_kmers(column1, column2, pairs, index);
+	return pairs;
+}
+
+
+void Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2,
+                         vector<pair<uint64_t, uint64_t> > & pairs, vector<pair<uint64_t, uint64_t> > & index) const {
 	const uint nb_nucl = k - m;
-    vector<pair<uint64_t, uint64_t> > pairs;
+	pairs.clear();
 	pairs.reserve(max(column1.size(), column2.size()));
 
 	// Hashes of the k-m-1 prefixes (second column) and suffixes (first column): their value
@@ -610,7 +618,7 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 
 	// Index the second column by their prefix hash: (hash, kmer position) sorted by hash, then
 	// by position (the candidates of a hash are tested in the column order)
-	vector<pair<uint64_t, uint64_t> > index;
+	index.clear();
 	index.reserve(column2.size());
 	for (uint64_t idx=0 ; idx<column2.size() ; idx++)
 		index.emplace_back(prefix_hash(column2[idx]), idx);
@@ -621,14 +629,19 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 	sort(index.begin(), index.end(), by_hash);
 
 
-	// Looks for suffix matches of the first column
+	// Looks for suffix matches of the first column. Equal kmers are next to each other in the
+	// sorted columns: the candidates of the previous hash are reused when the hash is the same.
+	auto first_candidate = index.begin();
+	uint64_t previous_hash = 0;
 	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
 		uint8_t * kmer = column1[idx];
 		uint64_t hash = suffix_hash(kmer);
 
 		// Test each candidate with the same hash
-		auto candidate = lower_bound(index.begin(), index.end(), make_pair(hash, uint64_t(0)), by_hash);
-		for ( ; candidate != index.end() and candidate->first == hash ; candidate++) {
+		if (idx == 0 or hash != previous_hash)
+			first_candidate = lower_bound(index.begin(), index.end(), make_pair(hash, uint64_t(0)), by_hash);
+		previous_hash = hash;
+		for (auto candidate = first_candidate ; candidate != index.end() and candidate->first == hash ; candidate++) {
 			uint64_t candidate_vect_idx = candidate->second;
             if (exact_hash or sequence_compare(
 						column2[candidate_vect_idx], nb_nucl, 0, nb_nucl-2,
@@ -638,8 +651,6 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 			}
 		}
 	}
-
-	return pairs;
 }
 
 
@@ -655,19 +666,29 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates) const {
+	vector<pair<uint64_t, uint64_t> > given = candidates;
+	vector<pair<uint64_t, uint64_t> > chain;
+	this->colinear_chaining(given, chain);
+	return chain;
+}
 
-    if (candidates.empty()) {
-        return {};
-    }
+
+void Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates, vector<pair<uint64_t, uint64_t> > & chain) const {
+	if (candidates.empty()) {
+		chain.clear();
+		return;
+	}
 
 	// Candidates increasing on both sides (frequent): they are the only longest chain
 	bool increasing = true;
 	for (size_t i=1 ; i<candidates.size() and increasing ; i++)
 		increasing = candidates[i].first > candidates[i-1].first and candidates[i].second > candidates[i-1].second;
-	if (increasing)
-		return candidates;
+	if (increasing) {
+		chain.swap(candidates);
+		return;
+	}
 
-	return colinear_longest_chain(candidates);
+	chain = colinear_longest_chain(candidates);
 }
 
 
@@ -837,22 +858,20 @@ void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths)
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
 
-    vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
-
-	// Pair columns
-	for (uint i=0 ; i<this->k-this->m ; i++) {
+	// Pair columns (the buffers are kept from section to section)
+	const uint nb_links = this->k - this->m;
+	this->links.resize(nb_links);
+	for (uint i=0 ; i<nb_links ; i++) {
 		// 2 - Find all the possible overlaps of kmers
-        vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
+		this->pair_kmers(kmers[i], kmers[i+1], this->candidates, this->pair_index);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
-		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
-
-		kmer_pairs.push_back(colinear_links);
+		this->colinear_chaining(this->candidates, this->links[i]);
 	}
 
 	// 4 - Finish the ordering by sorting skmers that could have been interchanged
 	paths.clear();
-	this->polish_sort(kmers, kmer_pairs, paths);
+	this->polish_sort(kmers, this->links, paths);
 }
 
 
