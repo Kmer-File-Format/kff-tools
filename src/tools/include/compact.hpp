@@ -73,6 +73,9 @@ public:
 	std::vector<std::pair<uint64_t, uint64_t> > candidates;
 	std::vector<std::pair<uint64_t, uint64_t> > pair_index;
 	std::vector<std::vector<std::pair<uint64_t, uint64_t> > > links;
+	// Kmer matrix of the section and number of kmers per column, kept from section to section
+	std::vector<std::vector<uint8_t *> > matrix;
+	std::vector<uint64_t> column_counts;
 
     Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
@@ -121,6 +124,8 @@ public:
 	
 	std::vector<std::vector<uint8_t *> > prepare_kmer_matrix(Section_Minimizer & sm);
 	std::vector<std::vector<uint8_t *> > prepare_kmer_matrix(const CompactSection & section);
+	/** Same, the matrix is filled in matrix (its columns are reused) */
+	void prepare_kmer_matrix(const CompactSection & section, std::vector<std::vector<uint8_t *> > & matrix);
 
 	/** Load the blocks of a minimizer section into memory.
 	 * @param outfile The output file: its current variables are the ones of the compacted section.

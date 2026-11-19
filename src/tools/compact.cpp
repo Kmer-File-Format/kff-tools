@@ -259,7 +259,8 @@ void Compact::compact_section(CompactSection & section) {
 
     // 1 - Load the input section (the kmers of the previous sections are not needed any more)
 	this->next_free = 0;
-	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(section);
+	vector<vector<uint8_t *> > & kmers_per_index = this->matrix;
+	this->prepare_kmer_matrix(section, kmers_per_index);
 	// write_paths() reads the minimizer positions with the width of the output section, which
 	// can be larger than the width used in the buffer: the bytes after the last kmer are then
 	// read. They are kept null, as they were when the buffer was never emptied (the loading
@@ -338,58 +339,74 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 
 
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(const CompactSection & sm) {
-	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
+	vector<vector<uint8_t *> > kmer_matrix;
+	this->prepare_kmer_matrix(sm, kmer_matrix);
+	return kmer_matrix;
+}
 
-	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
-    uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
 
-	// 1 - Load the input section
+void Compact::prepare_kmer_matrix(const CompactSection & sm, vector<vector<uint8_t *> > & kmer_matrix) {
+	const uint64_t nb_nucl = sm.k - sm.m;
+	const uint64_t kmer_bytes = (nb_nucl + 3) / 4;
+	const uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
+	const uint64_t record_size = kmer_bytes + sm.data_size + mini_pos_size;
+
+	// Number of kmers of each column: the kmers of a block are in consecutive columns
+	vector<uint64_t> & counts = this->column_counts;
+	counts.assign(nb_nucl + 2, 0);
+	uint64_t nb_kmers_total = 0;
+	for (const CompactSection::Block & block : sm.blocks) {
+		if (block.nb_kmers == 0)
+			continue;
+		if (block.mini_pos > nb_nucl or block.mini_pos + 1 < block.nb_kmers)
+			throw runtime_error("compact: minimizer position out of the kmers of a block");
+		counts[nb_nucl - block.mini_pos] += 1;
+		counts[nb_nucl - block.mini_pos + block.nb_kmers] -= 1;
+		nb_kmers_total += block.nb_kmers;
+	}
+	kmer_matrix.resize(nb_nucl + 1);
+	uint64_t column_count = 0;
+	for (uint64_t col=0 ; col<=nb_nucl ; col++) {
+		column_count += counts[col];
+		kmer_matrix[col].clear();
+		kmer_matrix[col].reserve(column_count);
+	}
+
+	// Buffer size: doubled until the kmers and 8 free bytes fit (as when it was doubled kmer by
+	// kmer), the new bytes are null. The kmers do not move any more: the matrix holds pointers.
+	if (nb_kmers_total > 0 and this->buffer_size - this->next_free < nb_kmers_total * record_size + 8) {
+		uint64_t new_size = this->buffer_size;
+		while (new_size - this->next_free < nb_kmers_total * record_size + 8)
+			new_size *= 2;
+		this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, new_size);
+		memset(this->kmer_buffer + this->buffer_size, 0, new_size - this->buffer_size);
+		this->buffer_size = new_size;
+	}
+
+	// Load the input section
 	for (const CompactSection::Block & block : sm.blocks) {
 		uint64_t mini_pos = block.mini_pos;
 		uint nb_kmers = block.nb_kmers;
 		const uint8_t * seq_buffer = sm.bytes.data() + block.offset;
-		const uint8_t * data_buffer = seq_buffer + (sm.k - sm.m + nb_kmers - 1 + 3) / 4;
+		const uint8_t * data_buffer = seq_buffer + (nb_nucl + nb_kmers - 1 + 3) / 4;
 
 		// Add kmer by index
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
-			uint kmer_pos = sm.k - (uint)sm.m - mini_pos + kmer_idx;
-
-			// Realloc if needed (8 bytes are kept free after the last kmer, see compact_section)
-			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size + 8) {
-				this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, this->buffer_size*2);
-				memset(this->kmer_buffer + this->buffer_size, 0, this->buffer_size);
-				this->buffer_size *= 2;
-			}
-
+			uint8_t * record = this->kmer_buffer + this->next_free;
 			// Copy kmer sequence
-			subsequence(seq_buffer, sm.k - sm.m + nb_kmers - 1, this->kmer_buffer + next_free, kmer_idx, kmer_idx + sm.k - sm.m - 1);
+			subsequence(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, kmer_idx + nb_nucl - 1);
 			// Copy data array
-			memcpy(this->kmer_buffer + next_free + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
+			memcpy(record + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
 			// Write mini position
 			uint kmer_mini_pos = mini_pos - kmer_idx;
-
-            for (int b=mini_pos_size-1 ; b>=0 ; b--) {
-				*(this->kmer_buffer + next_free + kmer_bytes + sm.data_size + b) = kmer_mini_pos & 0xFF;
+			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
+				record[kmer_bytes + sm.data_size + b] = kmer_mini_pos & 0xFF;
 				kmer_mini_pos >>= 8;
 			}
-			// Update
-			pos_matrix[kmer_pos].push_back(this->next_free);
-			next_free += kmer_bytes + sm.data_size + mini_pos_size;
+			kmer_matrix[nb_nucl - mini_pos + kmer_idx].push_back(record);
+			this->next_free += record_size;
 		}
 	}
-
-	// Transform the position matrix into the kmer matrix
-	vector<vector<uint8_t *> > kmer_matrix(sm.k - sm.m + 1, vector<uint8_t *>());
-	size_t idx = 0;
-
-	for (vector<long> & positions : pos_matrix) {
-		for (long pos : positions) {
-			kmer_matrix[idx].push_back(this->kmer_buffer + pos);
-		}
-		idx += 1;
-	}
-
-	return kmer_matrix;
 }
 
 
