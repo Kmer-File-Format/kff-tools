@@ -114,38 +114,44 @@ void Shuffle::shuffle(string input, string output) {
                     cerr << "new 'r' section found" << endl;
                     cerr << "Max sequence size: " << max_nucl << " data size: " << data_size<< endl;
 
-                    vector<pair<vector<uint8_t>,vector<uint8_t>>> everything;
+                    // All the blocks are stored in one array: sequence bytes (plus one
+                    // byte when the size is a multiple of 4, as before) then data.
+                    struct Block {
+                        uint64_t offset;
+                        uint32_t seq_size;
+                        uint32_t data_size;
+                    };
+                    vector<uint8_t> blocks_bytes;
+                    vector<Block> blocks;
 
                     // Open sections
                     Section_Raw in_section(&infile);
                     Section_Raw out_section(&outfile);
+                    blocks.reserve(in_section.nb_blocks);
 
                     // Read whole block and store everything inside a vector
                     for (uint i=0 ; i<in_section.nb_blocks ; i++) {
                         // Read the block.
-                        string seq;
                         int nb_kmers = in_section.read_compacted_sequence(seq_bytes, data_bytes);
                         int seq_len = k + nb_kmers - 1;
-                        //cerr << "Read seq of length: " << seq_len << " data size: " << data_size*nb_kmers << endl;
-                        vector<uint8_t> seq_vec(&seq_bytes[0],&seq_bytes[seq_len/4+1]);
-                        vector<uint8_t> data_vec(&data_bytes[0],&data_bytes[data_size*nb_kmers]);
-                        //cerr << "Converted to pair of lengths " << seq_vec.size() << " / " << data_vec.size() << endl;
-                        everything.push_back(make_pair(seq_vec,data_vec));
+                        blocks.push_back({blocks_bytes.size(), (uint32_t)(seq_len/4+1), (uint32_t)(data_size*nb_kmers)});
+                        blocks_bytes.insert(blocks_bytes.end(), &seq_bytes[0], &seq_bytes[seq_len/4+1]);
+                        blocks_bytes.insert(blocks_bytes.end(), &data_bytes[0], &data_bytes[data_size*nb_kmers]);
                     }
 
-                    // Shuffle the vector
+                    // Shuffle the vector (same permutation as when shuffling the blocks themselves)
                     std::srand(std::time(0));
-                    random_shuffle(everything.begin(),everything.end());
+                    random_shuffle(blocks.begin(),blocks.end());
 
                     // Write the vector to out block
-                    for (pair<vector<uint8_t>,vector<uint8_t>> elt : everything)
+                    const uint8_t * bytes = blocks_bytes.data();
+                    for (const Block & block : blocks)
                     {
-                        int nb_kmers =  elt.second.size() / data_size;
-                        //cerr << "Writing seq of length: " << k + nb_kmers - 1 << " data size: " << elt.second.size() << endl;
+                        int nb_kmers =  block.data_size / data_size;
                         out_section.write_compacted_sequence(
-                                elt.first.data(),
+                                (uint8_t *)bytes + block.offset,
                                 k + nb_kmers - 1,
-                                elt.second.data());
+                                (uint8_t *)bytes + block.offset + block.seq_size);
                     }
                     in_section.close();
                     out_section.close();
