@@ -715,53 +715,56 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 		assembly.emplace_back(nullptr, kmer);
 	}
 
+	// Kmers of the ith set sorted by suffix value. The sort is stable: kmers with the same
+	// value stay in their order of the set (the candidates are tested in this order).
+	struct Candidate {
+		uint64_t value;
+		uint8_t * kmer;
+		bool used;
+	};
+	vector<Candidate> index;
+
 	for (uint i=0 ; i<nb_nucl ; i++) {
 		// Index kmers in ith set
-		unordered_map<uint64_t, vector<uint8_t *> > index;
-		
+		index.clear();
 		for (uint8_t * kmer : kmers[i]) {
 			// Get the suffix
 			uint64_t val = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
-			// Add a new vector for this value
-			if (index.find(val) == index.end())
-				index[val] = vector<uint8_t *>();
-			// Add the kmer to the value list
-			index[val].push_back(kmer);
+			index.push_back({val, kmer, false});
 		}
+		stable_sort(index.begin(), index.end(), [](const Candidate & a, const Candidate & b) {
+			return a.value < b.value;
+		});
 
 		// link kmers from (i+1)th set to ith kmers.
 		for (uint8_t * kmer : kmers[i+1]) {
 			uint64_t val = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
+			auto candidate = lower_bound(index.begin(), index.end(), val, [](const Candidate & c, uint64_t v) {
+				return c.value < v;
+			});
 
-			if (index.find(val) == index.end()) {
-				// No kmer available for matching
+			bool chaining_found = false;
+			// verify complete matching for the remaining candidates kmers
+			for ( ; candidate != index.end() and candidate->value == val ; candidate++) {
+				if (candidate->used)
+					continue;
+				// If the kmers can be assembled
+				if (sequence_compare(
+							kmer, nb_nucl, 0, nb_nucl-2,
+							candidate->kmer, nb_nucl, 1, nb_nucl-1
+						) == 0) {
+					// Update status
+					chaining_found = true;
+					assembly.emplace_back(candidate->kmer, kmer);
+					// remove candidate from list
+					candidate->used = true;
+					// Quit candidate searching
+					break;
+				}
+			}
+			// If no assembly possible, create a new superkmer
+			if (not chaining_found) {
 				assembly.emplace_back(nullptr, kmer);
-			} else {
-				bool chaining_found = false;
-				uint candidate_pos = 0;
-				// verify complete matching for candidates kmers
-				for (uint8_t * candidate : index[val]) {
-					// If the kmers can be assembled
-					if (sequence_compare(
-								kmer, nb_nucl, 0, nb_nucl-2,
-								candidate, nb_nucl, 1, nb_nucl-1
-							) == 0) {
-						// Update status
-						chaining_found = true;
-						assembly.emplace_back(candidate, kmer);
-
-						// remove candidate from list
-						index[val].erase(index[val].begin()+candidate_pos);
-						// Quit candidate searching
-						break;
-					}
-
-					candidate_pos += 1;
-				}
-				// If no assembly possible, create a new superkmer
-				if (not chaining_found) {
-					assembly.emplace_back(nullptr, kmer);
-				}
 			}
 		}
 	}
@@ -783,23 +786,29 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 
 vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact) {
 	vector<vector<uint8_t *> > paths;
-	unordered_map<uint8_t *, uint> path_registry;
+	// Path of the last kmer of each path, indexed by the position of the kmer in the kmer
+	// buffer. 0 for the other kmers (the default value of the previous std::unordered_map).
+	const uint64_t record_size = this->bytes_compacted + this->data_size + this->mini_pos_size;
+	vector<uint> path_registry(this->next_free / record_size + 1, 0);
+	auto registry = [&](uint8_t * kmer) -> uint & {
+		return path_registry[(kmer - this->kmer_buffer) / record_size];
+	};
 
 	for (const pair<uint8_t *, uint8_t *> & p : to_compact) {
 		// First element of a compaction path
 		if (p.first == nullptr) {
-			path_registry[p.second] = paths.size();
+			registry(p.second) = paths.size();
 			paths.emplace_back(vector<uint8_t *>());
 
-			uint vec_idx = path_registry[p.second];
+			uint vec_idx = registry(p.second);
 			paths[vec_idx].push_back(p.second);
 		}
 		// Extending existing path
 		else {
-			uint vec_idx = path_registry[p.first];
+			uint vec_idx = registry(p.first);
 			paths[vec_idx].push_back(p.second);
-			path_registry.erase(p.first);
-			path_registry[p.second] = vec_idx;
+			registry(p.first) = 0;
+			registry(p.second) = vec_idx;
 		}
 	}
 
