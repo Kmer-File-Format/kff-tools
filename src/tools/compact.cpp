@@ -258,6 +258,11 @@ void Compact::compact_section(CompactSection & section) {
     // 1 - Load the input section (the kmers of the previous sections are not needed any more)
 	this->next_free = 0;
 	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(section);
+	// write_paths() reads the minimizer positions with the width of the output section, which
+	// can be larger than the width used in the buffer: the bytes after the last kmer are then
+	// read. They are kept null, as they were when the buffer was never emptied (the loading
+	// keeps 8 free bytes at the end of the buffer).
+	memset(this->kmer_buffer + this->next_free, 0, 8);
 	
 	// 2 - Compact kmers
 	vector<vector<uint8_t *> > paths;
@@ -345,8 +350,8 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(const CompactSection & s
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
 			uint kmer_pos = sm.k - (uint)sm.m - mini_pos + kmer_idx;
 
-			// Realloc if needed
-			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size) {
+			// Realloc if needed (8 bytes are kept free after the last kmer, see compact_section)
+			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size + 8) {
 				this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, this->buffer_size*2);
 				memset(this->kmer_buffer + this->buffer_size, 0, this->buffer_size);
 				this->buffer_size *= 2;
