@@ -11,12 +11,17 @@ typedef  std::pair<uint64_t, uint64_t> PairInt;
 typedef std::pair<PairInt, uint64_t> Node;
 
 struct hash_PairInt {
+    // The 2 values are mixed (splitmix64 finalizer): with first ^ second, the pairs of close
+    // indices had very few distinct hashes and the lookups became linear.
     size_t operator()(const PairInt& p) const
     {
-        if (p.first != p.second) {
-            return p.first ^ p.second;             
-        }
-        return p.first;
+        uint64_t x = p.first * 0x9E3779B97F4A7C15ULL + p.second;
+        x ^= x >> 30;
+        x *= 0xBF58476D1CE4E5B9ULL;
+        x ^= x >> 27;
+        x *= 0x94D049BB133111EBULL;
+        x ^= x >> 31;
+        return x;
     }
 };
 
