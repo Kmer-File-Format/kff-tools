@@ -61,6 +61,9 @@ private:
   string delimiter;
   string data_delimiter;
 
+  // Current line (kept to reuse its memory)
+  string line;
+
 public:
   TxtSeqStream(const std::string filename, const uint8_t encoding[4], uint k, uint data_size, string delim, string data_delim) 
       : fs(filename, std::fstream::in)
@@ -85,7 +88,6 @@ public:
 			return 0;
 
 		// read next sequence
-		string line;
 		getline(this->fs, line);
 		if (line.size() == 0)
 			return 0;
