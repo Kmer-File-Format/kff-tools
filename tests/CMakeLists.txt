@@ -25,3 +25,12 @@ target_include_directories(kff-tools-tests
 )
 
 add_test(NAME unit COMMAND kff-tools-tests)
+
+# Python functional tests (they call ./bin/kff-tools from the project root)
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_FOUND)
+    add_test(NAME functional
+        COMMAND ${Python3_EXECUTABLE} -m unittest discover -s tests
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    )
+endif()
