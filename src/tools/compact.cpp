@@ -587,6 +587,9 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	vector<Keyed> keyed;
 	vector<Keyed64> & keyed64 = this->sort_keys;
 	vector<Keyed64> & keyed64_tmp = this->sort_keys_tmp;
+	// The keys of the sorted columns are kept when they have 64 bits
+	this->column_keys_valid = this->k - this->m <= 32;
+	this->column_keys.resize(kmer_matrix.size());
 
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 		if (this->k - this->m > 64) {
@@ -631,8 +634,12 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 				sort(keyed64.begin(), keyed64.end(), [](const Keyed64 & a, const Keyed64 & b) {
 					return a.key < b.key;
 				});
-			for (size_t j=0 ; j<keyed64.size() ; j++)
+			vector<uint64_t> & keys = this->column_keys[i];
+			keys.resize(keyed64.size());
+			for (size_t j=0 ; j<keyed64.size() ; j++) {
 				kmer_matrix[i][j] = keyed64[j].kmer;
+				keys[j] = keyed64[j].key;
+			}
 			continue;
 		}
 
@@ -992,6 +999,12 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 
 void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs,
                           Paths & paths, PolishBuffers & buffers) const {
+	this->polish_sort(matrix, pairs, paths, buffers, nullptr);
+}
+
+
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs,
+                          Paths & paths, PolishBuffers & buffers, const vector<vector<uint64_t> > * keys) const {
 	const size_t nb_cols = matrix.size();
 	const uint64_t none = numeric_limits<uint64_t>::max();
 
@@ -1083,7 +1096,12 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 			return;
 		}
 		uint64_t high, low;
-		interleaved_value(kmer, 0, num_kmer_nucl, num_kmer_nucl - col, high, low);
+		if (keys != nullptr) {
+			// Same value as the sort key (no padding bit: the same nucleotides are read)
+			high = 0;
+			low = (*keys)[col][current_kmers[col]];
+		} else
+			interleaved_value(kmer, 0, num_kmer_nucl, num_kmer_nucl - col, high, low);
 		const uint shift = 128 - 2 * num_kmer_nucl;
 		if (shift >= 64) {
 			high = low << (shift - 64);
@@ -1188,9 +1206,11 @@ void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths)
 		this->colinear_chaining(this->candidates, this->links[i]);
 	}
 
-	// 4 - Finish the ordering by sorting skmers that could have been interchanged
+	// 4 - Finish the ordering by sorting skmers that could have been interchanged. Without padding
+	// bit (k - m multiple of 4), the interleaved values of polish_sort() are the sort keys.
 	paths.clear();
-	this->polish_sort(kmers, this->links, paths);
+	const bool same_values = this->column_keys_valid and (this->k - this->m) % 4 == 0;
+	this->polish_sort(kmers, this->links, paths, this->polish_buffers, same_values ? &this->column_keys : nullptr);
 }
 
 

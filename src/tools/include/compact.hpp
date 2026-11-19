@@ -96,6 +96,9 @@ public:
 		uint8_t * kmer;
 	};
 	std::vector<Keyed64> sort_keys, sort_keys_tmp;
+	// Keys of the columns sorted by the last sort_matrix() (valid up to 32 nucleotides)
+	std::vector<std::vector<uint64_t> > column_keys;
+	bool column_keys_valid = false;
 
 	// Buffers of write_path(), kept from path to path
 	std::vector<uint8_t> skmer_bytes;
@@ -255,6 +258,10 @@ public:
 	/** Same, the superkmers are appended to paths (buffers of the object) */
 	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths);
 	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths, PolishBuffers & buffers) const;
+	/** keys: interleaved values of the kmers (keys[col][row], 64 bits) instead of computing them, or
+	 * nullptr. They are the keys of sort_matrix() when k - m <= 32 is a multiple of 4. */
+	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths, PolishBuffers & buffers,
+	                 const std::vector<std::vector<uint64_t> > * keys) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 

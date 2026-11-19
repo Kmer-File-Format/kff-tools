@@ -267,6 +267,53 @@ const lest::test module[] = {
 			EXPECT( same_paths );
 		}
 	},
+
+	CASE("Compact::polish_sort with the sort keys gives the superkmers computed without them") {
+		mt19937_64 rnd(57);
+		for (int test = 0; test < 600; test++) {
+			// k - m multiple of 4 (no padding bit), up to 32
+			const uint nb_nucl = 4 * (1 + rnd() % 8);
+			Compact comp;
+			comp.m = 1 + rnd() % 10;
+			comp.k = comp.m + nb_nucl;
+			comp.data_size = rnd() % 2;
+			comp.mini_pos_size = 1;
+			comp.bytes_compacted = nb_nucl / 4;
+			// Kmers of each column with the minimizer position of the column, some of them equal
+			vector<vector<long> > positions(nb_nucl + 1);
+			vector<uint8_t> seq(nb_nucl / 4), data(1);
+			for (uint col = 0; col <= nb_nucl; col++)
+				for (size_t x = rnd() % (test % 10 == 0 ? 300 : 20); x > 0; x--) {
+					if (rnd() % 4 != 0)
+						for (uint8_t & b : seq) b = rnd() % (test % 3 == 0 ? 2 : 256);
+					data[0] = rnd();
+					positions[col].push_back(comp.add_kmer_to_buffer(seq.data(), data.data(), nb_nucl - col));
+				}
+			vector<vector<uint8_t *> > matrix(nb_nucl + 1);
+			for (uint col = 0; col <= nb_nucl; col++)
+				for (long pos : positions[col])
+					matrix[col].push_back(comp.kmer_buffer + pos);
+			if (matrix[0].empty() and matrix[nb_nucl].empty())
+				continue;
+			comp.sort_matrix(matrix);
+			EXPECT( comp.column_keys_valid );
+			vector<vector<pair<uint64_t, uint64_t> > > links(nb_nucl);
+			for (uint col = 0; col < nb_nucl; col++)
+				comp.chain_columns(matrix[col], matrix[col + 1], links[col]);
+
+			size_t total = 0;
+			for (const vector<uint8_t *> & column : matrix)
+				total += column.size();
+			if (total == 0)
+				continue;
+			Paths with_keys, without_keys;
+			Compact::PolishBuffers buffers;
+			comp.polish_sort(matrix, links, with_keys, buffers, &comp.column_keys);
+			comp.polish_sort(matrix, links, without_keys, buffers, nullptr);
+			const bool same_paths = with_keys.kmers == without_keys.kmers and with_keys.ends == without_keys.ends;
+			EXPECT( same_paths );
+		}
+	},
 };
 
 extern lest::tests & specification();
