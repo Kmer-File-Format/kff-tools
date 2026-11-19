@@ -732,7 +732,8 @@ void Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates, 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
 	Paths paths;
-	this->polish_sort(matrix, pairs, paths);
+	PolishBuffers buffers;
+	this->polish_sort(matrix, pairs, paths, buffers);
 	vector<vector<uint8_t *> > result(paths.size());
 	for (size_t i=0 ; i<paths.size() ; i++)
 		result[i].assign(paths.kmers.begin() + (i == 0 ? 0 : paths.ends[i - 1]), paths.kmers.begin() + paths.ends[i]);
@@ -740,12 +741,19 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 }
 
 
-void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs, Paths & paths) const {
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs, Paths & paths) {
+	this->polish_sort(matrix, pairs, paths, this->polish_buffers);
+}
+
+
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs,
+                          Paths & paths, PolishBuffers & buffers) const {
 	const size_t nb_cols = matrix.size();
 	const uint64_t none = numeric_limits<uint64_t>::max();
 
 	// Kmer ids: the kmer of the row r of the column c is col_start[c] + r
-	vector<uint64_t> col_start(nb_cols + 1, 0);
+	vector<uint64_t> & col_start = buffers.col_start;
+	col_start.assign(nb_cols + 1, 0);
 	for (size_t col=0 ; col<nb_cols ; col++)
 		col_start[col + 1] = col_start[col] + matrix[col].size();
 	const uint64_t nb_kmers = col_start[nb_cols];
@@ -753,16 +761,24 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 	// Unify kmers into skmers. The links between 2 columns are a colinear chain (increasing on
 	// both sides): a kmer is in at most one link on each side and the skmers are the paths of
 	// linked kmers, from column to column (lonely kmers are skmers of 1 kmer).
-	vector<uint64_t> next_kmer(nb_kmers, none);
-	vector<bool> has_prev(nb_kmers, false);
+	vector<uint64_t> & next_kmer = buffers.next_kmer;
+	vector<uint8_t> & has_prev = buffers.has_prev;
+	next_kmer.assign(nb_kmers, none);
+	has_prev.assign(nb_kmers, 0);
 	for (size_t col=0 ; col<pairs.size() ; col++)
 		for (const pair<uint64_t, uint64_t> & link : pairs[col]) {
 			next_kmer[col_start[col] + link.first] = col_start[col + 1] + link.second;
-			has_prev[col_start[col + 1] + link.second] = true;
+			has_prev[col_start[col + 1] + link.second] = 1;
 		}
 	// Skmer of each kmer, first kmer, its column and size of each skmer
-	vector<uint64_t> sk_of(nb_kmers);
-	vector<uint64_t> sk_first, sk_col, sk_size;
+	vector<uint64_t> & sk_of = buffers.sk_of;
+	vector<uint64_t> & sk_first = buffers.sk_first;
+	vector<uint64_t> & sk_col = buffers.sk_col;
+	vector<uint64_t> & sk_size = buffers.sk_size;
+	sk_of.resize(nb_kmers);
+	sk_first.clear();
+	sk_col.clear();
+	sk_size.clear();
 	for (size_t col=0 ; col<nb_cols ; col++)
 		for (uint64_t id=col_start[col] ; id<col_start[col + 1] ; id++) {
 			if (has_prev[id])
@@ -777,20 +793,28 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 			sk_col.push_back(col);
 			sk_size.push_back(size);
 		}
-	vector<bool>().swap(has_prev);
 
 	// Number of kmers of each skmer that are the first remaining kmer of their column (0 for the
 	// skmers already selected). A skmer can be selected when all its kmers are first.
-	vector<uint64_t> sk_counts(sk_first.size(), 0);
-	// Row of the first remaining kmer of each column
-	vector<size_t> current_kmers(nb_cols, 0);
+	vector<uint64_t> & sk_counts = buffers.sk_counts;
+	sk_counts.assign(sk_first.size(), 0);
+	// Row of the first remaining kmer of each column, its skmer and if the skmer can be selected
+	// (sk_counts[sk] == sk_size[sk], updated when the count of a skmer or the first kmer of a
+	// column changes)
+	vector<size_t> & current_kmers = buffers.current_kmers;
+	vector<uint64_t> & head_sk = buffers.head_sk;
+	vector<uint8_t> & head_ready = buffers.head_ready;
+	current_kmers.assign(nb_cols, 0);
+	head_sk.assign(nb_cols, 0);
+	head_ready.assign(nb_cols, 0);
 
 	// Interleaved values of the first remaining kmers: the kmers of the column c have their
 	// minimizer after num_kmer_nucl - c nucleotides (the bytes are read from their first bit, as
 	// interleaved() does). Up to 64 nucleotides, they are 128-bit integers aligned on the left.
 	const size_t num_kmer_nucl = this->k - this->m;
 	const bool use_values = num_kmer_nucl <= 64;
-	vector<pair<uint64_t, uint64_t> > current_values(use_values ? nb_cols : 0);
+	vector<pair<uint64_t, uint64_t> > & current_values = buffers.current_values;
+	current_values.assign(use_values ? nb_cols : 0, make_pair(uint64_t(0), uint64_t(0)));
 	vector<uint8_t *> memory;
 	vector<interleved_t> current_interleaves;
 	if (not use_values)
@@ -800,7 +824,15 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 		}
 	auto set_current = [&](size_t col) {
 		const uint64_t id = col_start[col] + current_kmers[col];
-		sk_counts[sk_of[id]] += 1;
+		const uint64_t sk = sk_of[id];
+		head_sk[col] = sk;
+		sk_counts[sk] += 1;
+		if (sk_counts[sk] == sk_size[sk]) {
+			// All the kmers of the skmer are first in their columns
+			for (size_t sk_column=sk_col[sk] ; sk_column<sk_col[sk]+sk_size[sk] ; sk_column++)
+				head_ready[sk_column] = 1;
+		} else
+			head_ready[col] = 0;
 		const uint8_t * kmer = matrix[col][current_kmers[col]];
 		if (not use_values) {
 			current_interleaves[col] = interleaved(kmer, memory[col], num_kmer_nucl, num_kmer_nucl - col);
@@ -849,7 +881,8 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 
 	// Columns in the order of the candidates: the one in the middle first, then alternate
 	// left-right
-	vector<size_t> candidate_order(nb_cols);
+	vector<size_t> & candidate_order = buffers.candidate_order;
+	candidate_order.resize(nb_cols);
 	for (size_t i=0 ; i<nb_cols ; i++)
 		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
 
@@ -861,18 +894,14 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 	while (remaining > 0) {
 		// Select the min first kmer whose skmer has all its kmers first (min_interleaved())
 		size_t selected = nb_cols;
-		for (size_t position : candidate_order) {
-			if (current_kmers[position] >= matrix[position].size())
-				continue;
-			const uint64_t sk = sk_of[col_start[position] + current_kmers[position]];
-			if (sk_counts[sk] == sk_size[sk] and (selected == nb_cols or inf_current(position, selected)))
+		for (size_t position : candidate_order)
+			if (head_ready[position] and (selected == nb_cols or inf_current(position, selected)))
 				selected = position;
-		}
 		if (selected == nb_cols)
 			throw runtime_error("compact: no superkmer can be selected (the links are not colinear)");
 
 		// Add the related skmer to the output
-		const uint64_t sk = sk_of[col_start[selected] + current_kmers[selected]];
+		const uint64_t sk = head_sk[selected];
 		sk_counts[sk] = 0;
 		// Jump over its kmers in the matrix
 		size_t col = sk_col[sk];
@@ -882,6 +911,8 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 			remaining -= 1;
 			if (current_kmers[col] < matrix[col].size())
 				set_current(col);
+			else
+				head_ready[col] = 0;
 		}
 		paths.close_path();
 	}

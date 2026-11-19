@@ -191,8 +191,17 @@ public:
 	 * @return The list of sorted linked kmers. They can be compacted in a skmers style.
 	 **/
 	std::vector<std::vector<uint8_t *> > polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs) const;
-	/** Same, the superkmers are appended to paths */
-	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths) const;
+	/** Buffers of polish_sort(), kept from section to section */
+	struct PolishBuffers {
+		std::vector<uint64_t> col_start, next_kmer, sk_of, sk_first, sk_col, sk_size, sk_counts, head_sk;
+		std::vector<uint8_t> has_prev, head_ready;
+		std::vector<size_t> current_kmers, candidate_order;
+		std::vector<std::pair<uint64_t, uint64_t> > current_values;
+	};
+	PolishBuffers polish_buffers;
+	/** Same, the superkmers are appended to paths (buffers of the object) */
+	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths);
+	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths, PolishBuffers & buffers) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 

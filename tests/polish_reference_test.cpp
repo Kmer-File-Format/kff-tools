@@ -204,6 +204,8 @@ const lest::test module[] = {
 
 	CASE("Compact::polish_sort gives the skmers of the original algorithm") {
 		mt19937_64 rnd(51);
+		// Object whose buffers are reused from call to call
+		Compact shared;
 		for (int test = 0; test < 3000; test++) {
 			const uint nb_nucl = 1 + rnd() % (test % 7 == 0 ? 70 : 20);
 			Compact comp;
@@ -252,6 +254,17 @@ const lest::test module[] = {
 			const vector<vector<uint8_t *> > skmers = comp.polish_sort(matrix, links);
 			const bool same_skmers = skmers == expected;
 			EXPECT( same_skmers );
+
+			shared.k = comp.k;
+			shared.m = comp.m;
+			Paths paths;
+			shared.polish_sort(matrix, links, paths);
+			bool same_paths = paths.size() == expected.size();
+			for (size_t i = 0; i < paths.size() and same_paths; i++) {
+				const uint64_t start = i == 0 ? 0 : paths.ends[i - 1];
+				same_paths = vector<uint8_t *>(paths.kmers.begin() + start, paths.kmers.begin() + paths.ends[i]) == expected[i];
+			}
+			EXPECT( same_paths );
 		}
 	},
 };
