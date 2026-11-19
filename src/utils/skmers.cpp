@@ -83,11 +83,51 @@ inline U128 spread_nucleotides(uint64_t v) {
 	return {spread_nucleotides(static_cast<uint32_t>(v >> 32)), spread_nucleotides(static_cast<uint32_t>(v))};
 }
 
+/** x shifted, 0 from 64 bits */
+inline uint64_t shift_left64(uint64_t x, uint64_t k) { return k >= 64 ? 0 : x << k; }
+inline uint64_t shift_right64(uint64_t x, uint64_t k) { return k >= 64 ? 0 : x >> k; }
+/** The k lowest bits of x */
+inline uint64_t low_bits64(uint64_t x, uint64_t k) { return k >= 64 ? x : x & ((uint64_t(1) << k) - 1); }
+
+
+/** interleaved_value() when the nucleotides are in the first 32 positions: 64-bit operations */
+void interleaved_value64(const uint8_t * kmer, uint64_t first_pos, uint64_t nb_nucl, uint64_t pref,
+                                uint64_t & high, uint64_t & low) {
+	const uint64_t nb_bytes = (first_pos + nb_nucl + 3) / 4;
+	uint64_t value = 0;
+	for (uint64_t b=0 ; b<nb_bytes ; b++)
+		value = (value << 8) | kmer[b];
+	value = low_bits64(value >> (2 * (4 * nb_bytes - first_pos - nb_nucl)), 2 * nb_nucl);
+
+	const uint64_t suf = nb_nucl - pref;
+	const uint64_t common = pref < suf ? pref : suf;
+	const uint64_t suffix = low_bits64(value, 2 * suf);
+	const uint64_t prefix = shift_right64(value, 2 * suf);
+	const uint64_t rev_prefix = shift_right64(reverse_nucleotides(prefix), 2 * (32 - pref));
+
+	// common <= 16: the heads have at most 32 bits
+	const uint64_t suffix_head = shift_right64(suffix, 2 * (suf - common));
+	const uint64_t prefix_head = shift_right64(rev_prefix, 2 * (pref - common));
+	uint64_t result = (spread_nucleotides(static_cast<uint32_t>(suffix_head)) << 2)
+	                  | spread_nucleotides(static_cast<uint32_t>(prefix_head));
+
+	const uint64_t tail_size = nb_nucl - 2 * common;
+	const uint64_t tail = low_bits64(suf > pref ? suffix : rev_prefix, 2 * tail_size);
+	high = 0;
+	low = shift_left64(result, 2 * tail_size) | tail;
+}
+
+
 } // namespace
 
 
 void interleaved_value(const uint8_t * kmer, uint64_t first_pos, uint64_t nb_nucl, uint64_t pref,
                        uint64_t & high, uint64_t & low) {
+	if (first_pos + nb_nucl <= 32) {
+		interleaved_value64(kmer, first_pos, nb_nucl, pref, high, low);
+		return;
+	}
+
 	// Nucleotides of the kmer, the first one in the most significant bits
 	const uint64_t nb_bytes = (first_pos + nb_nucl + 3) / 4;
 	U128 value = {0, 0};
