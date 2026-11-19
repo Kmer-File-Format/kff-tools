@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstring>
 
 #include "sort.hpp"
 
@@ -115,50 +116,65 @@ void Sort::sort(string input, string output) {
                 cerr << "new 'r' section found" << endl;
                 cerr << "Max sequence size: " << max_nucl << " data size: " << data_size<< endl;
 
-                vector<pair<vector<uint8_t>,vector<uint8_t>>> everything;
+                // All the blocks are stored in one array: the sorting key (the sequence
+                // bytes, plus one byte when the size is a multiple of 4) then the data.
+                // When data_size is 0, the number of kmers is stored as data.
+                struct Block {
+                    uint64_t offset;
+                    uint32_t key_size;
+                    uint32_t data_size;
+                };
+                vector<uint8_t> blocks_bytes;
+                vector<Block> blocks;
 
                 // Open sections
                 Section_Raw in_section(&infile);
                 Section_Raw out_section(&outfile);
+                blocks.reserve(in_section.nb_blocks);
 
                 // Read whole block and store everything inside a vector
                 for (uint i=0 ; i<in_section.nb_blocks ; i++) {
                     // Read the block.
-                    string seq;
                     int nb_kmers = in_section.read_compacted_sequence(seq_bytes, data_bytes);
                     int seq_len = k + nb_kmers - 1;
-                    //cerr << "Read seq of length: " << seq_len << " data size: " << data_size*nb_kmers << endl;
-                    vector<uint8_t> seq_vec(&seq_bytes[0],&seq_bytes[seq_len/4+1]);
+                    Block block = {blocks_bytes.size(), (uint32_t)(seq_len/4+1), 0};
+                    blocks_bytes.insert(blocks_bytes.end(), &seq_bytes[0], &seq_bytes[seq_len/4+1]);
                     if (data_size > 0) {
-                        vector<uint8_t> data_vec(&data_bytes[0],&data_bytes[data_size*nb_kmers]);
-                        everything.push_back(make_pair(seq_vec,data_vec));
+                        block.data_size = data_size*nb_kmers;
+                        blocks_bytes.insert(blocks_bytes.end(), &data_bytes[0], &data_bytes[data_size*nb_kmers]);
                     } else if (nb_kmers < 256) {
-                    	vector<uint8_t> data_vec(1, (uint8_t)nb_kmers);
-                        everything.push_back(make_pair(seq_vec,data_vec));
+                        block.data_size = 1;
+                        blocks_bytes.push_back((uint8_t)nb_kmers);
                     } else {
                     	cerr << "Not implemented for large sequences " << endl;
                     	exit(1);
                     }
+                    blocks.push_back(block);
                 }
 
-                // Sort the vector
-                std::sort(everything.begin(),everything.end(), [](auto &left, auto &right) {
-                            return left.first < right.first;
+                // Sort the blocks by key (lexicographic order of the key bytes, as
+                // std::vector<uint8_t>::operator<). std::sort performs the same
+                // permutation as when sorting the blocks themselves.
+                const uint8_t * bytes = blocks_bytes.data();
+                std::sort(blocks.begin(), blocks.end(), [bytes](const Block & left, const Block & right) {
+                            int cmp = memcmp(bytes + left.offset, bytes + right.offset, std::min(left.key_size, right.key_size));
+                            return cmp < 0 or (cmp == 0 and left.key_size < right.key_size);
                             });
 
                 // Write the vector to out block
-                for (pair<vector<uint8_t>,vector<uint8_t>> elt : everything)
+                for (const Block & block : blocks)
                 {
+                    const uint8_t * seq = bytes + block.offset;
+                    const uint8_t * data = seq + block.key_size;
                     int nb_kmers = 0;
                     if (data_size > 0)
-                    	nb_kmers = elt.second.size() / data_size;
+                    	nb_kmers = block.data_size / data_size;
                     else
-                        nb_kmers = elt.second[0];
-                    //cerr << "Writing seq of length: " << k + nb_kmers - 1 << " data size: " << elt.second.size() << endl;
+                        nb_kmers = data[0];
                     out_section.write_compacted_sequence(
-                            elt.first.data(),
+                            (uint8_t *)seq,
                             k + nb_kmers - 1,
-                            elt.second.data());
+                            (uint8_t *)data);
                 }
                 in_section.close();
                 out_section.close();
