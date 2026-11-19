@@ -981,6 +981,21 @@ void Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates, 
 }
 
 
+/* Number of trailing null bits of x != 0 */
+static inline unsigned count_trailing_zeros(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+	return __builtin_ctzll(x);
+#else
+	unsigned n = 0;
+	while ((x & 1) == 0) {
+		x >>= 1;
+		n += 1;
+	}
+	return n;
+#endif
+}
+
+
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
 	Paths paths;
 	PolishBuffers buffers;
@@ -1077,6 +1092,29 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 			memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
 			current_interleaves.push_back((interleved_t){0,0,0});
 		}
+	// Columns in the order of the candidates: the one in the middle first, then alternate
+	// left-right. Up to 64 columns, the selectable columns are also bits of ready_mask, in the
+	// order of the candidates (bit candidate_rank[col]).
+	vector<size_t> & candidate_order = buffers.candidate_order;
+	vector<size_t> & candidate_rank = buffers.candidate_rank;
+	candidate_order.resize(nb_cols);
+	candidate_rank.resize(nb_cols);
+	for (size_t i=0 ; i<nb_cols ; i++) {
+		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
+		candidate_rank[candidate_order[i]] = i;
+	}
+	const bool use_mask = nb_cols <= 64;
+	uint64_t ready_mask = 0;
+	auto set_ready = [&](size_t col, bool ready) {
+		head_ready[col] = ready;
+		if (use_mask) {
+			if (ready)
+				ready_mask |= uint64_t(1) << candidate_rank[col];
+			else
+				ready_mask &= ~(uint64_t(1) << candidate_rank[col]);
+		}
+	};
+
 	auto set_current = [&](size_t col) {
 		const uint64_t id = col_start[col] + current_kmers[col];
 		const uint64_t sk = sk_of[id];
@@ -1085,9 +1123,9 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 		if (sk_counts[sk] == sk_size[sk]) {
 			// All the kmers of the skmer are first in their columns
 			for (size_t sk_column=sk_col[sk] ; sk_column<sk_col[sk]+sk_size[sk] ; sk_column++)
-				head_ready[sk_column] = 1;
+				set_ready(sk_column, true);
 		} else
-			head_ready[col] = 0;
+			set_ready(col, false);
 		const uint8_t * kmer = matrix[col][current_kmers[col]];
 		if (not use_values) {
 			current_interleaves[col] = interleaved(kmer, memory[col], num_kmer_nucl, num_kmer_nucl - col);
@@ -1139,13 +1177,6 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 		if (matrix[col].size() > 0)
 			set_current(col);
 
-	// Columns in the order of the candidates: the one in the middle first, then alternate
-	// left-right
-	vector<size_t> & candidate_order = buffers.candidate_order;
-	candidate_order.resize(nb_cols);
-	for (size_t i=0 ; i<nb_cols ; i++)
-		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
-
 	paths.ends.reserve(paths.ends.size() + sk_first.size());
 	paths.kmers.reserve(paths.kmers.size() + nb_kmers);
 
@@ -1154,9 +1185,16 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 	while (remaining > 0) {
 		// Select the min first kmer whose skmer has all its kmers first (min_interleaved())
 		size_t selected = nb_cols;
-		for (size_t position : candidate_order)
-			if (head_ready[position] and (selected == nb_cols or inf_current(position, selected)))
-				selected = position;
+		if (use_mask) {
+			for (uint64_t mask=ready_mask ; mask!=0 ; mask&=mask-1) {
+				const size_t position = candidate_order[count_trailing_zeros(mask)];
+				if (selected == nb_cols or inf_current(position, selected))
+					selected = position;
+			}
+		} else
+			for (size_t position : candidate_order)
+				if (head_ready[position] and (selected == nb_cols or inf_current(position, selected)))
+					selected = position;
 		if (selected == nb_cols)
 			throw runtime_error("compact: no superkmer can be selected (the links are not colinear)");
 
@@ -1171,7 +1209,7 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 			if (current_kmers[col] < matrix[col].size())
 				set_current(col);
 			else
-				head_ready[col] = 0;
+				set_ready(col, false);
 		}
 		paths.close_path();
 	}

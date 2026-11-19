@@ -251,7 +251,7 @@ public:
 	struct PolishBuffers {
 		std::vector<uint64_t> col_start, prev_kmer, sk_of, sk_first, sk_col, sk_size, sk_counts, head_sk;
 		std::vector<uint8_t> head_ready;
-		std::vector<size_t> current_kmers, candidate_order;
+		std::vector<size_t> current_kmers, candidate_order, candidate_rank;
 		std::vector<std::pair<uint64_t, uint64_t> > current_values;
 	};
 	PolishBuffers polish_buffers;
