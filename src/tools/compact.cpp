@@ -539,21 +539,19 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
     vector<pair<uint64_t, uint64_t> > pairs;
 	pairs.reserve(max(column1.size(), column2.size()));
 
-	// Index the second column by their prefix hash
-	//            hash      kmer positions
-	unordered_map<uint64_t, vector<uint64_t> > index;
-	//            kmer position, used
-	unordered_map<uint64_t, bool> used;
+	// Index the second column by their prefix hash: (hash, kmer position) sorted by hash, then
+	// by position (the candidates of a hash are tested in the column order)
+	vector<pair<uint64_t, uint64_t> > index;
+	index.reserve(column2.size());
 	for (uint64_t idx=0 ; idx<column2.size() ; idx++) {
-		uint8_t * kmer = column2[idx];
 		// Get the hash corresponding to the k-m-1 prefix
-		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
-
-		if (index.find(hash) == index.end())
-			index[hash] = vector<uint64_t>();
-		index[hash].push_back(idx);
-		used[idx] = false;
+		index.emplace_back(subseq_to_uint(column2[idx], nb_nucl, 0, nb_nucl-2), idx);
 	}
+	// Explicit comparison: this file specialises std::operator< for pairs (second first)
+	auto by_hash = [](const pair<uint64_t, uint64_t> & a, const pair<uint64_t, uint64_t> & b) {
+		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	};
+	sort(index.begin(), index.end(), by_hash);
 
 
 	// Looks for suffix matches of the first column
@@ -563,20 +561,15 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 		// Get the hash corresponding to the k-m-1 suffix
 		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
 
-		// Test for hash collision
-		if (index.find(hash) != index.end()) {
-//			Test each of the
-			for (uint64_t candidate_lst_idx=0 ; candidate_lst_idx < index[hash].size() ; candidate_lst_idx++) {
-				uint64_t candidate_vect_idx = index[hash][candidate_lst_idx];
-				uint8_t * candidate = column2[candidate_vect_idx];
-                if (sequence_compare(
-							candidate, nb_nucl, 0, nb_nucl-2,
-							kmer, nb_nucl, 1, nb_nucl-1
-						) == 0) {
-                	// cout << " " << idx << " " << candidate_vect_idx << endl;
-					pairs.emplace_back(idx, candidate_vect_idx);
-					used[candidate_vect_idx] = true;
-				}
+		// Test each candidate with the same hash
+		auto candidate = lower_bound(index.begin(), index.end(), make_pair(hash, uint64_t(0)), by_hash);
+		for ( ; candidate != index.end() and candidate->first == hash ; candidate++) {
+			uint64_t candidate_vect_idx = candidate->second;
+            if (sequence_compare(
+						column2[candidate_vect_idx], nb_nucl, 0, nb_nucl-2,
+						kmer, nb_nucl, 1, nb_nucl-1
+					) == 0) {
+				pairs.emplace_back(idx, candidate_vect_idx);
 			}
 		}
 	}
