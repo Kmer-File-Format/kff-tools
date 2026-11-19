@@ -105,6 +105,10 @@ void Bucket::exec() {
 	uint8_t * data = new uint8_t[max_data];
 	uint prev_k = 0;
 	int64_t encoder_idx = -1;
+	uint64_t max = 0;
+	uint cached_k = 0;
+	uint cached_data_size = 0;
+	uint64_t cached_reader_max = 0;
 
 	// Read the stream line by line
 	while(true) {
@@ -144,8 +148,14 @@ void Bucket::exec() {
 		if (subseq.size() < (seq_size + 3) / 4 + 1)
 			subseq.resize((seq_size + 3) / 4 + 1);
 
-		// Encoder of the current variables
-		const uint64_t max = stream.reader.get_var("max");
+		// Encoder of the current variables (the variable max is read again only when the
+		// variables of the reader change)
+		if (k != cached_k or data_size != cached_data_size or stream.reader.max != cached_reader_max) {
+			cached_k = k;
+			cached_data_size = data_size;
+			cached_reader_max = stream.reader.max;
+			max = stream.reader.get_var("max");
+		}
 		if (encoder_idx < 0 or encoders[encoder_idx].k != k or encoders[encoder_idx].max != max
 				or encoders[encoder_idx].data_size != data_size) {
 			encoder_idx = -1;
