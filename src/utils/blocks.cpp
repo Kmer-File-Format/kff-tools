@@ -76,3 +76,24 @@ void MinimizerBlockEncoder::append(std::vector<uint8_t> & out, const uint8_t * s
 	if (data_bytes > 0)
 		memcpy(no_mini + seq_bytes, data, data_bytes);
 }
+
+
+void MinimizerBlockEncoder::append_without_mini(std::vector<uint8_t> & out, const uint8_t * no_mini_seq,
+                                                uint64_t no_mini_size, uint64_t mini_pos, const uint8_t * data) const {
+	const uint64_t nb_kmers = no_mini_size + m - k + 1;
+	const uint64_t seq_bytes = bytes_from_bit_array(2, no_mini_size);
+	const uint64_t data_bytes = bytes_from_bit_array(this->data_size * 8, nb_kmers);
+
+	const size_t start = out.size();
+	out.resize(start + this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes + data_bytes);
+	uint8_t * block = out.data() + start;
+
+	for (uint64_t b=this->nb_kmers_bytes ; b>0 ; b--)
+		*(block++) = static_cast<uint8_t>(nb_kmers >> (8 * (b - 1)));
+	for (uint64_t b=this->mini_pos_bytes ; b>0 ; b--)
+		*(block++) = static_cast<uint8_t>(mini_pos >> (8 * (b - 1)));
+	if (seq_bytes > 0)
+		memcpy(block, no_mini_seq, seq_bytes);
+	if (data_bytes > 0)
+		memcpy(block + seq_bytes, data, data_bytes);
+}

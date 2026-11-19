@@ -29,6 +29,13 @@ public:
 	 */
 	void append(std::vector<uint8_t> & out, const uint8_t * seq, uint64_t seq_size,
 	            uint64_t mini_pos, const uint8_t * data) const;
+
+	/** Appends to out the bytes that Section_Minimizer::write_compacted_sequence_without_mini()
+	 * writes: the sequence already without its minimizer (no_mini_size nucleotides) is copied
+	 * as given (padding bits included).
+	 */
+	void append_without_mini(std::vector<uint8_t> & out, const uint8_t * no_mini_seq, uint64_t no_mini_size,
+	                         uint64_t mini_pos, const uint8_t * data) const;
 };
 
 #endif
