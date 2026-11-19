@@ -63,6 +63,8 @@ private:
 
   // Current line (kept to reuse its memory)
   string line;
+  // Data of the kmers of the current line
+  vector<uint8_t> line_data;
 
 public:
   TxtSeqStream(const std::string filename, const uint8_t encoding[4], uint k, uint data_size, string delim, string data_delim) 
@@ -119,8 +121,10 @@ public:
 		this->bz.translate(line, seq_size, this->seq_buffer);
 		seq = this->seq_buffer;
 
-		// If counts
-		if (this->data_size > 0) {
+		// If counts (one value per kmer, stored in a buffer sized for the line)
+		if (this->data_size > 0 and seq_size >= k) {
+			this->line_data.resize((size_t)nb_kmers * this->data_size);
+			data = this->line_data.data();
 			char * str_data = (char *)line.c_str() + seq_size + 1;
 
 			for (uint i=0 ; i<nb_kmers ; i++) {
@@ -164,7 +168,8 @@ void Instr::exec() {
 	uint8_t * seq;
 	// Slices of max kmers: max + k - 1 nucleotides (+ 1 byte needed by subsequence())
 	uint8_t * sub_seq = new uint8_t[(max_kmerseq + k - 1 + 3) / 4 + 1];
-	uint8_t * data = new uint8_t[data_size * max_kmerseq];
+	// Data of the kmers of the line (array owned by the stream)
+	uint8_t * data = nullptr;
 	uint seq_size = 0;
 	// read the next line from the txt file
 	while ((seq_size = stream.next_sequence(seq, data)) > 0) {
@@ -185,10 +190,12 @@ void Instr::exec() {
 				
 				uint last_nucl = first_nucl + (copy_size - 1);
 				subsequence(seq, seq_size, sub_seq, first_nucl, last_nucl);
+				// Data of the kmers of the slice (the first kmer starts at first_nucl)
+				uint8_t * slice_data = data == nullptr ? nullptr : data + (size_t)first_nucl * data_size;
 				first_nucl = last_nucl + 1 - (k - 1);
 
 				// Write the sequence
-				sr.write_compacted_sequence(sub_seq, copy_size, data);
+				sr.write_compacted_sequence(sub_seq, copy_size, slice_data);
 
 				// reduce the number of remaining kmers
 				nb_kmers -= nb_kmer_copied;
@@ -198,7 +205,6 @@ void Instr::exec() {
 	sr.close();
 
 	delete[] sub_seq;
-	delete[] data;
 	outfile.close();
 }
 
