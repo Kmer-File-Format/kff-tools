@@ -287,7 +287,7 @@ uint Compact::mini_pos_from_buffer(const uint8_t * kmer) const {
 
 int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const {
 	const uint mini_pos1 = this->mini_pos_from_buffer(kmer1);
-	const uint mini_pos2 = this->mini_pos_from_buffer(kmer2);
+	[[maybe_unused]] const uint mini_pos2 = this->mini_pos_from_buffer(kmer2);
 
 	assert(mini_pos1 == mini_pos2);
 
