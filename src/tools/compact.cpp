@@ -146,40 +146,84 @@ void Compact::exec() {
 }
 
 void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
+	CompactSection section;
+	this->load_section(ism, outfile, section);
+	this->compact_section(section);
+	outfile.register_position('m');
+	outfile.write(section.output.data(), section.output.size());
+}
+
+
+void Compact::load_section(Section_Minimizer & ism, Kff_file & outfile, CompactSection & section) const {
+	// Variables of the input section
+	section.k = ism.k;
+	section.m = ism.m;
+	section.max = ism.max;
+	section.data_size = ism.data_size;
+	// Variables of the compacted section
+	section.out_k = outfile.global_vars["k"];
+	section.out_m = outfile.global_vars["m"];
+	section.out_max = outfile.global_vars["max"];
+	section.out_data_size = outfile.global_vars["data_size"];
+
+	section.minimizer.assign(ism.minimizer, ism.minimizer + (2 * ism.m + 7) / 8);
+
+	// Blocks: sequence without minimizer then data
+	uint64_t max_nucl = ism.k + ism.max - 1 - ism.m;
+	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
+	vector<uint8_t> seq_buffer(max_seq_bytes + 1);
+	vector<uint8_t> data_buffer(ism.data_size * ism.max + 1);
+	section.blocks.clear();
+	section.bytes.clear();
+	section.blocks.reserve(ism.nb_blocks);
+	for (uint64_t n=0 ; n<ism.nb_blocks ; n++) {
+		uint64_t mini_pos = 0xFFFFFFFFFFFFFFFF;
+		uint nb_kmers = ism.read_compacted_sequence_without_mini(seq_buffer.data(), data_buffer.data(), mini_pos);
+		uint64_t seq_bytes = (ism.k - ism.m + nb_kmers - 1 + 3) / 4;
+		section.blocks.push_back({nb_kmers, mini_pos, section.bytes.size()});
+		section.bytes.insert(section.bytes.end(), seq_buffer.data(), seq_buffer.data() + seq_bytes);
+		section.bytes.insert(section.bytes.end(), data_buffer.data(), data_buffer.data() + nb_kmers * ism.data_size);
+	}
+}
+
+
+void Compact::compact_section(CompactSection & section) {
 	// General variables
-	uint k = outfile.global_vars["k"];
-	uint m = outfile.global_vars["m"];
-	uint data_size = outfile.global_vars["data_size"];
+	uint k = section.out_k;
+	uint m = section.out_m;
+	uint data_size = section.out_data_size;
 
 	this->k = k;
 	this->m = m;
 	this->data_size = data_size;
 	this->bytes_compacted = (k - m + 3) / 4;
-    this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - ism.m))) + 7) / 8;
+    this->mini_pos_size = (static_cast<uint>(ceil(log2(section.k + section.max - section.m))) + 7) / 8;
 	this->offset_idx = (4 - ((k - m) % 4)) % 4;
 
 
     // 1 - Load the input section (the kmers of the previous sections are not needed any more)
 	this->next_free = 0;
-	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(ism);
+	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(section);
 	
 	// 2 - Compact kmers
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
-        this->mini_pos_size = (static_cast<uint>(ceil(log2(ism.k + ism.max - ism.m))) + 7) / 8;
 		paths = this->sorted_assembly(kmers_per_index);
-//		 cout << "---------- " << paths.size() << " ----------" << endl;
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
 	}
 
-	Section_Minimizer osm(&outfile);
-	osm.write_minimizer(ism.minimizer);
-	this->write_paths(paths, osm, data_size);
-	osm.close();
-
-
+	// 3 - Bytes of the compacted section: type, minimizer, number of blocks, blocks
+	MinimizerBlockEncoder encoder(k, m, section.out_max, data_size);
+	section.output.clear();
+	section.output.push_back('m');
+	section.output.insert(section.output.end(), section.minimizer.begin(), section.minimizer.begin() + encoder.minimizer_bytes);
+	const size_t nb_blocks_position = section.output.size();
+	section.output.resize(nb_blocks_position + 8, 0);
+	uint64_t nb_blocks = this->write_paths(paths, encoder, section.output);
+	for (uint b=0 ; b<8 ; b++)
+		section.output[nb_blocks_position + b] = static_cast<uint8_t>(nb_blocks >> (8 * (7 - b)));
 }
 
 
@@ -210,28 +254,42 @@ long Compact::add_kmer_to_buffer(const uint8_t * seq, const uint8_t * data, uint
 }
 
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) {
-	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
-	
+	CompactSection section;
+	section.k = sm.k;
+	section.m = sm.m;
+	section.max = sm.max;
+	section.data_size = sm.data_size;
 	uint64_t max_nucl = sm.k + sm.max - 1 - sm.m;
-	uint64_t max_seq_bytes = (max_nucl + 3) / 4;
+	vector<uint8_t> seq_buffer((max_nucl + 3) / 4 + 1);
+	vector<uint8_t> data_buffer(sm.data_size * sm.max + 1);
+	for (uint64_t n=0 ; n<sm.nb_blocks ; n++) {
+		uint64_t mini_pos = 0xFFFFFFFFFFFFFFFF;
+		uint nb_kmers = sm.read_compacted_sequence_without_mini(seq_buffer.data(), data_buffer.data(), mini_pos);
+		uint64_t seq_bytes = (sm.k - sm.m + nb_kmers - 1 + 3) / 4;
+		section.blocks.push_back({nb_kmers, mini_pos, section.bytes.size()});
+		section.bytes.insert(section.bytes.end(), seq_buffer.data(), seq_buffer.data() + seq_bytes);
+		section.bytes.insert(section.bytes.end(), data_buffer.data(), data_buffer.data() + nb_kmers * sm.data_size);
+	}
+	return this->prepare_kmer_matrix(section);
+}
+
+
+vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(const CompactSection & sm) {
+	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
+
 	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
     uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
 
-
-	uint8_t * seq_buffer = new uint8_t[max_seq_bytes];
-	uint8_t * data_buffer = new uint8_t[sm.data_size * sm.max];
-
 	// 1 - Load the input section
-	for (uint n=0 ; n<sm.nb_blocks ; n++) {
-		uint64_t mini_pos = 0xFFFFFFFFFFFFFFFF;
-		// Read sequence
-		uint nb_kmers = sm.read_compacted_sequence_without_mini(
-			seq_buffer, data_buffer, mini_pos);
+	for (const CompactSection::Block & block : sm.blocks) {
+		uint64_t mini_pos = block.mini_pos;
+		uint nb_kmers = block.nb_kmers;
+		const uint8_t * seq_buffer = sm.bytes.data() + block.offset;
+		const uint8_t * data_buffer = seq_buffer + (sm.k - sm.m + nb_kmers - 1 + 3) / 4;
 
 		// Add kmer by index
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
 			uint kmer_pos = sm.k - (uint)sm.m - mini_pos + kmer_idx;
-//            cout << "kmer pos = " << kmer_pos << endl;
 
 			// Realloc if needed
 			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size) {
@@ -256,9 +314,6 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 			next_free += kmer_bytes + sm.data_size + mini_pos_size;
 		}
 	}
-
-	delete[] seq_buffer;
-	delete[] data_buffer;
 
 	// Transform the position matrix into the kmer matrix
 	vector<vector<uint8_t *> > kmer_matrix(sm.k - sm.m + 1, vector<uint8_t *>());
@@ -815,10 +870,12 @@ vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, 
 	return paths;
 }
 
-void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size) {
+uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
+	const uint data_size = encoder.data_size;
+	uint64_t nb_blocks = 0;
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
-	uint mini_pos_size = (static_cast<uint>(ceil(log2(sm.max + k - m))) + 7) / 8;
+	uint mini_pos_size = (static_cast<uint>(ceil(log2(encoder.max + k - m))) + 7) / 8;
 
 	uint max_skmer_bytes = (2 * (k - m) + 3) / 4;
 	uint8_t * skmer_buffer = new uint8_t[max_skmer_bytes + 1];
@@ -874,14 +931,16 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 		}
 
 		// cout << "write_compacted_sequence_without_mini" << endl;
-		// Write everything in the file
-		sm.write_compacted_sequence_without_mini(skmer_buffer, skmer_size, mini_pos, data_buffer);
+		// Write everything in the section
+		encoder.append_without_mini(output, skmer_buffer, skmer_size, mini_pos, data_buffer);
+		nb_blocks += 1;
 	}
 
 	// cout << "delete" << endl;
 
 	delete[] skmer_buffer;
 	delete[] data_buffer;
+	return nb_blocks;
 }
 
 

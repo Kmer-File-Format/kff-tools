@@ -5,10 +5,32 @@
 
 #include "CLI/CLI.hpp"
 #include "kfftools.hpp"
+#include "blocks.hpp"
 
 
 #ifndef COMPACT_H
 #define COMPACT_H
+
+/** A minimizer section loaded in memory, then the bytes of its compacted version */
+struct CompactSection {
+	// Variables of the input section
+	uint64_t k, m, max, data_size;
+	// Variables of the output file when the compacted section is written
+	uint64_t out_k, out_m, out_max, out_data_size;
+	// Bytes of the minimizer, as read
+	std::vector<uint8_t> minimizer;
+	// Blocks: number of kmers, minimizer position and position of the sequence (followed by
+	// the data) in bytes
+	struct Block {
+		uint64_t nb_kmers;
+		uint64_t mini_pos;
+		uint64_t offset;
+	};
+	std::vector<Block> blocks;
+	std::vector<uint8_t> bytes;
+	// Bytes of the compacted section: type, minimizer, number of blocks and blocks
+	std::vector<uint8_t> output;
+};
 
 class Compact: public KffTool {
 private:
@@ -34,14 +56,15 @@ public:
 	~Compact();
 
 
-	/** Write a minimizer section containing all the superkmers given as paths. The process preserve
-	 * the order of the superkmers.
+	/** Encode the blocks of a minimizer section containing all the superkmers given as paths.
+	 * The process preserve the order of the superkmers.
 	 * 
 	 * @param paths List of all the kmer paths that represent virtual superkmers.
-	 * @param sm Section Minimizer to fill.
-	 * @param data_size Size in bytes of each data.
+	 * @param encoder Encoder of the blocks of the output section (gives the data size).
+	 * @param output The blocks are appended to this array.
+	 * @return The number of blocks written.
 	 **/
-	void write_paths(const std::vector<std::vector<uint8_t *> > & paths, Section_Minimizer & sm, const uint data_size);
+	uint64_t write_paths(const std::vector<std::vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
 
 	/** Take a list of kmer pair to assemble and return a list of paths from left to right of
 	 * virtual superkmers.
@@ -71,6 +94,12 @@ public:
 	uint mini_pos_from_buffer(const uint8_t * kmer) const;
 	
 	std::vector<std::vector<uint8_t *> > prepare_kmer_matrix(Section_Minimizer & sm);
+	std::vector<std::vector<uint8_t *> > prepare_kmer_matrix(const CompactSection & section);
+
+	/** Load the blocks of a minimizer section into memory.
+	 * @param outfile The output file: its current variables are the ones of the compacted section.
+	 **/
+	void load_section(Section_Minimizer & ism, Kff_file & outfile, CompactSection & section) const;
 
 	/** Return the result of the comparison between kmers in the buffer.
 	 * WARNING: The comparator assumes that the minimizers are at the same place in the words
@@ -153,6 +182,8 @@ public:
 	  */
 	void exec();
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
+	/** Compact a section loaded in memory: fills section.output */
+	void compact_section(CompactSection & section);
 
 };
 
