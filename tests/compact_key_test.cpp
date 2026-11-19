@@ -2,6 +2,7 @@
 // Compact::interleaved_compare_kmers.
 
 #include <algorithm>
+#include <cstring>
 #include <random>
 #include <vector>
 
@@ -58,14 +59,18 @@ const lest::test module[] = {
 			}
 			EXPECT( same_order );
 
-			// Same sorted column as std::sort with the original comparison
+			// Same sorted column as std::sort with the original comparison: the same records at
+			// each position (identical records can be swapped, the output is the same)
 			vector<vector<uint8_t *> > matrix(1, kmers);
 			comp.sort_matrix(matrix);
 			vector<uint8_t *> expected_column = kmers;
 			sort(expected_column.begin(), expected_column.end(), [&comp](const uint8_t * a, const uint8_t * b) {
 				return comp.interleaved_compare_kmers(a, b) < 0;
 			});
-			const bool same_column = matrix[0] == expected_column;
+			const size_t record_size = comp.bytes_compacted + comp.data_size + comp.mini_pos_size;
+			bool same_column = matrix[0].size() == expected_column.size();
+			for (size_t j = 0; j < expected_column.size() and same_column; j++)
+				same_column = memcmp(matrix[0][j], expected_column[j], record_size) == 0;
 			EXPECT( same_column );
 		}
 	},

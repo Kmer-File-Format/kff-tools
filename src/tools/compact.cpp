@@ -547,6 +547,34 @@ void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & 
 }
 
 
+/* Stable LSD radix sort of the elements by their key of key_bits <= 64 bits: 8 bits per pass, the
+ * counts of all the passes in one read of the elements, the passes where all the elements have
+ * the same digit are skipped (the elements fit in 32-bit counts) */
+static void radix_sort_keys(vector<Compact::Keyed64> & items, vector<Compact::Keyed64> & tmp, uint key_bits) {
+	const uint nb_passes = (key_bits + 7) / 8;
+	uint32_t counts[8][256] = {{0}};
+	for (const Compact::Keyed64 & item : items)
+		for (uint pass=0 ; pass<nb_passes ; pass++)
+			counts[pass][(item.key >> (8 * pass)) & 0xFF] += 1;
+	tmp.resize(items.size());
+	for (uint pass=0 ; pass<nb_passes ; pass++) {
+		uint32_t * count = counts[pass];
+		const uint shift = 8 * pass;
+		if (count[(items[0].key >> shift) & 0xFF] == items.size())
+			continue;
+		uint32_t sum = 0;
+		for (uint d=0 ; d<256 ; d++) {
+			const uint32_t n = count[d];
+			count[d] = sum;
+			sum += n;
+		}
+		for (const Compact::Keyed64 & item : items)
+			tmp[count[(item.key >> shift) & 0xFF]++] = item;
+		items.swap(tmp);
+	}
+}
+
+
 void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	// Sort by column
 
@@ -557,11 +585,8 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 		uint8_t * kmer;
 	};
 	vector<Keyed> keyed;
-	struct Keyed64 {
-		uint64_t key;
-		uint8_t * kmer;
-	};
-	vector<Keyed64> keyed64;
+	vector<Keyed64> & keyed64 = this->sort_keys;
+	vector<Keyed64> & keyed64_tmp = this->sort_keys_tmp;
 
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 		if (this->k - this->m > 64) {
@@ -581,9 +606,31 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 				keyed64[j].kmer = kmer_matrix[i][j];
 				this->interleaved_key(keyed64[j].kmer, high, keyed64[j].key);
 			}
-			sort(keyed64.begin(), keyed64.end(), [](const Keyed64 & a, const Keyed64 & b) {
-				return a.key < b.key;
-			});
+			// Columns of 128 to 65536 kmers: radix sort (no branch misprediction; above, its passes
+			// over the column miss the caches and std::sort is faster on the many equal keys of
+			// large columns). The order of distinct keys is
+			// the order of std::sort; the kmers with equal keys can be in another order only if
+			// their records are identical (then any order gives the same output), otherwise the
+			// column is sorted again with std::sort from its first order.
+			bool sorted_by_radix = false;
+			if (keyed64.size() >= 128 and keyed64.size() <= 65536) {
+				radix_sort_keys(keyed64, keyed64_tmp, 2 * (this->k - this->m));
+				const size_t record_size = this->bytes_compacted + this->data_size + this->mini_pos_size;
+				sorted_by_radix = true;
+				for (size_t j=1 ; j<keyed64.size() and sorted_by_radix ; j++)
+					if (keyed64[j].key == keyed64[j - 1].key and memcmp(keyed64[j].kmer, keyed64[j - 1].kmer, record_size) != 0)
+						sorted_by_radix = false;
+				if (not sorted_by_radix)
+					for (size_t j=0 ; j<keyed64.size() ; j++) {
+						uint64_t high;
+						keyed64[j].kmer = kmer_matrix[i][j];
+						this->interleaved_key(keyed64[j].kmer, high, keyed64[j].key);
+					}
+			}
+			if (not sorted_by_radix)
+				sort(keyed64.begin(), keyed64.end(), [](const Keyed64 & a, const Keyed64 & b) {
+					return a.key < b.key;
+				});
 			for (size_t j=0 ; j<keyed64.size() ; j++)
 				kmer_matrix[i][j] = keyed64[j].kmer;
 			continue;

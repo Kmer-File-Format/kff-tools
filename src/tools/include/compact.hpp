@@ -90,6 +90,13 @@ public:
 	uint64_t buffer_size;
 	uint64_t next_free;
 
+	// Sort keys of a column (sort_matrix(), up to 32 nucleotides)
+	struct Keyed64 {
+		uint64_t key;
+		uint8_t * kmer;
+	};
+	std::vector<Keyed64> sort_keys, sort_keys_tmp;
+
 	// Buffers of write_path(), kept from path to path
 	std::vector<uint8_t> skmer_bytes;
 	std::vector<uint8_t> skmer_data;
