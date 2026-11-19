@@ -267,9 +267,10 @@ void Compact::compact_section(CompactSection & section) {
 	memset(this->kmer_buffer + this->next_free, 0, 8);
 	
 	// 2 - Compact kmers
+	Paths sorted_paths;
 	vector<vector<uint8_t *> > paths;
 	if (this->sorted) {
-		paths = this->sorted_assembly(kmers_per_index);
+		this->sorted_assembly(kmers_per_index, sorted_paths);
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
 		paths = this->pairs_to_paths(to_compact);
@@ -282,7 +283,8 @@ void Compact::compact_section(CompactSection & section) {
 	section.output.insert(section.output.end(), section.minimizer.begin(), section.minimizer.begin() + encoder.minimizer_bytes);
 	const size_t nb_blocks_position = section.output.size();
 	section.output.resize(nb_blocks_position + 8, 0);
-	uint64_t nb_blocks = this->write_paths(paths, encoder, section.output);
+	uint64_t nb_blocks = this->sorted ? this->write_paths(sorted_paths, encoder, section.output)
+	                                  : this->write_paths(paths, encoder, section.output);
 	for (uint b=0 ; b<8 ; b++)
 		section.output[nb_blocks_position + b] = static_cast<uint8_t>(nb_blocks >> (8 * (7 - b)));
 }
@@ -670,6 +672,16 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
+	Paths paths;
+	this->polish_sort(matrix, pairs, paths);
+	vector<vector<uint8_t *> > result(paths.size());
+	for (size_t i=0 ; i<paths.size() ; i++)
+		result[i].assign(paths.kmers.begin() + (i == 0 ? 0 : paths.ends[i - 1]), paths.kmers.begin() + paths.ends[i]);
+	return result;
+}
+
+
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs, Paths & paths) const {
 	const size_t nb_cols = matrix.size();
 	const uint64_t none = numeric_limits<uint64_t>::max();
 
@@ -782,8 +794,8 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 	for (size_t i=0 ; i<nb_cols ; i++)
 		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
 
-	vector<vector<uint8_t *> > result;
-	result.reserve(sk_first.size());
+	paths.ends.reserve(paths.ends.size() + sk_first.size());
+	paths.kmers.reserve(paths.kmers.size() + nb_kmers);
 
 	// Add iteratively the skmers into the sorted list
 	uint64_t remaining = nb_kmers;
@@ -803,29 +815,25 @@ vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> >
 		// Add the related skmer to the output
 		const uint64_t sk = sk_of[col_start[selected] + current_kmers[selected]];
 		sk_counts[sk] = 0;
-		result.emplace_back();
-		vector<uint8_t *> & skmer = result.back();
-		skmer.reserve(sk_size[sk]);
 		// Jump over its kmers in the matrix
 		size_t col = sk_col[sk];
 		for (uint64_t id=sk_first[sk] ; id!=none ; id=next_kmer[id], col++) {
-			skmer.push_back(matrix[col][current_kmers[col]]);
+			paths.kmers.push_back(matrix[col][current_kmers[col]]);
 			current_kmers[col] += 1;
 			remaining -= 1;
 			if (current_kmers[col] < matrix[col].size())
 				set_current(col);
 		}
+		paths.close_path();
 	}
 
 	// free memory
 	for (uint8_t * mem : memory)
 		delete[](mem);
-
-	return result;
 }
 
 
-vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
+void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths) {
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
 
@@ -842,11 +850,9 @@ vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > &
 		kmer_pairs.push_back(colinear_links);
 	}
 
-	// // 4 - Finish the ordering by sorting skmers that could have been interchanged
-	const vector<vector<uint8_t *> > skmers = polish_sort(kmers, kmer_pairs);
-
-	// return skmers;
-	return skmers;
+	// 4 - Finish the ordering by sorting skmers that could have been interchanged
+	paths.clear();
+	this->polish_sort(kmers, kmer_pairs, paths);
 }
 
 
@@ -960,77 +966,80 @@ vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, 
 }
 
 uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
+	for (const vector<uint8_t *> & path : paths)
+		this->write_path(path.data(), path.size(), encoder, output);
+	return paths.size();
+}
+
+
+uint64_t Compact::write_paths(const Paths & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
+	for (size_t i=0 ; i<paths.size() ; i++) {
+		const uint64_t start = i == 0 ? 0 : paths.ends[i - 1];
+		this->write_path(paths.kmers.data() + start, paths.ends[i] - start, encoder, output);
+	}
+	return paths.size();
+}
+
+
+void Compact::write_path(uint8_t * const * path, size_t path_size, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
 	const uint data_size = encoder.data_size;
-	uint64_t nb_blocks = 0;
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
 	// Width of the minimizer positions in the kmer buffer (computed from the input section)
 	uint mini_pos_size = this->mini_pos_size;
 
+	// Buffers of the superkmer and of its data, kept from path to path (a path has at most
+	// k - m + 1 kmers)
 	uint max_skmer_bytes = (2 * (k - m) + 3) / 4;
-	uint8_t * skmer_buffer = new uint8_t[max_skmer_bytes + 1];
 	uint data_bytes = (k - m + 1) * data_size;
-	uint8_t * data_buffer = new uint8_t[data_bytes];
+	if (this->skmer_bytes.size() < max_skmer_bytes + 1)
+		this->skmer_bytes.resize(max_skmer_bytes + 1);
+	if (this->skmer_data.size() < data_bytes + 1)
+		this->skmer_data.resize(data_bytes + 1);
+	uint8_t * skmer_buffer = this->skmer_bytes.data();
+	uint8_t * data_buffer = this->skmer_data.data();
 
-	// uint8_t encoding[] = {0, 1, 3, 2};
-	// Stringifyer strif(encoding);
+	// Cleaning previous skmers/data
+	memset(skmer_buffer, 0, max_skmer_bytes + 1);
+	memset(data_buffer, 0, data_bytes);
 
-	// Write skmer per skmer
-	for (const vector<uint8_t *> & path : paths) {
-		// cout << "path " << ++idx << "/" << paths.size() << endl;
-		// Cleaning previous skmers/data
-		memset(skmer_buffer, 0, max_skmer_bytes + 1);
-		memset(data_buffer, 0, data_bytes);
-
-		// Get the skmer minimizer position
-		uint mini_pos = 0;
-		uint8_t * mini_pos_pointer = path[0] + kmer_bytes + data_size;
-		for (uint b=0 ; b<mini_pos_size ; b++) {
-			mini_pos <<= 8;
-			mini_pos += *mini_pos_pointer;
-			mini_pos_pointer += 1;
-		}
-
-		// Usefull variables
-		uint skmer_size = k - m - 1 + path.size();
-		// uint skmer_bytes = (skmer_size + 3) / 4;
-		uint skmer_offset = (4 - (skmer_size % 4)) % 4;
-
-		// cout << "first kmer" << endl;
-		// Save the first kmer
-		memcpy(skmer_buffer, path[0], kmer_bytes);
-		leftshift8(skmer_buffer, kmer_bytes, 2 * kmer_offset);
-		rightshift8(skmer_buffer, kmer_bytes + 1, 2 * skmer_offset);
-		// Save the first data
-		memcpy(data_buffer, path[0] + kmer_bytes, data_size);
-
-		// Compact kmer+data one by one
-		for (uint kmer_idx = 1 ; kmer_idx<path.size() ; kmer_idx++) {
-			// cout << "kmer " << kmer_idx << endl;
-			uint8_t * kmer = path[kmer_idx];
-
-			// Compute compaction position
-			uint compact_nucl_pos = skmer_offset + k - m - 1 + kmer_idx;
-			uint compact_byte = compact_nucl_pos / 4;
-			uint compact_shift = 3 - (compact_nucl_pos % 4);
-			// Compact the nucleotide
-			uint8_t last_nucl = kmer[kmer_bytes - 1] & 0b11;
-			skmer_buffer[compact_byte] |= last_nucl << (2 * compact_shift);
-			// Copy data
-			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
-		}
-
-		// cout << "write_compacted_sequence_without_mini" << endl;
-		// Write everything in the section
-		encoder.append_without_mini(output, skmer_buffer, skmer_size, mini_pos, data_buffer);
-		nb_blocks += 1;
+	// Get the skmer minimizer position
+	uint mini_pos = 0;
+	uint8_t * mini_pos_pointer = path[0] + kmer_bytes + data_size;
+	for (uint b=0 ; b<mini_pos_size ; b++) {
+		mini_pos <<= 8;
+		mini_pos += *mini_pos_pointer;
+		mini_pos_pointer += 1;
 	}
 
-	// cout << "delete" << endl;
+	// Usefull variables
+	uint skmer_size = k - m - 1 + path_size;
+	uint skmer_offset = (4 - (skmer_size % 4)) % 4;
 
-	delete[] skmer_buffer;
-	delete[] data_buffer;
-	return nb_blocks;
+	// Save the first kmer
+	memcpy(skmer_buffer, path[0], kmer_bytes);
+	leftshift8(skmer_buffer, kmer_bytes, 2 * kmer_offset);
+	rightshift8(skmer_buffer, kmer_bytes + 1, 2 * skmer_offset);
+	// Save the first data
+	memcpy(data_buffer, path[0] + kmer_bytes, data_size);
+
+	// Compact kmer+data one by one
+	for (uint kmer_idx = 1 ; kmer_idx<path_size ; kmer_idx++) {
+		uint8_t * kmer = path[kmer_idx];
+
+		// Compute compaction position
+		uint compact_nucl_pos = skmer_offset + k - m - 1 + kmer_idx;
+		uint compact_byte = compact_nucl_pos / 4;
+		uint compact_shift = 3 - (compact_nucl_pos % 4);
+		// Compact the nucleotide
+		uint8_t last_nucl = kmer[kmer_bytes - 1] & 0b11;
+		skmer_buffer[compact_byte] |= last_nucl << (2 * compact_shift);
+		// Copy data
+		memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
+	}
+
+	// Write everything in the section
+	encoder.append_without_mini(output, skmer_buffer, skmer_size, mini_pos, data_buffer);
 }
 
 

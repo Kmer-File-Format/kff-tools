@@ -32,6 +32,18 @@ struct CompactSection {
 	std::vector<uint8_t> output;
 };
 
+/** Superkmers as paths of kmers of the buffer, stored one after the other: the kmers of the path
+ * i are kmers[ends[i-1]] to kmers[ends[i] - 1] (ends[-1] = 0). */
+struct Paths {
+	std::vector<uint8_t *> kmers;
+	std::vector<uint64_t> ends;
+
+	size_t size() const { return ends.size(); }
+	void clear() { kmers.clear(); ends.clear(); }
+	/** Ends the current path (the kmers added since the end of the previous one) */
+	void close_path() { ends.push_back(kmers.size()); }
+};
+
 class Compact: public KffTool {
 private:
 	std::string input_filename;
@@ -53,6 +65,10 @@ public:
 	uint64_t buffer_size;
 	uint64_t next_free;
 
+	// Buffers of write_path(), kept from path to path
+	std::vector<uint8_t> skmer_bytes;
+	std::vector<uint8_t> skmer_data;
+
     Compact(std::string input_filename, std::string output_filename, bool sorted = false);
 	Compact();
 	~Compact();
@@ -67,6 +83,9 @@ public:
 	 * @return The number of blocks written.
 	 **/
 	uint64_t write_paths(const std::vector<std::vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
+	uint64_t write_paths(const Paths & paths, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
+	/** Encode the block of one path of size kmers */
+	void write_path(uint8_t * const * path, size_t size, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
 
 	/** Take a list of kmer pair to assemble and return a list of paths from left to right of
 	 * virtual superkmers.
@@ -157,6 +176,8 @@ public:
 	 * @return The list of sorted linked kmers. They can be compacted in a skmers style.
 	 **/
 	std::vector<std::vector<uint8_t *> > polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs) const;
+	/** Same, the superkmers are appended to paths */
+	void polish_sort(const std::vector<std::vector<uint8_t *> > & matrix , const std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & pairs, Paths & paths) const;
 
 	/** Assemble all the kmers into sorted virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space 
@@ -168,7 +189,7 @@ public:
 	 * 
 	 * @return Each pair of linked kmers. If a kmer is not linked one of the two values is a nullpointer.
 	 **/
-	std::vector<std::vector<uint8_t *> > sorted_assembly(std::vector<std::vector<uint8_t *> > & positions);
+	void sorted_assembly(std::vector<std::vector<uint8_t *> > & positions, Paths & paths);
 	/** Assemble all the kmers into virtual superkmers.
 	 * The algorithm garanty that the compaction is optimal (ie. it not possible to save more space).
 	 * This compaction is not necessary the only one that is optimal.
