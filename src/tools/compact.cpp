@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <queue>
 #include <cassert>
 #include <unordered_set>
@@ -519,24 +521,34 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 }
 
 
-void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const {
-	const uint nb_nucl = this->k - this->m;
-	const uint offset = (4 - (nb_nucl % 4)) % 4;
-	const uint pref_nucl = this->mini_pos_from_buffer(kmer);
+/* Nucleotides of a kmer in the interleaved order around its minimizer (pref nucleotides before
+ * it): for each distance t to the minimizer, the suffix nucleotide (index pref + t), then the
+ * prefix one (index pref - 1 - t). The nucleotide of index i is read at the position
+ * first_pos + i of the byte array. Returned as a 128-bit integer (high, low), 2 bits per
+ * nucleotide, the last nucleotide in the lowest bits.
+ */
+static inline void interleaved_value(const uint8_t * kmer, uint first_pos, uint nb_nucl, uint pref,
+                                     uint64_t & high, uint64_t & low) {
 	high = low = 0;
 	auto push = [&](uint idx) {
-		const uint pos = offset + idx;
+		const uint pos = first_pos + idx;
 		const uint64_t nucl = (kmer[pos / 4] >> (2 * (3 - pos % 4))) & 0b11;
 		high = (high << 2) | (low >> 62);
 		low = (low << 2) | nucl;
 	};
-	// Distance t to the minimizer: the suffix nucleotide, then the prefix one
 	for (uint t=0 ; t<nb_nucl ; t++) {
-		if (pref_nucl + t < nb_nucl)
-			push(pref_nucl + t);
-		if (t < pref_nucl)
-			push(pref_nucl - 1 - t);
+		if (pref + t < nb_nucl)
+			push(pref + t);
+		if (t < pref)
+			push(pref - 1 - t);
 	}
+}
+
+
+void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const {
+	const uint nb_nucl = this->k - this->m;
+	const uint offset = (4 - (nb_nucl % 4)) % 4;
+	interleaved_value(kmer, offset, nb_nucl, this->mini_pos_from_buffer(kmer), high, low);
 }
 
 
@@ -644,167 +656,156 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
-	// Index the kmer columns
-	unordered_map<uint8_t *, size_t> columns;
-	for (size_t col=0 ; col<matrix.size() ; col++)
-		for (uint8_t * kmer : matrix[col])
-			columns[kmer] = col;
+	const size_t nb_cols = matrix.size();
+	const uint64_t none = numeric_limits<uint64_t>::max();
 
-	// Unify kmers into skmers
-	unordered_map<uint8_t *, vector<uint8_t *> *> rev_skmers_index;
-	unordered_set<vector<uint8_t *> *> skmers;
-	for (size_t col_idx = 0 ; col_idx<pairs.size() ; col_idx++) {
-		// Get the current column
-		const vector<pair<uint64_t, uint64_t> > & column = pairs[col_idx];
+	// Kmer ids: the kmer of the row r of the column c is col_start[c] + r
+	vector<uint64_t> col_start(nb_cols + 1, 0);
+	for (size_t col=0 ; col<nb_cols ; col++)
+		col_start[col + 1] = col_start[col] + matrix[col].size();
+	const uint64_t nb_kmers = col_start[nb_cols];
 
-		// for each new link, try to extend previous skmers
-		for (const pair<uint64_t, uint64_t> & link : column) {
-			uint8_t * lkmer = matrix[col_idx][link.first];
-			uint8_t * rkmer = matrix[col_idx+1][link.second];
-
-			// Previous kmer not found
-			if (rev_skmers_index.find(lkmer) == rev_skmers_index.end()) {
-				// Create a new superkmer
-				vector<uint8_t *> * new_sk = new vector<uint8_t *>();
-				skmers.insert(new_sk);
-				new_sk->push_back(lkmer); new_sk->push_back(rkmer);
-				// Insert it in the rev index
-				rev_skmers_index[rkmer] = new_sk;
-			}
-			// Previous kmer found: extend it
-			else {
-				// Get the skmer
-				vector<uint8_t *> * sk = rev_skmers_index[lkmer];
-				// Extend it
-				sk->push_back(rkmer);
-				// change the reference of the sk in the index
-				rev_skmers_index.erase(lkmer);
-				rev_skmers_index[rkmer] = sk;
-			}
+	// Unify kmers into skmers. The links between 2 columns are a colinear chain (increasing on
+	// both sides): a kmer is in at most one link on each side and the skmers are the paths of
+	// linked kmers, from column to column (lonely kmers are skmers of 1 kmer).
+	vector<uint64_t> next_kmer(nb_kmers, none);
+	vector<bool> has_prev(nb_kmers, false);
+	for (size_t col=0 ; col<pairs.size() ; col++)
+		for (const pair<uint64_t, uint64_t> & link : pairs[col]) {
+			next_kmer[col_start[col] + link.first] = col_start[col + 1] + link.second;
+			has_prev[col_start[col + 1] + link.second] = true;
 		}
-	}
-
-
-	// Index skmers
-	unordered_map<uint8_t *, vector<uint8_t *> *> sk_index;
-	for(auto & kv: rev_skmers_index) {
-		vector<uint8_t *> * sk = kv.second;
-		// Index by kmer
-		for (uint8_t * kmer: *sk)
-			sk_index[kmer] = sk;
-	}
-
-	// Index lonely kmers
-	for(size_t col=0 ; col<matrix.size() ; col++) {
-		for (uint8_t * kmer : matrix[col]) {
-			if (sk_index.find(kmer) == sk_index.end()) {
-				sk_index[kmer] = new vector<uint8_t *>{kmer};
-				skmers.insert(sk_index[kmer]);
+	// Skmer of each kmer, first kmer, its column and size of each skmer
+	vector<uint64_t> sk_of(nb_kmers);
+	vector<uint64_t> sk_first, sk_col, sk_size;
+	for (size_t col=0 ; col<nb_cols ; col++)
+		for (uint64_t id=col_start[col] ; id<col_start[col + 1] ; id++) {
+			if (has_prev[id])
+				continue;
+			const uint64_t sk = sk_first.size();
+			uint64_t size = 0;
+			for (uint64_t kmer=id ; kmer!=none ; kmer=next_kmer[kmer]) {
+				sk_of[kmer] = sk;
+				size += 1;
 			}
+			sk_first.push_back(id);
+			sk_col.push_back(col);
+			sk_size.push_back(size);
 		}
-	}
+	vector<bool>().swap(has_prev);
 
-	// Init the kmer per superkmer counters with the first row
-	unordered_map<vector<uint8_t *> *, uint64_t> sk_counts;
-	for (const vector<uint8_t *> & col: matrix) {
-		if (col.size() == 0) continue;
+	// Number of kmers of each skmer that are the first remaining kmer of their column (0 for the
+	// skmers already selected). A skmer can be selected when all its kmers are first.
+	vector<uint64_t> sk_counts(sk_first.size(), 0);
+	// Row of the first remaining kmer of each column
+	vector<size_t> current_kmers(nb_cols, 0);
 
-		auto & sk = sk_index[col[0]];
-		if (sk_counts.find(sk) == sk_counts.end())
-			sk_counts[sk] = 0;
-		sk_counts[sk] += 1;
-	}
-
-	bool matrix_consumed = false;
-	// Row indexes for each or the columns in the kmer matrix.
-	vector<size_t> current_kmers(matrix.size(), 0);
-	// Memory to strore interleaves
+	// Interleaved values of the first remaining kmers: the kmers of the column c have their
+	// minimizer after num_kmer_nucl - c nucleotides (the bytes are read from their first bit, as
+	// interleaved() does). Up to 64 nucleotides, they are 128-bit integers aligned on the left.
+	const size_t num_kmer_nucl = this->k - this->m;
+	const bool use_values = num_kmer_nucl <= 64;
+	vector<pair<uint64_t, uint64_t> > current_values(use_values ? nb_cols : 0);
 	vector<uint8_t *> memory;
-	// Interleaves of current pointed kmers
 	vector<interleved_t> current_interleaves;
-
-	size_t num_kmer_nucl = this->k - this->m;
-	// Fill the first interleaves
-	for (size_t i=0 ; i<matrix.size() ; i++) {
-		memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
-		current_interleaves.push_back((interleved_t){0,0,0});
-		if (matrix[i].size() > 0) {
-			current_interleaves[i] = interleaved(matrix[i][0], memory[i],
-												num_kmer_nucl, num_kmer_nucl - i);
+	if (not use_values)
+		for (size_t col=0 ; col<nb_cols ; col++) {
+			memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
+			current_interleaves.push_back((interleved_t){0,0,0});
 		}
-	}
+	auto set_current = [&](size_t col) {
+		const uint64_t id = col_start[col] + current_kmers[col];
+		sk_counts[sk_of[id]] += 1;
+		const uint8_t * kmer = matrix[col][current_kmers[col]];
+		if (not use_values) {
+			current_interleaves[col] = interleaved(kmer, memory[col], num_kmer_nucl, num_kmer_nucl - col);
+			return;
+		}
+		uint64_t high, low;
+		interleaved_value(kmer, 0, num_kmer_nucl, num_kmer_nucl - col, high, low);
+		const uint shift = 128 - 2 * num_kmer_nucl;
+		if (shift >= 64) {
+			high = low << (shift - 64);
+			low = 0;
+		} else if (shift > 0) {
+			high = (high << shift) | (low >> (64 - shift));
+			low <<= shift;
+		}
+		current_values[col] = make_pair(high, low);
+	};
+	// inf_interleaved(): the values are compared on the interleaved part of the 2 kmers (the
+	// shortest one), then on the whole kmers if they have the same prefix size.
+	auto inter_size = [num_kmer_nucl](size_t pref) -> size_t {
+		const size_t suf = num_kmer_nucl - pref;
+		return pref < suf ? 2 * pref + 1 : 2 * suf;
+	};
+	auto inf_current = [&](size_t col1, size_t col2) -> bool {
+		if (not use_values)
+			return inf_interleaved(current_interleaves[col1], current_interleaves[col2]);
+		uint64_t high1 = current_values[col1].first, low1 = current_values[col1].second;
+		uint64_t high2 = current_values[col2].first, low2 = current_values[col2].second;
+		if (col1 != col2) {
+			const size_t bits = 2 * min(inter_size(num_kmer_nucl - col1), inter_size(num_kmer_nucl - col2));
+			if (bits <= 64) {
+				const uint64_t mask = bits == 0 ? 0 : ~uint64_t(0) << (64 - bits);
+				high1 &= mask; high2 &= mask;
+				low1 = low2 = 0;
+			} else {
+				const uint64_t mask = ~uint64_t(0) << (128 - bits);
+				low1 &= mask; low2 &= mask;
+			}
+		}
+		return high1 != high2 ? high1 < high2 : low1 < low2;
+	};
+
+	for (size_t col=0 ; col<nb_cols ; col++)
+		if (matrix[col].size() > 0)
+			set_current(col);
+
+	// Columns in the order of the candidates: the one in the middle first, then alternate
+	// left-right
+	vector<size_t> candidate_order(nb_cols);
+	for (size_t i=0 ; i<nb_cols ; i++)
+		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
 
 	vector<vector<uint8_t *> > result;
+	result.reserve(sk_first.size());
 
 	// Add iteratively the skmers into the sorted list
-	while(not matrix_consumed) {
-		vector<interleved_t> candidates;
-		// Construct the list of compatible kmers
-		for (size_t i=0 ; i<matrix.size() ; i++) {
-			// Add the interleaved kmer with also a position interleaved.
-			// The one in the middle is first in the list and then alternate left-right
-			size_t position = matrix.size()/2;
-			if (i % 2 == 0)
-				position += i/2;
-			else
-				position -= 1 + i/2;
-
-			if (current_kmers[position] < matrix[position].size()) {
-				// Get the related skmer
-				uint8_t * kmer = matrix[position][current_kmers[position]];
-				vector<uint8_t *> * sk = sk_index[kmer];
-
-				// Add the skmer only if all the related kmers are present
-				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
-					candidates.push_back(current_interleaves[position]);
-				}
-			}
+	uint64_t remaining = nb_kmers;
+	while (remaining > 0) {
+		// Select the min first kmer whose skmer has all its kmers first (min_interleaved())
+		size_t selected = nb_cols;
+		for (size_t position : candidate_order) {
+			if (current_kmers[position] >= matrix[position].size())
+				continue;
+			const uint64_t sk = sk_of[col_start[position] + current_kmers[position]];
+			if (sk_counts[sk] == sk_size[sk] and (selected == nb_cols or inf_current(position, selected)))
+				selected = position;
 		}
+		if (selected == nb_cols)
+			throw runtime_error("compact: no superkmer can be selected (the links are not colinear)");
 
-		// Select the min kmer and add the related skmer to the output
-		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
-		candidates = vector<interleved_t>();
-		size_t col = selected.suf_size;
-		uint8_t * selected_kmer = matrix[col][current_kmers[col]];
-		vector<uint8_t *> * selected_sk = sk_index[selected_kmer];
-
-		result.push_back(*selected_sk);
-
-		// remove selected kmers from the counts
-		sk_counts.erase(selected_sk);
-
-		// Jump over selected kmers in the matrix
-		for (uint8_t * kmer : *selected_sk) {
-			col = columns[kmer];
+		// Add the related skmer to the output
+		const uint64_t sk = sk_of[col_start[selected] + current_kmers[selected]];
+		sk_counts[sk] = 0;
+		result.emplace_back();
+		vector<uint8_t *> & skmer = result.back();
+		skmer.reserve(sk_size[sk]);
+		// Jump over its kmers in the matrix
+		size_t col = sk_col[sk];
+		for (uint64_t id=sk_first[sk] ; id!=none ; id=next_kmer[id], col++) {
+			skmer.push_back(matrix[col][current_kmers[col]]);
 			current_kmers[col] += 1;
-
-			size_t row = current_kmers[col];
-			if (row < matrix[col].size()) {
-				// Update the interleaved value
-				current_interleaves[col] = interleaved(matrix[col][row], memory[col],
-													num_kmer_nucl, num_kmer_nucl - col);
-				// Update the sk counts
-				auto sk = sk_index[matrix[col][row]];
-				if (sk_counts.find(sk) == sk_counts.end())
-					sk_counts[sk] = 0;
-				sk_counts[sk] += 1;
-			}
+			remaining -= 1;
+			if (current_kmers[col] < matrix[col].size())
+				set_current(col);
 		}
-
-		// Is it over
-		matrix_consumed = true;
-		for (size_t i=0 ; i<matrix.size() ; i++)
-			if (current_kmers[i] < matrix[i].size()) {
-				matrix_consumed = false;
-				break;
-			}
 	}
 
 	// free memory
 	for (uint8_t * mem : memory)
 		delete[](mem);
-	for (vector<uint8_t *> * sk : skmers)
-		delete(sk);
 
 	return result;
 }
