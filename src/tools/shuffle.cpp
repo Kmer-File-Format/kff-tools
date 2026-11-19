@@ -119,7 +119,7 @@ void Shuffle::shuffle(string input, string output) {
                     struct Block {
                         uint64_t offset;
                         uint32_t seq_size;
-                        uint32_t data_size;
+                        uint32_t nb_kmers;
                     };
                     vector<uint8_t> blocks_bytes;
                     vector<Block> blocks;
@@ -134,7 +134,7 @@ void Shuffle::shuffle(string input, string output) {
                         // Read the block.
                         int nb_kmers = in_section.read_compacted_sequence(seq_bytes, data_bytes);
                         int seq_len = k + nb_kmers - 1;
-                        blocks.push_back({blocks_bytes.size(), (uint32_t)(seq_len/4+1), (uint32_t)(data_size*nb_kmers)});
+                        blocks.push_back({blocks_bytes.size(), (uint32_t)(seq_len/4+1), (uint32_t)nb_kmers});
                         blocks_bytes.insert(blocks_bytes.end(), &seq_bytes[0], &seq_bytes[seq_len/4+1]);
                         blocks_bytes.insert(blocks_bytes.end(), &data_bytes[0], &data_bytes[data_size*nb_kmers]);
                     }
@@ -147,7 +147,7 @@ void Shuffle::shuffle(string input, string output) {
                     const uint8_t * bytes = blocks_bytes.data();
                     for (const Block & block : blocks)
                     {
-                        int nb_kmers =  block.data_size / data_size;
+                        int nb_kmers = block.nb_kmers;
                         out_section.write_compacted_sequence(
                                 (uint8_t *)bytes + block.offset,
                                 k + nb_kmers - 1,
