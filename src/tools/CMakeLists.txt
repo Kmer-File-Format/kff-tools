@@ -13,14 +13,12 @@ add_library(kfftl
     translate.cpp
     validate.cpp
 )
-    
+
 target_include_directories(kfftl
     PUBLIC
     ./include/
     "${PROJECT_SOURCE_DIR}/extern/CLI11/include/"
-    "${PROJECT_SOURCE_DIR}/kff-cpp-api/"
 )
-
 
 # link libraries
 find_package(OpenMP)

@@ -1,7 +1,3 @@
-include_directories(${CMAKE_BINARY_DIR})
-include_directories(${CMAKE_BINARY_DIR}/kff-cpp-api/)
-include_directories(${CMAKE_BINARY_DIR}/src/)
-
 set(SRCS
     main.cpp
     colinear_test.cpp
@@ -10,20 +6,21 @@ set(SRCS
     compact_test.cpp
     skmers_test.cpp
 )
-    
 
-# add the executable
-add_executable(test ${SRCS})
-#add_executable(test main.cpp sequence_test.cpp)
+# Unit tests ("test" is a target name reserved by CTest)
+add_executable(kff-tools-tests ${SRCS})
+set_target_properties(kff-tools-tests PROPERTIES OUTPUT_NAME tests)
 
 # link libraries
-target_link_libraries(test
+target_link_libraries(kff-tools-tests
     kff
     kfftl
     kffutils
 )
 
-target_include_directories(test
+target_include_directories(kff-tools-tests
     PUBLIC
     "${PROJECT_SOURCE_DIR}/tests"
 )
+
+add_test(NAME unit COMMAND kff-tools-tests)
