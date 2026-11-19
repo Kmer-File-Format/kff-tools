@@ -703,6 +703,157 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 
+template <typename Symbol>
+static void chain_columns_with(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2, uint nb_nucl,
+                               vector<pair<uint64_t, uint64_t> > & chain, vector<Symbol> & xs, vector<Symbol> & index,
+                               Compact::ChainBuffers & buffers) {
+	// Symbols (k-m-1 <= 63 nucleotides)
+	const uint sym_bits = 2 * (nb_nucl - 1);
+	const uint64_t mask_lo = sym_bits >= 64 ? ~uint64_t(0) : (uint64_t(1) << sym_bits) - 1;
+	const uint64_t mask_hi = sym_bits <= 64 ? 0 : (uint64_t(1) << (sym_bits - 64)) - 1;
+	auto prefix_symbol = [nb_nucl](const uint8_t * kmer, uint64_t pos) {
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return Symbol::make(high >> 2, (low >> 2) | (high << 62), pos);
+	};
+	xs.resize(column1.size());
+	for (size_t i=0 ; i<column1.size() ; i++) {
+		uint64_t high, low;
+		kmer_value(column1[i], nb_nucl, high, low);
+		xs[i] = Symbol::make(high & mask_hi, low & mask_lo, i);
+	}
+	// Columns of the second column sorted by symbol, then position
+	index.resize(column2.size());
+	for (size_t j=0 ; j<column2.size() ; j++)
+		index[j] = prefix_symbol(column2[j], j);
+	sort(index.begin(), index.end());
+
+	// Thresholds and their changes (row, column, level, previous change of the level)
+	const uint64_t none = numeric_limits<uint64_t>::max();
+	vector<uint64_t> & thresholds = buffers.thresholds;
+	vector<uint64_t> & level_head = buffers.level_head;
+	vector<Compact::ChainChange> & changes = buffers.changes;
+	vector<pair<uint64_t, uint64_t> > & pending = buffers.pending;  // level, column
+	thresholds.clear();
+	level_head.clear();
+	changes.clear();
+	auto record = [&](uint64_t row, uint64_t level, uint64_t column) {
+		if (level == thresholds.size()) {
+			thresholds.push_back(column);
+			level_head.push_back(none);
+		} else
+			thresholds[level] = column;
+		changes.push_back(Compact::ChainChange{row, column, level, level_head[level]});
+		level_head[level] = changes.size() - 1;
+	};
+
+	size_t match_begin = 0, match_end = 0;      // matches of the current symbol in index
+	size_t previous_begin = 0, previous_end = 0;  // changes of the previous row
+	for (size_t i=0 ; i<xs.size() ; i++) {
+		const bool same = i > 0 and xs[i].same(xs[i - 1]);
+		if (not same) {
+			// First entry of the symbol of the row in the index
+			Symbol first = xs[i];
+			first.pos = 0;
+			match_begin = lower_bound(index.begin(), index.end(), first) - index.begin();
+			match_end = match_begin;
+			while (match_end < index.size() and index[match_end].same(first))
+				match_end += 1;
+		}
+		const size_t row_begin = changes.size();
+		if (match_begin == match_end) {
+			previous_begin = previous_end = row_begin;
+			continue;
+		}
+
+		if (same) {
+			// Only the levels following the levels changed by the previous row can change: the
+			// first match after their threshold (old values of the thresholds)
+			pending.clear();
+			for (size_t c=previous_begin ; c<previous_end ; c++) {
+				const uint64_t level = changes[c].level;
+				if (c > previous_begin and changes[c - 1].level == level)
+					continue;
+				const uint64_t value = thresholds[level];
+				size_t lo = match_begin, hi = match_end;
+				while (lo < hi) {
+					const size_t mid = (lo + hi) / 2;
+					if (index[mid].pos > value) hi = mid; else lo = mid + 1;
+				}
+				if (lo < match_end and (level + 1 == thresholds.size() or index[lo].pos < thresholds[level + 1]))
+					pending.emplace_back(level + 1, index[lo].pos);
+			}
+			// The new level (if any) is the highest one: applied last
+			sort(pending.begin(), pending.end());
+			for (const pair<uint64_t, uint64_t> & change : pending)
+				record(i, change.first, change.second);
+		} else {
+			// Matches by decreasing column: each one can lower the threshold of its level
+			for (size_t idx=match_end ; idx-- > match_begin ; ) {
+				const uint64_t column = index[idx].pos;
+				if (thresholds.empty() or column > thresholds.back()) {
+					// After all the thresholds: new level
+					record(i, thresholds.size(), column);
+					continue;
+				}
+				const uint64_t level = lower_bound(thresholds.begin(), thresholds.end(), column) - thresholds.begin();
+				if (thresholds[level] > column)
+					record(i, level, column);
+			}
+		}
+		previous_begin = row_begin;
+		previous_end = changes.size();
+	}
+
+	// Chain from the end: threshold of the level before the current row, then the last row with
+	// the symbol of this column
+	const uint64_t length = thresholds.size();
+	chain.resize(length);
+	uint64_t row_limit = xs.size();
+	for (uint64_t level=length ; level-- > 0 ; ) {
+		uint64_t c = level_head[level];
+		while (changes[c].row >= row_limit)
+			c = changes[c].prev;
+		const uint64_t column = changes[c].column;
+		const Symbol symbol = prefix_symbol(column2[column], 0);
+		uint64_t row = row_limit - 1;
+		while (not xs[row].same(symbol))
+			row -= 1;
+		chain[level] = make_pair(row, column);
+		row_limit = row;
+	}
+}
+
+
+void Compact::chain_columns(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2,
+                            vector<pair<uint64_t, uint64_t> > & chain) {
+	// Same chain as colinear_chaining(pair_kmers(column1, column2)), without the candidate pairs.
+	//
+	// The candidates are the pairs (i, j) whose k-m-1 suffix of column1[i] and k-m-1 prefix of
+	// column2[j] (the symbols X[i] and Y[j]) are equal: the chain is a longest common subsequence
+	// of X and Y. The score of a pair is 1 + the length of the longest common subsequence of
+	// X[0..i-1] and Y[0..j-1]. colinear_longest_chain() takes the pair with the max score and the
+	// min (j, -i), then, from each pair (i, j) of score t, the pair of score t - 1 with i' < i and
+	// j' < j and the min (j', -i'). With the thresholds T_r[s] (min column j such that X[0..r-1]
+	// and Y[0..j] have a common subsequence of length s), this pair is (i', T_i[t - 1]) where i'
+	// is the last row before i with X[i'] = Y[T_i[t - 1]] (rows are scanned backwards once).
+	//
+	// The thresholds are computed row by row (Hunt-Szymanski): the matches of a row (columns j
+	// with Y[j] = X[i], decreasing) update T. The equal kmers of a column are next to each other
+	// and give the same matches: after a row, the next row with the same symbol can only change
+	// the level s + 1 of the levels s changed by the row, with the first match after T[s]. The
+	// work is then about the size of the chains instead of the number of candidate pairs.
+	const uint nb_nucl = this->k - this->m;
+	chain.clear();
+	if (column1.empty() or column2.empty())
+		return;
+	if (nb_nucl - 1 <= 32)
+		chain_columns_with(column1, column2, nb_nucl, chain, this->chain_xs64, this->chain_index64, this->chain_buffers);
+	else
+		chain_columns_with(column1, column2, nb_nucl, chain, this->chain_xs128, this->chain_index128, this->chain_buffers);
+}
+
+
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates) const {
 	vector<pair<uint64_t, uint64_t> > given = candidates;
 	vector<pair<uint64_t, uint64_t> > chain;
@@ -931,6 +1082,12 @@ void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths)
 	const uint nb_links = this->k - this->m;
 	this->links.resize(nb_links);
 	for (uint i=0 ; i<nb_links ; i++) {
+		// 2 and 3 - Links of the 2 columns: chain of the overlapping kmers
+		if (nb_links >= 2 and nb_links <= 64) {
+			this->chain_columns(kmers[i], kmers[i+1], this->links[i]);
+			continue;
+		}
+
 		// 2 - Find all the possible overlaps of kmers
 		this->pair_kmers(kmers[i], kmers[i+1], this->candidates, this->pair_index);
 

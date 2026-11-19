@@ -44,6 +44,29 @@ struct Paths {
 	void close_path() { ends.push_back(kmers.size()); }
 };
 
+/** Symbols of chain_columns(): the k-m-1 nucleotides on 64 bits (up to 32 nucleotides) or 128
+ * bits, with a position */
+struct ChainSymbol64 {
+	uint64_t lo;
+	uint64_t pos;
+	bool same(const ChainSymbol64 & o) const { return lo == o.lo; }
+	bool operator<(const ChainSymbol64 & o) const { return lo != o.lo ? lo < o.lo : pos < o.pos; }
+	static ChainSymbol64 make(uint64_t, uint64_t lo, uint64_t pos) { return ChainSymbol64{lo, pos}; }
+};
+
+struct ChainSymbol128 {
+	uint64_t hi;
+	uint64_t lo;
+	uint64_t pos;
+	bool same(const ChainSymbol128 & o) const { return hi == o.hi and lo == o.lo; }
+	bool operator<(const ChainSymbol128 & o) const {
+		if (hi != o.hi) return hi < o.hi;
+		if (lo != o.lo) return lo < o.lo;
+		return pos < o.pos;
+	}
+	static ChainSymbol128 make(uint64_t hi, uint64_t lo, uint64_t pos) { return ChainSymbol128{hi, lo, pos}; }
+};
+
 class Compact: public KffTool {
 private:
 	std::string input_filename;
@@ -181,6 +204,24 @@ public:
 	 * @return The list of selected links. All other links are removed to keep the order.
 	 **/
 	std::vector<std::pair<uint64_t, uint64_t> > colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates) const;
+	/** Same chain as colinear_chaining(pair_kmers(column1, column2)), computed without the
+	 * candidate pairs (2 <= k - m <= 64): the work is about the size of the chains instead of the
+	 * number of candidates (equal kmers make d x e candidates).
+	 **/
+	void chain_columns(const std::vector<uint8_t *> & column1, const std::vector<uint8_t *> & column2,
+	                   std::vector<std::pair<uint64_t, uint64_t> > & chain);
+	/** Buffers of chain_columns() */
+	struct ChainChange {
+		uint64_t row, column, level, prev;
+	};
+	struct ChainBuffers {
+		std::vector<uint64_t> thresholds, level_head;
+		std::vector<ChainChange> changes;
+		std::vector<std::pair<uint64_t, uint64_t> > pending;
+	};
+	ChainBuffers chain_buffers;
+	std::vector<ChainSymbol64> chain_xs64, chain_index64;
+	std::vector<ChainSymbol128> chain_xs128, chain_index128;
 	/** Same, the chain is written in chain (candidates can be modified) */
 	void colinear_chaining(std::vector<std::pair<uint64_t, uint64_t> > & candidates, std::vector<std::pair<uint64_t, uint64_t> > & chain) const;
 
