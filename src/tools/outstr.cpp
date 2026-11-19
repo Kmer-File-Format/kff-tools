@@ -1,5 +1,7 @@
 #include <vector>
 #include <string>
+#include <charconv>
+#include <cstdio>
 #include <cstring>
 
 #include "outstr.hpp"
@@ -23,25 +25,65 @@ void Outstr::cli_prepare(CLI::App * app) {
 }
 
 
-string format_data(uint8_t * data, size_t data_size) {
+char * outstr_write_data(const uint8_t * data, size_t data_size, char * out) {
 	if (data_size == 0)
-		return "";
+		return out;
 	else if (data_size < 8) {
+		// Value accumulated on an unsigned int (bytes beyond 32 bits are lost)
 		uint val = data[0];
 		for (uint i=1 ; i<data_size ; i++) {
 			val <<= 8;
 			val += data[i];
 		}
-		return std::to_string(val);
+		return std::to_chars(out, out + 10, val).ptr;
 	} else {
-		string val = "";
 		for (uint i=0 ; i<data_size ; i++) {
-			val += "[" + std::to_string((uint)data[i]) + "]";
+			*(out++) = '[';
+			out = std::to_chars(out, out + 3, (uint)data[i]).ptr;
+			*(out++) = ']';
 		}
-		return val;
+		return out;
 	}
 }
 
+
+size_t outstr_data_chars(size_t data_size) {
+	if (data_size == 0)
+		return 0;
+	else if (data_size < 8)
+		return 10;
+	else
+		return 5 * data_size;
+}
+
+
+/** Characters written to stdout by large blocks */
+class OutputBuffer {
+private:
+	std::vector<char> buffer;
+	size_t used;
+
+public:
+	OutputBuffer() : buffer(1 << 20), used(0) {}
+	~OutputBuffer() { this->flush(); }
+
+	/** Space for at least size characters */
+	char * reserve(size_t size) {
+		if (this->used + size > this->buffer.size()) {
+			this->flush();
+			if (size > this->buffer.size())
+				this->buffer.resize(size);
+		}
+		return this->buffer.data() + this->used;
+	}
+	/** Validate the characters written up to end */
+	void commit(char * end) { this->used = end - this->buffer.data(); }
+	void flush() {
+		if (this->used > 0)
+			fwrite(this->buffer.data(), 1, this->used, stdout);
+		this->used = 0;
+	}
+};
 
 
 bool inf_eq(uint8_t * seq1, uint8_t * seq2, uint64_t size) {
@@ -71,37 +113,38 @@ void Outstr::exec() {
 	
 	// Prepare revcomp
 	RevComp rc(reader.get_encoding());
-	uint8_t * rc_copy = new uint8_t[1];
+	vector<uint8_t> rc_copy;
 	uint64_t k = 0;
 
 	// Prepare sequence and data buffers
 	uint8_t * nucleotides = nullptr;
 	uint8_t * data = nullptr;
 
+	// One line per kmer: "<kmer> <data>\n"
+	OutputBuffer output;
 	while (reader.next_kmer(nucleotides, data)) {
+		const uint8_t * printed = nucleotides;
 
-		if (not revcomp) {
-			cout << strif.translate(nucleotides, reader.k) << " ";
-			cout << format_data(data, reader.data_size) << '\n';
-		} else {
+		if (revcomp) {
 			// Change the size of rev comp datastruct if k changes
 			if (reader.k != k) {
 				k = reader.k;
-				delete[] rc_copy;
-				rc_copy = new uint8_t[(k+3) / 4];
+				rc_copy.resize((k+3) / 4);
 			}
 
 			// Get the reverse complement
-			memcpy(rc_copy, nucleotides, (k+3)/4);
-			rc.rev_comp(rc_copy, k);
+			memcpy(rc_copy.data(), nucleotides, (k+3)/4);
+			rc.rev_comp(rc_copy.data(), k);
 
-			if (inf_eq(nucleotides, rc_copy, k)) {
-				cout << strif.translate(nucleotides, k) << " ";
-				cout << format_data(data, reader.data_size) << '\n';
-			} else {
-				cout << strif.translate(rc_copy, k) << " ";
-				cout << format_data(data, reader.data_size) << '\n';
-			}
+			if (not inf_eq(nucleotides, rc_copy.data(), k))
+				printed = rc_copy.data();
 		}
+
+		char * line = output.reserve(reader.k + 2 + outstr_data_chars(reader.data_size));
+		line = strif.write(printed, reader.k, line);
+		*(line++) = ' ';
+		line = outstr_write_data(data, reader.data_size, line);
+		*(line++) = '\n';
+		output.commit(line);
 	}
 }
