@@ -521,30 +521,6 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 }
 
 
-/* Nucleotides of a kmer in the interleaved order around its minimizer (pref nucleotides before
- * it): for each distance t to the minimizer, the suffix nucleotide (index pref + t), then the
- * prefix one (index pref - 1 - t). The nucleotide of index i is read at the position
- * first_pos + i of the byte array. Returned as a 128-bit integer (high, low), 2 bits per
- * nucleotide, the last nucleotide in the lowest bits.
- */
-static inline void interleaved_value(const uint8_t * kmer, uint first_pos, uint nb_nucl, uint pref,
-                                     uint64_t & high, uint64_t & low) {
-	high = low = 0;
-	auto push = [&](uint idx) {
-		const uint pos = first_pos + idx;
-		const uint64_t nucl = (kmer[pos / 4] >> (2 * (3 - pos % 4))) & 0b11;
-		high = (high << 2) | (low >> 62);
-		low = (low << 2) | nucl;
-	};
-	for (uint t=0 ; t<nb_nucl ; t++) {
-		if (pref + t < nb_nucl)
-			push(pref + t);
-		if (t < pref)
-			push(pref - 1 - t);
-	}
-}
-
-
 void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const {
 	const uint nb_nucl = this->k - this->m;
 	const uint offset = (4 - (nb_nucl % 4)) % 4;
