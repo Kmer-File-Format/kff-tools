@@ -46,6 +46,8 @@ public:
 	uint bytes_compacted;
 	uint offset_idx;
 	bool sorted;
+	// Number of sections compacted in parallel
+	uint nb_threads;
 
 	uint8_t * kmer_buffer;
 	uint64_t buffer_size;

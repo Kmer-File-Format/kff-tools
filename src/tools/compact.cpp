@@ -6,6 +6,9 @@
 #include <queue>
 #include <cassert>
 #include <unordered_set>
+#include <atomic>
+#include <memory>
+#include <thread>
 
 #include "compact.hpp"
 #include "encoding.hpp"
@@ -21,6 +24,7 @@ Compact::Compact() {
 	input_filename = "";
 	output_filename = "";
 	sorted = false;
+	nb_threads = 1;
 
 	this->buffer_size = 1 << 10;
 	this->next_free = 0;
@@ -37,6 +41,7 @@ Compact::Compact(std::string input_filename, std::string output_filename, bool s
     this->input_filename = input_filename;
     this->output_filename = output_filename;
     this->sorted = sorted;
+    this->nb_threads = 1;
 
     this->buffer_size = 1 << 10;
     this->next_free = 0;
@@ -63,6 +68,7 @@ void Compact::cli_prepare(CLI::App * app) {
 	CLI::Option * out_option = subapp->add_option("-o, --outfile", output_filename, "Kff to write (must be different from the input)");
 	out_option->required();
 	subapp->add_flag("-s, --sorted", sorted, "The output compacted superkmers will be sorted to allow binary search. Sorted superkmer have a lower compaction ratio (ie will be less compacted).");
+	subapp->add_option("-t, --threads", nb_threads, "Number of threads: minimizer sections are compacted in parallel (the output file does not depend on this number). Default 1.");
 }
 
 
@@ -83,10 +89,52 @@ void Compact::exec() {
 
 	bool first_warning = true;
 
+	// Minimizer sections are loaded by batches, compacted in parallel, then written in order.
+	// A batch is written before any variable section, so the output does not depend on the
+	// number of threads.
+	if (this->nb_threads == 0)
+		this->nb_threads = 1;
+	vector<CompactSection> batch;
+	size_t batch_bytes = 0;
+	const size_t max_batch_sections = this->nb_threads == 1 ? 1 : 32 * this->nb_threads;
+	const size_t max_batch_bytes = 256 << 20;
+	vector<unique_ptr<Compact> > workers;
+	for (uint t=0 ; t<this->nb_threads and this->nb_threads > 1 ; t++) {
+		workers.emplace_back(new Compact());
+		workers.back()->sorted = this->sorted;
+	}
+
+	auto flush = [&]() {
+		if (batch.empty())
+			return;
+		if (workers.empty() or batch.size() == 1) {
+			for (CompactSection & section : batch)
+				this->compact_section(section);
+		} else {
+			atomic<size_t> next_section(0);
+			auto work = [&](Compact * worker) {
+				for (size_t i = next_section++ ; i < batch.size() ; i = next_section++)
+					worker->compact_section(batch[i]);
+			};
+			vector<thread> threads;
+			for (size_t t=0 ; t<workers.size() and t<batch.size() ; t++)
+				threads.emplace_back(work, workers[t].get());
+			for (thread & th : threads)
+				th.join();
+		}
+		for (CompactSection & section : batch) {
+			outfile.register_position('m');
+			outfile.write(section.output.data(), section.output.size());
+		}
+		batch.clear();
+		batch_bytes = 0;
+	};
+
 	while (infile.tellp() != infile.end_position) {
 		char section_type = infile.read_section_type();
 
 		if (section_type == 'v') {
+			flush();
 			Section_GV isgv(&infile);
 			isgv.close();
 
@@ -123,6 +171,7 @@ void Compact::exec() {
 
 			// Rewrite a value section if max is not sufficently large
 			if (outfile.global_vars["max"] < k - m + 1) {
+				flush();
 				unordered_map<string, uint64_t> values(outfile.global_vars);
 				Section_GV sgv(&outfile);
 
@@ -134,12 +183,17 @@ void Compact::exec() {
 				sgv.close();
 			}
 
-			// Compact and save the kmers
+			// Load the section (compacted and saved with its batch)
 			Section_Minimizer sm(&infile);
-			this->compact_section(sm, outfile);
+			batch.emplace_back();
+			this->load_section(sm, outfile, batch.back());
 			sm.close();
+			batch_bytes += batch.back().bytes.size();
+			if (batch.size() >= max_batch_sections or batch_bytes >= max_batch_bytes)
+				flush();
 		}
 	}
+	flush();
 
 	infile.close();
 	outfile.close();

@@ -21,8 +21,10 @@ target_include_directories(kfftl
 )
 
 # link libraries
+find_package(Threads REQUIRED)
 target_link_libraries(kfftl
     PUBLIC
     kff
     kffutils
+    Threads::Threads
 )

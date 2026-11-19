@@ -112,6 +112,8 @@ The compaction is linear in time and needs an amount of memory proportional to t
 Parameters:
 * **-i &lt;input.kff&gt;** \[required\]: File to compact.
 * **-o &lt;output.kff&gt;** \[required\]: Compacted file.
+* **-s**: Sorted compaction (the super-kmers are sorted, allowing binary searches).
+* **-t nb_threads**: Number of minimizer sections compacted in parallel (default 1). The output file is the same whatever the number of threads.
 
 Usage:
 ```bash
