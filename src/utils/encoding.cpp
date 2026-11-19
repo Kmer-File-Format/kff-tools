@@ -1,3 +1,5 @@
+#include <cstring>
+
 #include "encoding.hpp"
 #include "sequences.hpp"
 
@@ -99,7 +101,23 @@ void Stringifyer::init(uint8_t encoding[4]) {
 			// Write in the lookup table
 			lookup[i] = nucl_translation[letter] + lookup[i];
 		}
+		memcpy(chars[i], lookup[i].data(), 4);
 	}
+}
+
+
+char * Stringifyer::write(const uint8_t * sequence, const size_t nucl_length, char * out) const {
+	const size_t byte_length = (nucl_length + 3) / 4;
+	// The first byte contains the padding nucleotides
+	const size_t skipped = (4 - nucl_length % 4) % 4;
+	for (size_t i=skipped ; i<4 ; i++)
+		*(out++) = chars[sequence[0]][i];
+	// Following bytes
+	for (size_t idx=1 ; idx<byte_length ; idx++) {
+		memcpy(out, chars[sequence[idx]], 4);
+		out += 4;
+	}
+	return out;
 }
 
 

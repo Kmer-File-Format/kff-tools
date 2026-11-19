@@ -155,6 +155,23 @@ const lest::test module[] = {
 		}
 	},
 
+	CASE("Stringifyer::write gives the same characters as translate") {
+		mt19937 rnd(12);
+		for (auto enc : some_encodings()) {
+			Stringifyer strif(enc.data());
+			for (size_t n = 1; n <= 70; n++) {
+				string s = random_seq(rnd, n);
+				Bytes b = encode(s, enc.data());
+				dirty_padding(b, n, rnd);
+				string out(n + 8, '#');
+				char * end = strif.write(b.data(), n, &out[0]);
+				EXPECT( end == &out[0] + n );
+				EXPECT( out.substr(0, n) == strif.translate(b.data(), n) );
+				EXPECT( out.substr(n) == string(8, '#') );
+			}
+		}
+	},
+
 	CASE("Binarizer handles lower case letters and any size") {
 		mt19937 rnd(4);
 		for (auto enc : some_encodings()) {

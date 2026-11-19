@@ -59,6 +59,8 @@ public:
 class Stringifyer {
 private:
 	std::string lookup[256];
+	// The 4 characters of each byte value
+	char chars[256][4];
 
 	void init(uint8_t encoding[4]);
 
@@ -84,6 +86,15 @@ public:
 	  **/
 	std::string translate(const uint8_t * sequence, const size_t nucl_length) const;
 	std::string translate(uint64_t sequence, const size_t nucl_length) const;
+	/**
+	  * Write the characters of a 2-bits/nucl sequence, without any allocation.
+	  *
+	  * @param sequence 2-bit compacted sequence (padding bits on the left of the first byte).
+	  * @param nucl_length Length in nucleotides of the sequence (at least 1).
+	  * @param out Destination of the nucl_length characters (no final '\0' is written).
+	  * @return The position after the last written character.
+	  **/
+	char * write(const uint8_t * sequence, const size_t nucl_length, char * out) const;
 };
 
 
