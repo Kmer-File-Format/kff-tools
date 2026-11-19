@@ -21,10 +21,8 @@ target_include_directories(kfftl
 )
 
 # link libraries
-find_package(OpenMP)
 target_link_libraries(kfftl
     PUBLIC
     kff
     kffutils
-    OpenMP::OpenMP_CXX
 )
