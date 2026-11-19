@@ -117,11 +117,14 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	uint subseq_size = seq1_stop - seq1_start + 1;
 	uint subseq_bytes = 1 + (subseq_size + 3) / 4;
 
+	// Stack memory for the usual sizes (up to 120 nucleotides)
+	uint8_t local1[32], local2[32];
+	uint8_t * heap = subseq_bytes > 32 ? new uint8_t[2 * subseq_bytes] : nullptr;
+	uint8_t * subseq1 = heap ? heap : local1;
+	uint8_t * subseq2 = heap ? heap + subseq_bytes : local2;
 
-    uint8_t * subseq1 = new uint8_t[subseq_bytes];
 	memset(subseq1, 0, subseq_bytes);
 	subsequence_bis(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
-	uint8_t * subseq2 = new uint8_t[subseq_bytes];
 	memset(subseq2, 0, subseq_bytes);
 	subsequence_bis(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
 
@@ -141,8 +144,7 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 		}
 	}
 
-	delete[] subseq1;
-	delete[] subseq2;
+	delete[] heap;
 	return return_val;
 }
 
