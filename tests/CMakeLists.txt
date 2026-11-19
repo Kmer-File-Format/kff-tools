@@ -9,6 +9,7 @@ set(SRCS
     outstr_test.cpp
     blocks_test.cpp
     colinear_reference_test.cpp
+    compact_key_test.cpp
 )
 
 # Unit tests ("test" is a target name reserved by CTest)

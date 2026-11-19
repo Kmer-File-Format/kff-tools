@@ -114,6 +114,12 @@ public:
 	 **/
 	int interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * kmer2) const;
 
+	/** Key of a kmer of the buffer (k - m <= 64) for the order of interleaved_compare_kmers():
+	 * the nucleotides sorted by distance to the minimizer (the suffix nucleotide first at each
+	 * distance), 2 bits each, as a 128-bit integer (high, low).
+	 **/
+	void interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const;
+
 	/** Sort each column of the matrix using a kmer order. The input columns of the matrix are
 	 * modified during this process.
 	 * 

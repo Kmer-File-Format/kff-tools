@@ -519,18 +519,59 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 }
 
 
+void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const {
+	const uint nb_nucl = this->k - this->m;
+	const uint offset = (4 - (nb_nucl % 4)) % 4;
+	const uint pref_nucl = this->mini_pos_from_buffer(kmer);
+	high = low = 0;
+	auto push = [&](uint idx) {
+		const uint pos = offset + idx;
+		const uint64_t nucl = (kmer[pos / 4] >> (2 * (3 - pos % 4))) & 0b11;
+		high = (high << 2) | (low >> 62);
+		low = (low << 2) | nucl;
+	};
+	// Distance t to the minimizer: the suffix nucleotide, then the prefix one
+	for (uint t=0 ; t<nb_nucl ; t++) {
+		if (pref_nucl + t < nb_nucl)
+			push(pref_nucl + t);
+		if (t < pref_nucl)
+			push(pref_nucl - 1 - t);
+	}
+}
+
+
 void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	// Sort by column
 
+	// Keys of the comparison: same comparisons, so std::sort gives the same order
+	struct Keyed {
+		uint64_t high;
+		uint64_t low;
+		uint8_t * kmer;
+	};
+	vector<Keyed> keyed;
+
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
-		// Comparison function (depends on minimizer position)
-		auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
-			return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
-		};
+		if (this->k - this->m > 64) {
+			// Comparison function (depends on minimizer position)
+			auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
+				return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
+			};
+			sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+			continue;
+		}
 
-		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+		keyed.resize(kmer_matrix[i].size());
+		for (size_t j=0 ; j<keyed.size() ; j++) {
+			keyed[j].kmer = kmer_matrix[i][j];
+			this->interleaved_key(keyed[j].kmer, keyed[j].high, keyed[j].low);
+		}
+		sort(keyed.begin(), keyed.end(), [](const Keyed & a, const Keyed & b) {
+			return a.high != b.high ? a.high < b.high : a.low < b.low;
+		});
+		for (size_t j=0 ; j<keyed.size() ; j++)
+			kmer_matrix[i][j] = keyed[j].kmer;
 	}
-
 }
 
 #include <bitset>
