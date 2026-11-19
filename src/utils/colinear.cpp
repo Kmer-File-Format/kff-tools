@@ -102,6 +102,31 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 	for (size_t i=0 ; i<leaves.size() ; i++)
 		pairs[i] = this->nc_tree[leaves[i]].first;
 
+	// The scores are computed in a segment tree in breadth first order (score of the leaf of
+	// rank r, i.e. leaf 2r of nc_tree, in seg[seg_size + r]): its upper levels stay in the
+	// cache, unlike the in-order layout of nc_tree, which is filled at the end.
+	size_t seg_size = 1;
+	while (seg_size < leaves.size())
+		seg_size <<= 1;
+	vector<uint64_t> seg(2 * seg_size, 0);
+	// Max score of the leaves on the left of the rank, and leftmost leaf with this score
+	auto left_max_leaf = [&seg, seg_size](uint64_t rank, uint64_t & max_leaf) -> uint64_t {
+		uint64_t max_score = 0;
+		uint64_t max_node = 0;
+		// The left siblings met when going up cover the ranks on the left, further and further
+		for (uint64_t node=seg_size+rank ; node>1 ; node>>=1)
+			if ((node & 1) and seg[node - 1] > 0 and seg[node - 1] >= max_score) {
+				max_score = seg[node - 1];
+				max_node = node - 1;
+			}
+		if (max_score == 0)
+			return 0;
+		while (max_node < seg_size)
+			max_node = seg[2 * max_node] == max_score ? 2 * max_node : 2 * max_node + 1;
+		max_leaf = 2 * (max_node - seg_size);
+		return max_score;
+	};
+
 	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
 	size_t group_start = 0;
 	while (group_start < leaves.size())
@@ -118,14 +143,14 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 		for (size_t i=group_start ; i<group_end ; i++)
 		{
 			uint64_t leaf = leaves[i];
-			uint64_t subtree = no_leaf;
-			uint64_t left_score = this->left_max(leaf, subtree);
+			uint64_t max_leaf = no_leaf;
+			uint64_t left_score = left_max_leaf(leaf / 2, max_leaf);
 			uint64_t score = 1;
 
 			if (left_score > 0 and left_score >= group_max)
 			{
 				// Leftmost compatible leaf with the max score
-				this->chains[leaf/2] = this->leftmost_leaf(subtree, left_score);
+				this->chains[leaf/2] = max_leaf;
 				score += left_score;
 			}
 			else if (group_max > 0)
@@ -133,7 +158,7 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 				// All the leaves with the max score are in the group
 				this->chains[leaf/2] = this->chains[group_max_leaf/2];
 				if (this->chains[leaf/2] < no_leaf)
-					score += this->nc_tree[this->chains[leaf/2]].second;
+					score += seg[seg_size + this->chains[leaf/2] / 2];
 			}
 
 			group.emplace_back(leaf, score);
@@ -145,50 +170,22 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 		}
 
 		for (const pair<uint64_t, uint64_t> & leaf_score : group)
-			this->propagate_up(leaf_score.first, leaf_score.second);
+			for (uint64_t node=seg_size+leaf_score.first/2 ; node>=1 and seg[node]<leaf_score.second ; node>>=1)
+				seg[node] = leaf_score.second;
 		group_start = group_end;
 	}
+
+	// Scores of nc_tree: the leaves, then each internal node is the max of its children (as
+	// propagate_up() makes it)
+	for (size_t rank=0 ; rank<leaves.size() ; rank++)
+		this->nc_tree[2 * rank].second = seg[seg_size + rank];
+	for (uint64_t level=1 ; (uint64_t(1) << level) - 1 < this->nc_tree.size() ; level++)
+		for (uint64_t i=(uint64_t(1) << level) - 1 ; i<this->nc_tree.size() ; i+=(uint64_t(1) << (level + 1)))
+			this->nc_tree[i].second = std::max(this->nc_tree[i - (uint64_t(1) << (level - 1))].second,
+			                                   this->nc_tree[i + (uint64_t(1) << (level - 1))].second);
 }
 
 
-uint64_t Colinear::left_max(uint64_t idx, uint64_t & leftmost_subtree)
-{
-	uint64_t max_score = 0;
-	leftmost_subtree = this->nc_tree.size();
-
-	// Left subtrees met when going up are further and further on the left: the last one with
-	// the max score is the leftmost.
-	uint64_t up = this->up_tree(idx);
-	while (up < this->nc_tree.size())
-	{
-		if (this->is_right(idx))
-		{
-			uint64_t left = this->left_subtree(up);
-			uint64_t score = this->nc_tree[left].second;
-			if (score > 0 and score >= max_score)
-			{
-				max_score = score;
-				leftmost_subtree = left;
-			}
-		}
-		idx = up;
-		up = this->up_tree(idx);
-	}
-
-	return max_score;
-}
-
-
-uint64_t Colinear::leftmost_leaf(uint64_t idx, uint64_t score)
-{
-	// Go down, on the left as soon as the left subtree has the score
-	while (__builtin_ctz(~idx) != 0)
-	{
-		uint64_t left = this->left_subtree(idx);
-		idx = this->nc_tree[left].second == score ? left : this->right_subtree(idx);
-	}
-	return idx;
-}
 
 
 void Colinear::index_leaves()
