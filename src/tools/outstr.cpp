@@ -89,8 +89,8 @@ public:
 bool inf_eq(uint8_t * seq1, uint8_t * seq2, uint64_t size) {
 	uint64_t nb_bytes = (size + 3) / 4;
 
-	// Test first byte
-	uint16_t mask = (1 << ((size % 4) * 2)) - 1;
+	// Test first byte (without its padding bits)
+	uint16_t mask = size % 4 == 0 ? 0xFF : (1 << ((size % 4) * 2)) - 1;
 	uint8_t byte_seq1 = seq1[0] & mask;
 	uint8_t byte_seq2 = seq2[0] & mask;
 	if (byte_seq1 != byte_seq2)
