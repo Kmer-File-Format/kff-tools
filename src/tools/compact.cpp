@@ -540,6 +540,11 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 		uint8_t * kmer;
 	};
 	vector<Keyed> keyed;
+	struct Keyed64 {
+		uint64_t key;
+		uint8_t * kmer;
+	};
+	vector<Keyed64> keyed64;
 
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
 		if (this->k - this->m > 64) {
@@ -548,6 +553,22 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 				return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
 			};
 			sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+			continue;
+		}
+
+		if (this->k - this->m <= 32) {
+			// The keys fit in 64 bits (high is 0): same comparisons on smaller elements
+			keyed64.resize(kmer_matrix[i].size());
+			for (size_t j=0 ; j<keyed64.size() ; j++) {
+				uint64_t high;
+				keyed64[j].kmer = kmer_matrix[i][j];
+				this->interleaved_key(keyed64[j].kmer, high, keyed64[j].key);
+			}
+			sort(keyed64.begin(), keyed64.end(), [](const Keyed64 & a, const Keyed64 & b) {
+				return a.key < b.key;
+			});
+			for (size_t j=0 ; j<keyed64.size() ; j++)
+				kmer_matrix[i][j] = keyed64[j].kmer;
 			continue;
 		}
 
