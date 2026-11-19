@@ -213,10 +213,7 @@ const lest::test module[] = {
 	},
 
 	CASE("sequence_compare follows the encoding order") {
-		// Known issue: subsequence_bis() loses the first nucleotide of slices of 5
-		// nucleotides or more, so sequence_compare() ignores part of these slices.
-		// Only slices of at most 4 nucleotides are tested here.
-		const size_t max_len = 4;
+		const size_t max_len = 40;
 		mt19937 rnd(6);
 		for (int test = 0; test < 3000; test++) {
 			size_t n1 = 1 + rnd() % 40, n2 = 1 + rnd() % 40;

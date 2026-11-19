@@ -77,33 +77,6 @@ void subsequence(const uint8_t * sequence, const uint seq_size, uint8_t * extrac
 }
 
 
-void subsequence_bis(const uint8_t * sequence, const uint seq_size, uint8_t * extracted, const uint begin_nucl, const uint end_nucl) {
-	// Extract the correct slice
-	uint seq_left_offset = (4 - seq_size % 4) % 4;
-	uint extract_start_byte = (seq_left_offset + begin_nucl) / 4;
-
-    uint64_t reads = end_nucl - begin_nucl + 1; // number of nucls to read
-    uint64_t position = (seq_left_offset + begin_nucl) % 4; // the position of the nucls to read
-    uint64_t mask = 0b11 << ((3 - position) * 2); // the mask to read the wanted bits
-    uint64_t section = 0;
-
-    for (uint i = 0; i < reads; i++) {
-        extracted[section] <<= 2;
-        extracted[section] |= ((sequence[extract_start_byte]) & mask) >> ((3 - position) * 2);
-        if (position == 3) { // we arrive at the end of the section of the vector
-            extract_start_byte++;
-            position = 0;
-            mask = 0b11000000;
-        } else { // we continue to read in the same section of the vector
-            mask >>= 2;
-            position++;
-        }
-        if (i % 4 == 0 && i > 0) { // end of the section of extracted
-            section++;
-        }
-    }
-}
-
 int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 											const uint seq1_start, const uint seq1_stop,
 											const uint8_t * seq2, const uint seq2_size,
@@ -113,29 +86,24 @@ int sequence_compare(const uint8_t * seq1, const uint seq1_size,
 	if (seq1_stop - seq1_start != seq2_stop - seq2_start)
 		return (seq1_stop - seq1_start) < (seq2_stop - seq2_start) ? -1 : 1;
 
-	// Extraction of subsequences
+	// Extraction of the subsequences, right aligned (subsequence() needs one more byte)
 	uint subseq_size = seq1_stop - seq1_start + 1;
-	uint subseq_bytes = 1 + (subseq_size + 3) / 4;
+	uint subseq_bytes = (subseq_size + 3) / 4;
 
 	// Stack memory for the usual sizes (up to 120 nucleotides)
 	uint8_t local1[32], local2[32];
-	uint8_t * heap = subseq_bytes > 32 ? new uint8_t[2 * subseq_bytes] : nullptr;
+	uint8_t * heap = subseq_bytes + 1 > 32 ? new uint8_t[2 * (subseq_bytes + 1)] : nullptr;
 	uint8_t * subseq1 = heap ? heap : local1;
-	uint8_t * subseq2 = heap ? heap + subseq_bytes : local2;
+	uint8_t * subseq2 = heap ? heap + subseq_bytes + 1 : local2;
 
-	memset(subseq1, 0, subseq_bytes);
-	subsequence_bis(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
-	memset(subseq2, 0, subseq_bytes);
-	subsequence_bis(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
+	subsequence(seq1, seq1_size, subseq1, seq1_start, seq1_stop);
+	subsequence(seq2, seq2_size, subseq2, seq2_start, seq2_stop);
 
-	// comparison of the subsequences (same size)
-	uint return_val = 0;
-	// First byte
-	uint offset = (4 - (subseq_size % 4)) % 4;
-	uint mask = (1 << (2 * (4 - offset))) - 1;
+	// comparison of the subsequences (same size), the padding bits of the first byte are ignored
+	int return_val = 0;
+	uint8_t mask = subseq_size % 4 == 0 ? 0xFF : (1 << (2 * (subseq_size % 4))) - 1;
 	if ((subseq1[0] & mask) != (subseq2[0] & mask))
 		return_val = (subseq1[0] & mask) < (subseq2[0] & mask) ? -1 : 1;
-
 
 	// All following bytes
 	for (uint b=1 ; b<subseq_bytes and return_val==0 ; b++) {
