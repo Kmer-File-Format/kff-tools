@@ -162,7 +162,8 @@ void Instr::exec() {
 	Section_Raw sr(&outfile);
 
 	uint8_t * seq;
-	uint8_t * sub_seq = new uint8_t[(max_kmerseq + 3) / 4];
+	// Slices of max kmers: max + k - 1 nucleotides (+ 1 byte needed by subsequence())
+	uint8_t * sub_seq = new uint8_t[(max_kmerseq + k - 1 + 3) / 4 + 1];
 	uint8_t * data = new uint8_t[data_size * max_kmerseq];
 	uint seq_size = 0;
 	// read the next line from the txt file
