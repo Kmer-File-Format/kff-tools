@@ -48,17 +48,26 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 	// rightmost one. The pairs of a group are therefore processed together: their scores are
 	// added to the tree at the end of the group, so that the tree only contains compatible
 	// leaves, and the group max is tracked apart.
-	sort(pairs.begin(), pairs.end(), [](const PairInt & a, const PairInt & b) {
+	auto order = [](const PairInt & a, const PairInt & b) {
 		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	};
+	sort(pairs.begin(), pairs.end(), order);
+
+	// Leaves of the pairs, in the same order (the leaves hold the pairs)
+	const uint64_t no_leaf = this->nc_tree.size();
+	vector<uint64_t> leaves(pairs.size());
+	for (size_t i=0 ; i<leaves.size() ; i++)
+		leaves[i] = 2 * i;
+	sort(leaves.begin(), leaves.end(), [this, &order](uint64_t a, uint64_t b) {
+		return order(this->nc_tree[a].first, this->nc_tree[b].first);
 	});
 
-	const uint64_t no_leaf = this->nc_tree.size();
 	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
 	size_t group_start = 0;
 	while (group_start < pairs.size())
 	{
 		size_t group_end = group_start;
-		while (group_end < pairs.size() and pairs[group_end].first == pairs[group_start].first)
+		while (group_end < pairs.size() and this->nc_tree[leaves[group_end]].first.first == this->nc_tree[leaves[group_start]].first.first)
 			group_end += 1;
 
 		group.clear();
@@ -68,7 +77,7 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 		uint64_t group_max_leaf = no_leaf;
 		for (size_t i=group_start ; i<group_end ; i++)
 		{
-			uint64_t leaf = this->tree_idxs[pairs[i]];
+			uint64_t leaf = leaves[i];
 			uint64_t subtree = no_leaf;
 			uint64_t left_score = this->left_max(leaf, subtree);
 			uint64_t score = 1;
@@ -142,8 +151,18 @@ uint64_t Colinear::leftmost_leaf(uint64_t idx, uint64_t score)
 }
 
 
+void Colinear::index_leaves()
+{
+	// The leaves after the pairs only fill the tree
+	for (uint64_t leaf=0 ; leaf<2*this->chains.size() ; leaf+=2)
+		this->tree_idxs[this->nc_tree[leaf].first] = leaf;
+}
+
+
 void Colinear::update_score(PairInt & pair)
 {
+	if (this->tree_idxs.empty())
+		this->index_leaves();
 	uint64_t pair_idx = this->tree_idxs[pair];
 	uint64_t idx = pair_idx;
 	uint64_t max_score = 1; // One node alone like this one at the moment
@@ -292,7 +311,6 @@ void Colinear::init_tree(vector<Node> & tree, vector<PairInt> & sorted_nodes)
 	uint64_t tree_idx = 0;
 	for (PairInt & p : sorted_nodes)
 	{
-		this->tree_idxs[p] = tree_idx;
 		tree[tree_idx] = Node(p, 0);
 		tree_idx += 2;
 	}
