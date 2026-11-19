@@ -9,7 +9,11 @@ Each following part describes one of these tools.
 ## Install
 
     git clone https://github.com/Kmer-File-Format/kff-tools.git --recursive
-    cd kff-tools && mkdir build && cd build && cmake .. && make -j 4
+    cd kff-tools && cmake -S . -B build && cmake --build build -j 4
+
+The binaries are written in `bin/`. The build is optimised (Release) by
+default; use `-DCMAKE_BUILD_TYPE=Debug` to debug. Needs CMake 3.16 or newer
+and a C++17 compiler.
 
 
 ## `kff-tools instr`
@@ -191,14 +195,13 @@ Usage:
 
 # Testing the code
 
-Run functional tests from the root of the project
+Unit tests (C++) and functional tests (Python, they call `./bin/kff-tools`):
 
 ```bash
-  python3 -m unittest discover -s tests/
+  ctest --test-dir build      # both
+  ./bin/tests                 # unit tests only
+  python3 -m unittest discover -s tests/   # functional tests, from the root of the project
 ```
 
-Run unit tests from the root of the project
-
-```bash
-  ./bin/tests
-```
+Bit-identical outputs on real data (genomes, Illumina reads, k-mer counts),
+with reference hashes: see [tests/functional/README.md](tests/functional/README.md).
