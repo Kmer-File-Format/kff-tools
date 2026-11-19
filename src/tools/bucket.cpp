@@ -12,6 +12,7 @@
 #include "merge.hpp"
 
 #include "encoding.hpp"
+#include "blocks.hpp"
 
 using namespace std;
 
@@ -63,26 +64,47 @@ void Bucket::cli_prepare(CLI::App * app) {
 }
 
 
+namespace {
+
+/** The minimizer section of a bucket, kept in memory until the end */
+struct BucketSection {
+	// Encoder of the variables declared when the bucket was created (k, m, max, data_size)
+	uint32_t encoder;
+	// Bytes of the minimizer as written in the section header
+	uint8_t minimizer[8];
+	uint64_t nb_blocks;
+	// Bytes of the blocks of the section
+	vector<uint8_t> blocks;
+};
+
+}
+
+
 void Bucket::exec() {
 	uint nb_mutex = 64;
 
 	// Open the sequence stream
 	KffSeqStream stream(this->input_filename);
-	vector<unordered_map<uint64_t, Section_Minimizer *> > buckets;
+	// minimizer -> index of its bucket. The iteration order of these maps gives the order
+	// of the sections in the output file.
+	vector<unordered_map<uint64_t, uint32_t> > buckets;
 	buckets.resize(nb_mutex);
+	vector<BucketSection> sections;
+	// One encoder per configuration of variables (usually only one)
+	vector<MinimizerBlockEncoder> encoders;
 
 	RevComp rc(stream.reader.get_encoding());
-	Stringifyer strif(stream.reader.get_encoding());
 
 	{
 	// Variables init by thread
 	MinimizerSearcher * searcher = new MinimizerSearcher(0, m, stream.reader.get_encoding());
-	uint8_t * subseq = new uint8_t[1];
+	vector<uint8_t> subseq(1);
 	uint max_seq = 1;
 	uint8_t * seq = new uint8_t[(max_seq + 3) / 4];
 	uint max_data = 1;
 	uint8_t * data = new uint8_t[max_data];
 	uint prev_k = 0;
+	int64_t encoder_idx = -1;
 
 	// Read the stream line by line
 	while(true) {
@@ -92,7 +114,6 @@ void Bucket::exec() {
 		if (nb_kmers == 0)
 			break;
 		else if (nb_kmers < 0) {
-			// cout << "Realloc " << omp_get_thread_num() << endl;
 			// Seq buffer update
 			uint new_seq_size = stream.reader.k + stream.reader.max - 1;
 			if (new_seq_size > max_seq) {
@@ -116,109 +137,122 @@ void Bucket::exec() {
 		uint seq_size = k - 1 + nb_kmers;
 		if (k != prev_k) {
 			prev_k = k;
-			delete[] subseq;
-			subseq = new uint8_t[(k * 2 + 3) / 4];
-			memset(subseq, 0, (k * 2 + 3) / 4);
 			delete searcher;
 			searcher = new MinimizerSearcher(k, m, stream.reader.get_encoding());
 		}
+		// Room for the longest super-kmer (+1 byte needed by subsequence())
+		if (subseq.size() < (seq_size + 3) / 4 + 1)
+			subseq.resize((seq_size + 3) / 4 + 1);
 
-		// typedef struct {
-		//   uint64_t start_position;
-		//   uint64_t stop_position;
-		//   int64_t minimizer_position;
-		//   uint64_t minimizer;
-		// } skmer;
+		// Encoder of the current variables
+		const uint64_t max = stream.reader.get_var("max");
+		if (encoder_idx < 0 or encoders[encoder_idx].k != k or encoders[encoder_idx].max != max
+				or encoders[encoder_idx].data_size != data_size) {
+			encoder_idx = -1;
+			for (size_t e=0 ; e<encoders.size() ; e++)
+				if (encoders[e].k == k and encoders[e].max == max and encoders[e].data_size == data_size)
+					encoder_idx = e;
+			if (encoder_idx < 0) {
+				encoder_idx = encoders.size();
+				encoders.emplace_back(k, m, max, data_size);
+			}
+		}
 
         // Skmer deduction
         vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
         for (skmer sk : skmers) {
-        	// cout << sk.start_position << " " << sk.stop_position << " " << sk.minimizer_position << " " << sk.minimizer << endl;
 			uint mutex_idx = sk.minimizer % nb_mutex;
-			// cout << "mutex " << mutex_id << endl;
+			uint32_t bucket_idx;
+			auto found = buckets[mutex_idx].find(sk.minimizer);
 			// New bucket
-			if (buckets[mutex_idx].find(sk.minimizer) == buckets[mutex_idx].end()) {
-				// cout << "New bucket " << sk.minimizer << endl;
-				// Create the file
-				Kff_file * outfile = new Kff_file(output_filename + "_" + to_string(sk.minimizer) + ".kff", "w");
-				outfile->write_encoding(stream.reader.get_encoding());
-				outfile->set_uniqueness(stream.reader.file->uniqueness);
-				outfile->set_canonicity(stream.reader.file->canonicity);
-
-				// Usefull values
-				Section_GV sgv(outfile);
-			  sgv.write_var("k", k);
-			  sgv.write_var("m", m);
-			  sgv.write_var("max", stream.reader.get_var("max"));
-			  sgv.write_var("data_size", data_size);
-			  sgv.close();
-			  // Create the bucket by itself
-			  Section_Minimizer * sm = new Section_Minimizer(outfile);
-			  buckets[mutex_idx][sk.minimizer] = sm;
-			  // Write the minimizer
-			  if (sk.minimizer_position < 0) {
-			  	int mini_pos = - sk.minimizer_position - 1;
-			  	subsequence(seq, seq_size, subseq, mini_pos, mini_pos + m - 1);
-			  	rc.rev_comp(subseq, m);
-			  } else {
-			  	subsequence(seq, seq_size, subseq, sk.minimizer_position, sk.minimizer_position + m - 1);
-			  }
-			  sm->write_minimizer(subseq);
+			if (found == buckets[mutex_idx].end()) {
+				bucket_idx = sections.size();
+				buckets[mutex_idx][sk.minimizer] = bucket_idx;
+				sections.emplace_back();
+				BucketSection & section = sections.back();
+				section.encoder = encoder_idx;
+				section.nb_blocks = 0;
+				// The minimizer
+				if (sk.minimizer_position < 0) {
+					int mini_pos = - sk.minimizer_position - 1;
+					subsequence(seq, seq_size, subseq.data(), mini_pos, mini_pos + m - 1);
+					rc.rev_comp(subseq.data(), m);
+				} else {
+					subsequence(seq, seq_size, subseq.data(), sk.minimizer_position, sk.minimizer_position + m - 1);
+				}
+				memcpy(section.minimizer, subseq.data(), encoders[encoder_idx].minimizer_bytes);
 			} else {
-				// cout << "No new bucket" << endl;
+				bucket_idx = found->second;
 			}
 
-			uint seq_size = k - 1 + nb_kmers;
 			uint mini_pos = k + 2;
 			// Get the subsequence
-			// cout << "Subsequence" << endl;
-			subsequence(seq, seq_size, subseq, sk.start_position, sk.stop_position);
+			subsequence(seq, seq_size, subseq.data(), sk.start_position, sk.stop_position);
 			uint subseq_size = sk.stop_position - sk.start_position + 1;
 			if (sk.minimizer_position >= 0) {
 				mini_pos = sk.minimizer_position - sk.start_position;
 			}
 			// Get the rev subsequence
 			else {
-				rc.rev_comp(subseq, subseq_size);
+				rc.rev_comp(subseq.data(), subseq_size);
 				mini_pos = sk.stop_position + sk.minimizer_position - m + 2;
 				// Reverse data
 				rc.rev_data(data + sk.start_position * data_size, data_size, subseq_size - k + 1);
 			}
 
-			// cout << "File write " << sk.minimizer << " " << sk.minimizer % 1024 << endl;
-			// Save the skmer and its related data
-			buckets[mutex_idx][sk.minimizer]->write_compacted_sequence(
-					subseq, subseq_size, mini_pos,
-					data + sk.start_position * data_size
-			);
+			// Save the skmer and its related data (encoded with the variables of its section)
+			BucketSection & section = sections[bucket_idx];
+			encoders[section.encoder].append(section.blocks, subseq.data(), subseq_size, mini_pos,
+			                                 data + sk.start_position * data_size);
+			section.nb_blocks += 1;
 		}
 	}
 
 	delete searcher;
 	delete[] seq;
 	delete[] data;
-	delete[] subseq;
 	}
 
-	// Close all the buckets
-	vector<Kff_file *> files;
+	// Write the buckets in one file. The file is the same as the merge of one file per
+	// bucket: a variable section each time the variables change, then the minimizer sections.
+	Kff_file outfile(output_filename, "w");
+	outfile.set_indexation(true);
+	outfile.write_encoding(stream.reader.get_encoding());
+	std::string meta = "Merged file";
+	outfile.write_metadata(meta.length(), (uint8_t *)meta.c_str());
+
 	for (uint mutex_idx=0 ; mutex_idx<nb_mutex ; mutex_idx++)
 		for (auto& it: buckets[mutex_idx]) {
-			Section_Minimizer * sm = it.second;
-			Kff_file * outfile = sm->file;
-			sm->close();
-			delete sm;
+			BucketSection & section = sections[it.second];
+			const MinimizerBlockEncoder & encoder = encoders[section.encoder];
 
-			files.push_back(outfile);
-			outfile->close(false);
-			outfile->open("r");
+			// Variables of the section
+			const pair<const char *, uint64_t> variables[] = {
+				{"k", encoder.k}, {"m", encoder.m}, {"max", encoder.max}, {"data_size", encoder.data_size}};
+			bool v_section_needed = false;
+			for (auto & p : variables)
+				if (outfile.global_vars.find(p.first) == outfile.global_vars.end()
+						or outfile.global_vars[p.first] != p.second)
+					v_section_needed = true;
+			if (v_section_needed) {
+				Section_GV sgv(&outfile);
+				for (auto & p : variables)
+					sgv.write_var(p.first, p.second);
+				sgv.close();
+			}
+
+			// Minimizer section: type, minimizer, number of blocks, blocks
+			outfile.register_position('m');
+			uint8_t header[1 + 8 + 8];
+			header[0] = 'm';
+			memcpy(header + 1, section.minimizer, encoder.minimizer_bytes);
+			for (uint b=0 ; b<8 ; b++)
+				header[1 + encoder.minimizer_bytes + b] = static_cast<uint8_t>(section.nb_blocks >> (8 * (7 - b)));
+			outfile.write(header, 1 + encoder.minimizer_bytes + 8);
+			outfile.write(section.blocks.data(), section.blocks.size());
+			// Free the memory as soon as the section is written
+			vector<uint8_t>().swap(section.blocks);
 		}
 
-	// Merge all the buckets in one file
-	Merge mg;
-	mg.merge(files, output_filename);
-
-	for (Kff_file * file : files)
-		delete file;
+	outfile.close();
 }
-
