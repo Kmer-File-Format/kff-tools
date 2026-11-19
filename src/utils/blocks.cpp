@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstring>
 
 #include "blocks.hpp"
 
@@ -26,20 +27,24 @@ MinimizerBlockEncoder::MinimizerBlockEncoder(uint64_t k, uint64_t m, uint64_t ma
 void MinimizerBlockEncoder::append(std::vector<uint8_t> & out, const uint8_t * seq, uint64_t seq_size,
                                    uint64_t mini_pos, const uint8_t * data) const {
 	const uint64_t nb_kmers = seq_size - k + 1;
+	const uint64_t no_mini_size = seq_size - m;
+	const uint64_t suffix_size = no_mini_size - mini_pos;
+	const uint64_t seq_bytes = bytes_from_bit_array(2, no_mini_size);
+	const uint64_t data_bytes = bytes_from_bit_array(this->data_size * 8, nb_kmers);
+
+	// The block is written in place at the end of out (the sequence bytes must start at 0)
+	const size_t start = out.size();
+	out.resize(start + this->nb_kmers_bytes + this->mini_pos_bytes + seq_bytes + data_bytes);
+	uint8_t * block = out.data() + start;
 
 	// 1 - Number of kmers and minimizer position, big endian
 	for (uint64_t b=this->nb_kmers_bytes ; b>0 ; b--)
-		out.push_back(static_cast<uint8_t>(nb_kmers >> (8 * (b - 1))));
+		*(block++) = static_cast<uint8_t>(nb_kmers >> (8 * (b - 1)));
 	for (uint64_t b=this->mini_pos_bytes ; b>0 ; b--)
-		out.push_back(static_cast<uint8_t>(mini_pos >> (8 * (b - 1))));
+		*(block++) = static_cast<uint8_t>(mini_pos >> (8 * (b - 1)));
 
 	// 2 - Sequence without the minimizer, right aligned, padding bits set to 0
-	const uint64_t no_mini_size = seq_size - m;
-	const uint64_t suffix_size = no_mini_size - mini_pos;
-	const size_t start = out.size();
-	out.resize(start + bytes_from_bit_array(2, no_mini_size), 0);
-	uint8_t * no_mini = out.data() + start;
-
+	uint8_t * no_mini = block;
 	if (seq_size <= 32) {
 		// 64 bits arithmetic
 		uint64_t full = 0;
@@ -48,11 +53,12 @@ void MinimizerBlockEncoder::append(std::vector<uint8_t> & out, const uint8_t * s
 		const uint64_t suffix = suffix_size == 0 ? 0 : full & ((uint64_t(1) << (2 * suffix_size)) - 1);
 		const uint64_t prefix = mini_pos == 0 ? 0 : (full >> (2 * (suffix_size + m))) & ((uint64_t(1) << (2 * mini_pos)) - 1);
 		uint64_t value = (suffix_size >= 32 ? 0 : prefix << (2 * suffix_size)) | suffix;
-		for (uint64_t i=(no_mini_size + 3) / 4 ; i>0 ; i--) {
+		for (uint64_t i=seq_bytes ; i>0 ; i--) {
 			no_mini[i - 1] = static_cast<uint8_t>(value);
 			value >>= 8;
 		}
 	} else {
+		memset(no_mini, 0, seq_bytes);
 		const uint64_t seq_offset = (4 - seq_size % 4) % 4;
 		uint64_t dst = (4 - no_mini_size % 4) % 4;
 		auto copy = [&](uint64_t from, uint64_t nb) {
@@ -67,5 +73,6 @@ void MinimizerBlockEncoder::append(std::vector<uint8_t> & out, const uint8_t * s
 	}
 
 	// 3 - Data of the kmers
-	out.insert(out.end(), data, data + bytes_from_bit_array(this->data_size * 8, nb_kmers));
+	if (data_bytes > 0)
+		memcpy(no_mini + seq_bytes, data, data_bytes);
 }
