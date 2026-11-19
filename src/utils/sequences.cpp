@@ -643,7 +643,7 @@ uint64_t subseq_to_uint(const uint8_t * seq, uint seq_size, uint start_nucl, uin
 
 	if (first_sub_byte == last_sub_byte) {
 		uint64_t val = seq[first_sub_byte];
-		uint shift = 2 * (3 - seq_offset - end_nucl);
+		uint shift = 2 * (3 - (seq_offset + end_nucl) % 4);
 		uint mask = (1 << ((end_nucl - start_nucl + 1) * 2)) - 1;
 		return (val >> shift) & mask;
 	}

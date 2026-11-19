@@ -251,13 +251,8 @@ const lest::test module[] = {
 		for (size_t n = 1; n <= 45; n++) {
 			string s = random_seq(rnd, n);
 			Bytes b = encode(s);
-			size_t pad = (4 - n % 4) % 4;
 			for (size_t begin = 0; begin < n; begin++)
 				for (size_t end = begin; end < n; end++) {
-					// Known issue: a slice contained in a single byte that is not the first
-					// byte of the sequence gives a wrong value (shift computed without modulo).
-					if ((pad + begin) / 4 == (pad + end) / 4 && (pad + begin) / 4 > 0)
-						continue;
 					size_t first = end - begin + 1 > 32 ? end - 31 : begin;
 					EXPECT( subseq_to_uint(b.data(), n, begin, end) == value(s.substr(first, end - first + 1)) );
 				}
