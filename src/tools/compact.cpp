@@ -1018,15 +1018,12 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 	// Unify kmers into skmers. The links between 2 columns are a colinear chain (increasing on
 	// both sides): a kmer is in at most one link on each side and the skmers are the paths of
 	// linked kmers, from column to column (lonely kmers are skmers of 1 kmer).
-	vector<uint64_t> & next_kmer = buffers.next_kmer;
-	vector<uint8_t> & has_prev = buffers.has_prev;
-	next_kmer.assign(nb_kmers, none);
-	has_prev.assign(nb_kmers, 0);
+	// Previous kmer of each kmer in its skmer (none for the first kmers)
+	vector<uint64_t> & prev_kmer = buffers.prev_kmer;
+	prev_kmer.assign(nb_kmers, none);
 	for (size_t col=0 ; col<pairs.size() ; col++)
-		for (const pair<uint64_t, uint64_t> & link : pairs[col]) {
-			next_kmer[col_start[col] + link.first] = col_start[col + 1] + link.second;
-			has_prev[col_start[col + 1] + link.second] = 1;
-		}
+		for (const pair<uint64_t, uint64_t> & link : pairs[col])
+			prev_kmer[col_start[col + 1] + link.second] = col_start[col] + link.first;
 	// Skmer of each kmer, first kmer, its column and size of each skmer
 	vector<uint64_t> & sk_of = buffers.sk_of;
 	vector<uint64_t> & sk_first = buffers.sk_first;
@@ -1036,19 +1033,20 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 	sk_first.clear();
 	sk_col.clear();
 	sk_size.clear();
+	// Kmers in memory order: a kmer is in the skmer of its previous kmer (in the previous
+	// column), or starts a new skmer (numbered by first kmer)
 	for (size_t col=0 ; col<nb_cols ; col++)
 		for (uint64_t id=col_start[col] ; id<col_start[col + 1] ; id++) {
-			if (has_prev[id])
+			if (prev_kmer[id] != none) {
+				const uint64_t sk = sk_of[prev_kmer[id]];
+				sk_of[id] = sk;
+				sk_size[sk] += 1;
 				continue;
-			const uint64_t sk = sk_first.size();
-			uint64_t size = 0;
-			for (uint64_t kmer=id ; kmer!=none ; kmer=next_kmer[kmer]) {
-				sk_of[kmer] = sk;
-				size += 1;
 			}
+			sk_of[id] = sk_first.size();
 			sk_first.push_back(id);
 			sk_col.push_back(col);
-			sk_size.push_back(size);
+			sk_size.push_back(1);
 		}
 
 	// Number of kmers of each skmer that are the first remaining kmer of their column (0 for the
@@ -1165,9 +1163,8 @@ void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vect
 		// Add the related skmer to the output
 		const uint64_t sk = head_sk[selected];
 		sk_counts[sk] = 0;
-		// Jump over its kmers in the matrix
-		size_t col = sk_col[sk];
-		for (uint64_t id=sk_first[sk] ; id!=none ; id=next_kmer[id], col++) {
+		// Jump over its kmers in the matrix: they are the first remaining kmers of its columns
+		for (size_t col=sk_col[sk] ; col<sk_col[sk]+sk_size[sk] ; col++) {
 			paths.kmers.push_back(matrix[col][current_kmers[col]]);
 			current_kmers[col] += 1;
 			remaining -= 1;
