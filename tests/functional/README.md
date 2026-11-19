@@ -30,4 +30,25 @@ python3 tests/functional/golden.py diff tests/functional/reference.tsv new.tsv
 `diff` prints the time and memory of each command in both runs and ends with
 `ALL IDENTICAL` when every output is bit-identical (exit code 0).
 
+### Comparing the k-mer content
+
+`diff --mode content` compares the k-mer content of the outputs instead of
+their bytes, to validate a change that modifies the layout of the files but
+must keep the same k-mers (for example the choice of the bucket of a k-mer):
+- kff files and directories of kff files: canonical k-mers and their data
+  (decoded with `outstr -c`), sorted, so duplicates count;
+- standard output of outstr/shuffle: sorted lines;
+- validate: exact text; validate -v: final status line only (its dump
+  describes the blocks).
+
+The content digests are computed by `run`; for a run made before (or with
+another version of the harness), add them from the outputs left in its work
+directory:
+
+```bash
+python3 tests/functional/golden.py content --manifest run.tsv --work /tmp/kff-work \
+        --decoder bin/kff-tools --out run_with_content.tsv
+python3 tests/functional/golden.py diff --mode content tests/functional/reference.tsv run_with_content.tsv
+```
+
 `shuffle` is random by design: only its sorted k-mer content is compared.

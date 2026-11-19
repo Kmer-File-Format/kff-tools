@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""Golden-output harness for kff-tools.
+"""Functional harness for kff-tools on real data.
 
 Runs a fixed list of kff-tools commands on real datasets and records, for each
-command, the SHA-256 of every output file and of stdout, the exit code, the
-wall time and the peak RSS. Two manifests can then be compared to prove that
-an optimised build produces bit-identical outputs.
+command, the exit code, the wall time, the peak RSS and two digests of every
+output:
+- bytes:   SHA-256 of the output file (or of stdout);
+- content: SHA-256 of its k-mer content, independent of the layout of the file:
+           the canonical k-mers and their data (decoded with `outstr -c`),
+           sorted, for kff files and directories of kff files; the sorted
+           lines for the standard output of outstr/shuffle; the exact text for
+           validate; only the final status line for validate -v (its dump
+           describes the blocks).
+
+Two runs are compared bit for bit (default) or on the k-mer content.
 
 usage (see tests/functional/README.md):
-  golden.py run  --bin BIN --data DATA --work WORK --out manifest.tsv [--only REGEX] [--set quick|full]
-  golden.py diff ref.tsv new.tsv
+  golden.py run     --bin BIN --data DATA --work WORK --out run.tsv [--only REGEX] [--set quick|full]
+  golden.py content --manifest run.tsv --work WORK --decoder BIN --out run_with_content.tsv
+  golden.py diff    [--mode bytes|content] ref.tsv new.tsv
 """
-import argparse, hashlib, os, re, shutil, subprocess, sys, time
+import argparse, hashlib, os, re, shlex, shutil, subprocess, sys, time
 
 # (name, set, command template, outputs)
 # {T} = kff-tools binary, {D} = data dir, {W} = work dir.
@@ -115,6 +124,42 @@ def digest(path):
     return sha256_file(path).hexdigest()
 
 
+def output_kind(name, output, path):
+    """How the content of an output is compared"""
+    if output == "stdout":
+        if name.startswith("validate_v"):
+            return "status"
+        if name.startswith("validate"):
+            return "text"
+        return "lines"
+    return "kmers"
+
+
+def content_digest(name, output, path, decoder, work):
+    """Digest of the k-mer content of an output (see the module docstring)"""
+    if not os.path.exists(path):
+        return "MISSING"
+    kind = output_kind(name, output, path)
+    if kind == "text":
+        return sha256_file(path).hexdigest()
+    if kind == "status":
+        lines = [line for line in open(path, errors="replace").read().splitlines() if line.strip()]
+        return hashlib.sha256((lines[-1] if lines else "").encode()).hexdigest()
+    tmp = os.path.join(work, ".sort_tmp")
+    os.makedirs(tmp, exist_ok=True)
+    sort = f"LC_ALL=C sort -S 2G --parallel=8 -T {shlex.quote(tmp)}"
+    if kind == "lines":
+        cmd = f"{sort} {shlex.quote(path)} | sha256sum"
+    else:
+        if os.path.isdir(path):
+            decode = f'for f in {shlex.quote(path)}/*.kff; do {shlex.quote(decoder)} outstr -c -i "$f"; done'
+        else:
+            decode = f"{shlex.quote(decoder)} outstr -c -i {shlex.quote(path)}"
+        cmd = f"( {decode} ) | {sort} | sha256sum"
+    out = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True).stdout
+    return out.split()[0]
+
+
 def run(args):
     tool = os.path.abspath(os.path.join(args.bin, "kff-tools"))
     data = os.path.abspath(args.data)
@@ -145,17 +190,43 @@ def run(args):
             secs, rss = open(timing).read().split()[-2:]
         except Exception:
             secs, rss = f"{wall:.2f}", "0"
-        hashes = []
+        hashes, contents = [], []
+        decoder = os.path.abspath(args.decoder) if args.decoder else tool
         for o in outputs:
             p = stdout_path if o == "stdout" else os.path.join(work, o)
             hashes.append(f"{o}={digest(p) if os.path.exists(p) else 'MISSING'}")
-        row = (name, str(code), secs, rss, " ".join(hashes))
+            contents.append(f"{o}={content_digest(name, o, p, decoder, work)}")
+        row = (name, str(code), secs, rss, " ".join(hashes), " ".join(contents))
         rows.append(row)
         print("\t".join(row[:4]) + "\t" + row[4][:90], flush=True)
-    with open(args.out, "w") as f:
-        f.write("name\texit\tseconds\tmax_rss_kb\toutputs\n")
+    write_manifest(args.out, rows)
+
+
+def write_manifest(path, rows):
+    with open(path, "w") as f:
+        f.write("name\texit\tseconds\tmax_rss_kb\toutputs\tcontent\n")
         for r in rows:
             f.write("\t".join(r) + "\n")
+
+
+def content(args):
+    """Adds the content digests to a manifest, from the outputs left in its work directory"""
+    work = os.path.abspath(args.work)
+    decoder = os.path.abspath(args.decoder)
+    rows = []
+    with open(args.manifest) as f:
+        next(f)
+        for line in f:
+            fields = line.rstrip("\n").split("\t")
+            name = fields[0]
+            outputs = [o.split("=")[0] for o in fields[4].split()]
+            contents = []
+            for o in outputs:
+                p = os.path.join(work, name + ".stdout") if o == "stdout" else os.path.join(work, o)
+                contents.append(f"{o}={content_digest(name, o, p, decoder, work)}")
+            rows.append(tuple(fields[:5]) + (" ".join(contents),))
+            print(name, flush=True)
+    write_manifest(args.out, rows)
 
 
 def load(path):
@@ -163,22 +234,28 @@ def load(path):
     with open(path) as f:
         next(f)
         for line in f:
-            name, code, secs, rss, outs = line.rstrip("\n").split("\t")
-            rows[name] = (code, float(secs), int(rss), outs)
+            fields = line.rstrip("\n").split("\t")
+            name, code, secs, rss, outs = fields[:5]
+            rows[name] = (code, float(secs), int(rss), outs, fields[5] if len(fields) > 5 else None)
     return rows
 
 
 def diff(args):
     ref, new = load(args.ref), load(args.new)
+    column = 4 if args.mode == "content" else 3
     bad = 0
+    print(f"comparison: {'k-mer content' if args.mode == 'content' else 'bytes'}")
     print(f"{'test':26s} {'ref s':>8s} {'new s':>8s} {'speedup':>8s} {'ref MB':>8s} {'new MB':>8s}  status")
     tot_r = tot_n = 0.0
     for name in ref:
         if name not in new:
             continue
-        rc, rs, rr, ro = ref[name]
-        nc, ns, nr, no = new[name]
-        same = (rc == nc and ro == no)
+        rc, rs, rr = ref[name][:3]
+        nc, ns, nr = new[name][:3]
+        if ref[name][column] is None or new[name][column] is None:
+            sys.exit(f"no content digests in {args.ref if ref[name][column] is None else args.new}: "
+                     f"add them with the content command")
+        same = (rc == nc and ref[name][column] == new[name][column])
         bad += not same
         tot_r += rs; tot_n += ns
         sp = rs / ns if ns > 0 else float("inf")
@@ -195,6 +272,12 @@ if __name__ == "__main__":
     r.add_argument("--bin", required=True); r.add_argument("--data", required=True)
     r.add_argument("--work", required=True); r.add_argument("--out", required=True)
     r.add_argument("--only"); r.add_argument("--set", default="quick", choices=["quick", "full"])
-    d = sub.add_parser("diff"); d.add_argument("ref"); d.add_argument("new")
+    r.add_argument("--decoder", help="kff-tools used to decode the outputs (default: the tested one)")
+    c = sub.add_parser("content")
+    c.add_argument("--manifest", required=True); c.add_argument("--work", required=True)
+    c.add_argument("--decoder", required=True); c.add_argument("--out", required=True)
+    d = sub.add_parser("diff")
+    d.add_argument("--mode", default="bytes", choices=["bytes", "content"])
+    d.add_argument("ref"); d.add_argument("new")
     a = ap.parse_args()
-    sys.exit(run(a) if a.cmd == "run" else diff(a))
+    sys.exit({"run": run, "content": content, "diff": diff}[a.cmd](a))
