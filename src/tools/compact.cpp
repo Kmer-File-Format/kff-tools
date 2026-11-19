@@ -1276,6 +1276,38 @@ void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths)
 }
 
 
+/* Links of greedy_assembly() between 2 columns (2 to 64 nucleotides): each kmer of the second
+ * column (in order) takes the first unused kmer of the first column whose k-m-1 suffix is its
+ * k-m-1 prefix, in the order of the first column. With the kmers of the first column grouped by
+ * suffix (in column order), it is the next one of its group. */
+template <typename Symbol>
+static void greedy_links(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2, uint nb_nucl,
+                         vector<pair<uint8_t *, uint8_t *> > & assembly, vector<Symbol> & table,
+                         Compact::ChainBuffers & buffers) {
+	const uint sym_bits = 2 * (nb_nucl - 1);
+	const uint64_t mask_lo = sym_bits >= 64 ? ~uint64_t(0) : (uint64_t(1) << sym_bits) - 1;
+	const uint64_t mask_hi = sym_bits <= 64 ? 0 : (uint64_t(1) << (sym_bits - 64)) - 1;
+	SymbolGroups<Symbol> groups{table, buffers.table_groups, buffers.group_of_column, buffers.group_start, buffers.group_columns};
+	groups.build(column1.size(), [&](size_t i) {
+		uint64_t high, low;
+		kmer_value(column1[i], nb_nucl, high, low);
+		return Symbol::make(high & mask_hi, low & mask_lo, i);
+	});
+	// Next unused kmer of each group
+	vector<uint64_t> & next = buffers.group_of_row;
+	next.assign(groups.group_start.begin(), groups.group_start.end() - 1);
+	for (uint8_t * kmer : column2) {
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		const uint64_t group = groups.find(Symbol::make(high >> 2, (low >> 2) | (high << 62), 0));
+		if (group != SymbolGroups<Symbol>::none and next[group] < groups.group_start[group + 1])
+			assembly.emplace_back(column1[groups.members[next[group]++]], kmer);
+		else
+			assembly.emplace_back(nullptr, kmer);
+	}
+}
+
+
 vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8_t *> > & kmers) {
 	uint nb_nucl = k - m;
 	vector<pair<uint8_t *, uint8_t *> > assembly;
@@ -1295,6 +1327,14 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 	vector<Candidate> index;
 
 	for (uint i=0 ; i<nb_nucl ; i++) {
+		if (nb_nucl >= 2 and nb_nucl <= 64) {
+			if (nb_nucl - 1 <= 32)
+				greedy_links(kmers[i], kmers[i+1], nb_nucl, assembly, this->chain_index64, this->chain_buffers);
+			else
+				greedy_links(kmers[i], kmers[i+1], nb_nucl, assembly, this->chain_index128, this->chain_buffers);
+			continue;
+		}
+
 		// Index kmers in ith set
 		index.clear();
 		for (uint8_t * kmer : kmers[i]) {

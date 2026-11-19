@@ -13,6 +13,7 @@ set(SRCS
     polish_reference_test.cpp
     pair_reference_test.cpp
     chain_columns_test.cpp
+    greedy_reference_test.cpp
 )
 
 # Unit tests ("test" is a target name reserved by CTest)
