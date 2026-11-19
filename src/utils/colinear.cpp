@@ -70,7 +70,113 @@ Colinear::~Colinear()
 };
 
 
-void Colinear::compute_scores(vector<PairInt> & pairs)
+namespace {
+
+/* Best leaf of a set of leaves: max score, then min rank (leftmost leaf in the tree order).
+ * Packed in 64 bits: the score in the high 32 bits, 2^32 - 1 - rank in the low ones (scores and
+ * ranks < 2^32). 0 is the empty set. */
+struct PackedBest {
+	uint64_t value = 0;
+	PackedBest() = default;
+	PackedBest(uint64_t score, uint64_t rank) : value((score << 32) | (0xFFFFFFFFULL - rank)) {}
+	uint64_t score() const { return value >> 32; }
+	uint64_t rank() const { return 0xFFFFFFFFULL - (value & 0xFFFFFFFFULL); }
+	bool better(const PackedBest & other) const { return value > other.value; }
+};
+
+/* Same without size limit */
+struct WideBest {
+	uint64_t leaf_score = 0;
+	uint64_t leaf_rank = 0;
+	WideBest() = default;
+	WideBest(uint64_t score, uint64_t rank) : leaf_score(score), leaf_rank(rank) {}
+	uint64_t score() const { return leaf_score; }
+	uint64_t rank() const { return leaf_rank; }
+	bool better(const WideBest & other) const {
+		return leaf_score != other.leaf_score ? leaf_score > other.leaf_score : leaf_rank < other.leaf_rank;
+	}
+};
+
+/* Scores and chains of the leaves, processed in the order of leaves (pairs in (first, second)
+ * order, groups of pairs with the same first value). A leaf is chained to the leftmost leaf
+ * with the max score on its left in the tree order (the leaves of the previous groups), or
+ * gets the chain of the best leaf of its group when it is better. The best leaf of each prefix
+ * of ranks is computed in a Fenwick tree: a query reads independent cells, without the descent
+ * of a segment tree to the leftmost leaf.
+ * @param scores Filled with the score of the leaf of each rank (leaf 2 * rank of nc_tree)
+ */
+template <typename Best>
+void chain_leaves(const vector<Node> & nc_tree, const vector<uint64_t> & leaves, vector<uint64_t> & chains,
+                  vector<uint64_t> & scores) {
+	const uint64_t nb_leaves = leaves.size();
+	const uint64_t no_leaf = nc_tree.size();
+	// fenwick[i] (1 <= i <= nb_leaves): best leaf of the ranks [i - lowbit(i), i - 1]
+	vector<Best> fenwick(nb_leaves + 1);
+	scores.assign(nb_leaves, 0);
+
+	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
+	size_t group_start = 0;
+	while (group_start < nb_leaves)
+	{
+		size_t group_end = group_start;
+		while (group_end < nb_leaves and nc_tree[leaves[group_end]].first.first == nc_tree[leaves[group_start]].first.first)
+			group_end += 1;
+
+		group.clear();
+		// Max score in the group and rightmost leaf with that score (the group leaves are in
+		// increasing tree order)
+		uint64_t group_max = 0;
+		uint64_t group_max_leaf = no_leaf;
+		for (size_t i=group_start ; i<group_end ; i++)
+		{
+			const uint64_t leaf = leaves[i];
+			// Best leaf of the ranks [0, leaf / 2 - 1]
+			Best best;
+			for (uint64_t j=leaf/2 ; j>0 ; j&=j-1)
+				if (fenwick[j].better(best))
+					best = fenwick[j];
+			const uint64_t left_score = best.score();
+			uint64_t score = 1;
+
+			if (left_score > 0 and left_score >= group_max)
+			{
+				// Leftmost compatible leaf with the max score
+				chains[leaf/2] = 2 * best.rank();
+				score += left_score;
+			}
+			else if (group_max > 0)
+			{
+				// All the leaves with the max score are in the group
+				chains[leaf/2] = chains[group_max_leaf/2];
+				if (chains[leaf/2] < no_leaf)
+					score += scores[chains[leaf/2] / 2];
+			}
+
+			group.emplace_back(leaf, score);
+			if (score >= group_max)
+			{
+				group_max = score;
+				group_max_leaf = leaf;
+			}
+		}
+
+		// The scores of the group are visible to the next groups. The cells of the update path
+		// cover more and more ranks: once a cell is better, the next ones are too.
+		for (const pair<uint64_t, uint64_t> & leaf_score : group) {
+			const uint64_t rank = leaf_score.first / 2;
+			scores[rank] = leaf_score.second;
+			const Best value(leaf_score.second, rank);
+			for (uint64_t j=rank+1 ; j<=nb_leaves and value.better(fenwick[j]) ; j+=j&(~j+1))
+				fenwick[j] = value;
+		}
+		group_start = group_end;
+	}
+}
+
+} // namespace
+
+
+void Colinear::compute_scores(vector<PairInt> & pairs, bool packed)
 {
 	// Same result as calling update_score() for each pair in the (first, second) order, in
 	// O(log n) per pair.
@@ -84,7 +190,6 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 	// leaves, and the group max is tracked apart.
 	// Leaves of the pairs in the (first, second) order. The leaves are sorted by second value
 	// (then decreasing first value): a stable sort by first value is enough.
-	const uint64_t no_leaf = this->nc_tree.size();
 	vector<uint64_t> leaves(this->chains.size());
 	for (size_t i=0 ; i<leaves.size() ; i++)
 		leaves[i] = 2 * i;
@@ -102,83 +207,17 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 	for (size_t i=0 ; i<leaves.size() ; i++)
 		pairs[i] = this->nc_tree[leaves[i]].first;
 
-	// The scores are computed in a segment tree in breadth first order (score of the leaf of
-	// rank r, i.e. leaf 2r of nc_tree, in seg[seg_size + r]): its upper levels stay in the
-	// cache, unlike the in-order layout of nc_tree, which is filled at the end.
-	size_t seg_size = 1;
-	while (seg_size < leaves.size())
-		seg_size <<= 1;
-	vector<uint64_t> seg(2 * seg_size, 0);
-	// Max score of the leaves on the left of the rank, and leftmost leaf with this score
-	auto left_max_leaf = [&seg, seg_size](uint64_t rank, uint64_t & max_leaf) -> uint64_t {
-		uint64_t max_score = 0;
-		uint64_t max_node = 0;
-		// The left siblings met when going up cover the ranks on the left, further and further
-		for (uint64_t node=seg_size+rank ; node>1 ; node>>=1)
-			if ((node & 1) and seg[node - 1] > 0 and seg[node - 1] >= max_score) {
-				max_score = seg[node - 1];
-				max_node = node - 1;
-			}
-		if (max_score == 0)
-			return 0;
-		while (max_node < seg_size)
-			max_node = seg[2 * max_node] == max_score ? 2 * max_node : 2 * max_node + 1;
-		max_leaf = 2 * (max_node - seg_size);
-		return max_score;
-	};
-
-	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
-	size_t group_start = 0;
-	while (group_start < leaves.size())
-	{
-		size_t group_end = group_start;
-		while (group_end < leaves.size() and this->nc_tree[leaves[group_end]].first.first == this->nc_tree[leaves[group_start]].first.first)
-			group_end += 1;
-
-		group.clear();
-		// Max score in the group and rightmost leaf with that score (the group leaves are in
-		// increasing tree order)
-		uint64_t group_max = 0;
-		uint64_t group_max_leaf = no_leaf;
-		for (size_t i=group_start ; i<group_end ; i++)
-		{
-			uint64_t leaf = leaves[i];
-			uint64_t max_leaf = no_leaf;
-			uint64_t left_score = left_max_leaf(leaf / 2, max_leaf);
-			uint64_t score = 1;
-
-			if (left_score > 0 and left_score >= group_max)
-			{
-				// Leftmost compatible leaf with the max score
-				this->chains[leaf/2] = max_leaf;
-				score += left_score;
-			}
-			else if (group_max > 0)
-			{
-				// All the leaves with the max score are in the group
-				this->chains[leaf/2] = this->chains[group_max_leaf/2];
-				if (this->chains[leaf/2] < no_leaf)
-					score += seg[seg_size + this->chains[leaf/2] / 2];
-			}
-
-			group.emplace_back(leaf, score);
-			if (score >= group_max)
-			{
-				group_max = score;
-				group_max_leaf = leaf;
-			}
-		}
-
-		for (const pair<uint64_t, uint64_t> & leaf_score : group)
-			for (uint64_t node=seg_size+leaf_score.first/2 ; node>=1 and seg[node]<leaf_score.second ; node>>=1)
-				seg[node] = leaf_score.second;
-		group_start = group_end;
-	}
+	// Score of each leaf (by rank in the tree order) and chains
+	vector<uint64_t> scores;
+	if (packed and leaves.size() < (uint64_t(1) << 32))
+		chain_leaves<PackedBest>(this->nc_tree, leaves, this->chains, scores);
+	else
+		chain_leaves<WideBest>(this->nc_tree, leaves, this->chains, scores);
 
 	// Scores of nc_tree: the leaves, then each internal node is the max of its children (as
 	// propagate_up() makes it)
 	for (size_t rank=0 ; rank<leaves.size() ; rank++)
-		this->nc_tree[2 * rank].second = seg[seg_size + rank];
+		this->nc_tree[2 * rank].second = scores[rank];
 	for (uint64_t level=1 ; (uint64_t(1) << level) - 1 < this->nc_tree.size() ; level++)
 		for (uint64_t i=(uint64_t(1) << level) - 1 ; i<this->nc_tree.size() ; i+=(uint64_t(1) << (level + 1)))
 			this->nc_tree[i].second = std::max(this->nc_tree[i - (uint64_t(1) << (level - 1))].second,

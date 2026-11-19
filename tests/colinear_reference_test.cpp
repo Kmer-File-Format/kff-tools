@@ -76,6 +76,13 @@ const lest::test module[] = {
 			EXPECT( same_scores );
 			EXPECT( same_chains );
 			EXPECT( same_longest );
+
+			// Scores and ranks not packed (more than 2^32 pairs)
+			vector<PairInt> wide_pairs = pairs;
+			Colinear wide(wide_pairs);
+			wide.compute_scores(wide_pairs, false);
+			const bool same_wide = wide.nc_tree == reference.nc_tree and wide.chains == reference.chains;
+			EXPECT( same_wide );
 		}
 	},
 	CASE("Compact::colinear_chaining gives the longest chain of Colinear") {

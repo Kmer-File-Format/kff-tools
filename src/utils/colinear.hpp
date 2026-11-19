@@ -44,8 +44,10 @@ public:
 
 	/** Compute the scores from the pairs used for construction. This function is out of the constructor as it can take a while to be computed.
 	 * @param pairs The pairs here should be the same used as construction time.
+	 * @param packed Use scores and ranks packed in 64 bits when there are less than 2^32 pairs
+	 * (false: always 2 values, for the tests).
 	 **/
-	void compute_scores(std::vector<PairInt> & pairs);
+	void compute_scores(std::vector<PairInt> & pairs, bool packed=true);
 
 	/** Get the longest list of compatible kmer pairs.
 	 * The compute_scores function needs to be called before extracting the longest chain.
