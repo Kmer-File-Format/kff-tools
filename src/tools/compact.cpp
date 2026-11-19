@@ -665,10 +665,7 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_
 	if (increasing)
 		return candidates;
 
-    Colinear colinear(candidates);
-    colinear.compute_scores(candidates);
-    
-	return colinear.longest_chain();
+	return colinear_longest_chain(candidates);
 }
 
 

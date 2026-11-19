@@ -97,42 +97,43 @@ struct WideBest {
 	}
 };
 
-/* Scores and chains of the leaves, processed in the order of leaves (pairs in (first, second)
- * order, groups of pairs with the same first value). A leaf is chained to the leftmost leaf
- * with the max score on its left in the tree order (the leaves of the previous groups), or
- * gets the chain of the best leaf of its group when it is better. The best leaf of each prefix
- * of ranks is computed in a Fenwick tree: a query reads independent cells, without the descent
- * of a segment tree to the leftmost leaf.
- * @param scores Filled with the score of the leaf of each rank (leaf 2 * rank of nc_tree)
+/* Scores and chains of nb pairs processed in the (first, second) order: first_of(i) is the first
+ * value of the i-th processed pair and rank_of(i) its rank in the tree order (second value, then
+ * decreasing first value). A pair is chained to the leftmost pair with the max score on its left
+ * in the tree order among the pairs of the previous groups (pairs with the same first value), or
+ * gets the chain of the best pair of its group when it is better. The best pair of each prefix of
+ * ranks is computed in a Fenwick tree: a query reads independent cells, without the descent of a
+ * segment tree to the leftmost leaf.
+ * @param pred Filled with the rank of the predecessor of each rank (nb: none)
+ * @param scores Filled with the score of each rank
  */
-template <typename Best>
-void chain_leaves(const vector<Node> & nc_tree, const vector<uint64_t> & leaves, vector<uint64_t> & chains,
-                  vector<uint64_t> & scores) {
-	const uint64_t nb_leaves = leaves.size();
-	const uint64_t no_leaf = nc_tree.size();
-	// fenwick[i] (1 <= i <= nb_leaves): best leaf of the ranks [i - lowbit(i), i - 1]
-	vector<Best> fenwick(nb_leaves + 1);
-	scores.assign(nb_leaves, 0);
+template <typename Best, typename FirstOf, typename RankOf>
+void chain_ranks(uint64_t nb, FirstOf first_of, RankOf rank_of, vector<uint64_t> & pred, vector<uint64_t> & scores) {
+	// fenwick[i] (1 <= i <= nb): best pair of the ranks [i - lowbit(i), i - 1]
+	vector<Best> fenwick(nb + 1);
+	pred.assign(nb, nb);
+	scores.assign(nb, 0);
 
-	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
+	vector<pair<uint64_t, uint64_t> > group;  // rank, score
 	size_t group_start = 0;
-	while (group_start < nb_leaves)
+	while (group_start < nb)
 	{
 		size_t group_end = group_start;
-		while (group_end < nb_leaves and nc_tree[leaves[group_end]].first.first == nc_tree[leaves[group_start]].first.first)
+		const uint64_t first = first_of(group_start);
+		while (group_end < nb and first_of(group_end) == first)
 			group_end += 1;
 
 		group.clear();
-		// Max score in the group and rightmost leaf with that score (the group leaves are in
+		// Max score in the group and rightmost pair with that score (the pairs of a group are in
 		// increasing tree order)
 		uint64_t group_max = 0;
-		uint64_t group_max_leaf = no_leaf;
+		uint64_t group_max_rank = nb;
 		for (size_t i=group_start ; i<group_end ; i++)
 		{
-			const uint64_t leaf = leaves[i];
-			// Best leaf of the ranks [0, leaf / 2 - 1]
+			const uint64_t rank = rank_of(i);
+			// Best pair of the ranks [0, rank - 1]
 			Best best;
-			for (uint64_t j=leaf/2 ; j>0 ; j&=j-1)
+			for (uint64_t j=rank ; j>0 ; j&=j-1)
 				if (fenwick[j].better(best))
 					best = fenwick[j];
 			const uint64_t left_score = best.score();
@@ -140,37 +141,46 @@ void chain_leaves(const vector<Node> & nc_tree, const vector<uint64_t> & leaves,
 
 			if (left_score > 0 and left_score >= group_max)
 			{
-				// Leftmost compatible leaf with the max score
-				chains[leaf/2] = 2 * best.rank();
+				// Leftmost compatible pair with the max score
+				pred[rank] = best.rank();
 				score += left_score;
 			}
 			else if (group_max > 0)
 			{
-				// All the leaves with the max score are in the group
-				chains[leaf/2] = chains[group_max_leaf/2];
-				if (chains[leaf/2] < no_leaf)
-					score += scores[chains[leaf/2] / 2];
+				// All the pairs with the max score are in the group
+				pred[rank] = pred[group_max_rank];
+				if (pred[rank] < nb)
+					score += scores[pred[rank]];
 			}
 
-			group.emplace_back(leaf, score);
+			group.emplace_back(rank, score);
 			if (score >= group_max)
 			{
 				group_max = score;
-				group_max_leaf = leaf;
+				group_max_rank = rank;
 			}
 		}
 
 		// The scores of the group are visible to the next groups. The cells of the update path
 		// cover more and more ranks: once a cell is better, the next ones are too.
-		for (const pair<uint64_t, uint64_t> & leaf_score : group) {
-			const uint64_t rank = leaf_score.first / 2;
-			scores[rank] = leaf_score.second;
-			const Best value(leaf_score.second, rank);
-			for (uint64_t j=rank+1 ; j<=nb_leaves and value.better(fenwick[j]) ; j+=j&(~j+1))
+		for (const pair<uint64_t, uint64_t> & rank_score : group) {
+			scores[rank_score.first] = rank_score.second;
+			const Best value(rank_score.second, rank_score.first);
+			for (uint64_t j=rank_score.first+1 ; j<=nb and value.better(fenwick[j]) ; j+=j&(~j+1))
 				fenwick[j] = value;
 		}
 		group_start = group_end;
 	}
+}
+
+/* chain_ranks() with scores and ranks packed in 64 bits when possible */
+template <typename FirstOf, typename RankOf>
+void chain_ranks(uint64_t nb, FirstOf first_of, RankOf rank_of, vector<uint64_t> & pred, vector<uint64_t> & scores,
+                 bool packed) {
+	if (packed and nb < (uint64_t(1) << 32))
+		chain_ranks<PackedBest>(nb, first_of, rank_of, pred, scores);
+	else
+		chain_ranks<WideBest>(nb, first_of, rank_of, pred, scores);
 }
 
 } // namespace
@@ -207,12 +217,14 @@ void Colinear::compute_scores(vector<PairInt> & pairs, bool packed)
 	for (size_t i=0 ; i<leaves.size() ; i++)
 		pairs[i] = this->nc_tree[leaves[i]].first;
 
-	// Score of each leaf (by rank in the tree order) and chains
-	vector<uint64_t> scores;
-	if (packed and leaves.size() < (uint64_t(1) << 32))
-		chain_leaves<PackedBest>(this->nc_tree, leaves, this->chains, scores);
-	else
-		chain_leaves<WideBest>(this->nc_tree, leaves, this->chains, scores);
+	// Score and chain of each leaf (by rank in the tree order: leaf 2 * rank)
+	vector<uint64_t> pred, scores;
+	chain_ranks(leaves.size(),
+		[this, &leaves](uint64_t i) { return this->nc_tree[leaves[i]].first.first; },
+		[&leaves](uint64_t i) { return leaves[i] / 2; },
+		pred, scores, packed);
+	for (size_t rank=0 ; rank<leaves.size() ; rank++)
+		this->chains[rank] = pred[rank] == leaves.size() ? this->nc_tree.size() : 2 * pred[rank];
 
 	// Scores of nc_tree: the leaves, then each internal node is the max of its children (as
 	// propagate_up() makes it)
@@ -339,6 +351,60 @@ void Colinear::update_score(PairInt & pair)
 	}
 	this->propagate_up(pair_idx, score);
 };
+
+
+vector<PairInt> colinear_longest_chain(vector<PairInt> & pairs, bool packed)
+{
+	const uint64_t nb = pairs.size();
+	if (nb == 0)
+		return {};
+
+	// Processing order: (first, second)
+	auto processing_order = [](const PairInt & a, const PairInt & b) {
+		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	};
+	if (not is_sorted(pairs.begin(), pairs.end(), processing_order))
+		sort(pairs.begin(), pairs.end(), processing_order);
+
+	// Tree order (second value, then decreasing first value): stable sort by second value of the
+	// pairs in decreasing processing order. tree[rank] = position of the pair in pairs.
+	vector<uint64_t> tree(nb);
+	uint64_t max_second = 0;
+	for (uint64_t i=0 ; i<nb ; i++) {
+		tree[i] = nb - 1 - i;
+		max_second = std::max(max_second, pairs[i].second);
+	}
+	if (max_second <= 8 * nb + (1 << 20))
+		counting_sort(tree, max_second, [&pairs](uint64_t i) { return pairs[i].second; });
+	else
+		stable_sort(tree.begin(), tree.end(), [&pairs](uint64_t a, uint64_t b) {
+			return pairs[a].second < pairs[b].second;
+		});
+	vector<uint64_t> rank(nb);
+	for (uint64_t r=0 ; r<nb ; r++)
+		rank[tree[r]] = r;
+
+	vector<uint64_t> pred, scores;
+	chain_ranks(nb,
+		[&pairs](uint64_t i) { return pairs[i].first; },
+		[&rank](uint64_t i) { return rank[i]; },
+		pred, scores, packed);
+
+	// First pair in the tree order with the max score, then its predecessors
+	uint64_t max_score = 0;
+	uint64_t max_rank = 0;
+	for (uint64_t r=0 ; r<nb ; r++)
+		if (scores[r] > max_score) {
+			max_score = scores[r];
+			max_rank = r;
+		}
+	vector<PairInt> chain(max_score);
+	for (uint64_t score=max_score, r=max_rank ; score>0 ; score--) {
+		chain[score - 1] = pairs[tree[r]];
+		r = pred[r];
+	}
+	return chain;
+}
 
 
 vector<PairInt> Colinear::longest_chain()

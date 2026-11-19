@@ -26,6 +26,16 @@ struct hash_PairInt {
 };
 
 
+/** Longest chain of pairs increasing on both values, the one that Colinear::longest_chain() gives
+ * after Colinear::compute_scores(), without the tree of Colinear.
+ * @param pairs Distinct pairs, sorted in (first, second) order by the function.
+ * @param packed Use scores and ranks packed in 64 bits when there are less than 2^32 pairs
+ * (false: always 2 values, for the tests).
+ * @return The chain, in increasing order.
+ **/
+std::vector<PairInt> colinear_longest_chain(std::vector<PairInt> & pairs, bool packed=true);
+
+
 class Colinear
 {
 private:

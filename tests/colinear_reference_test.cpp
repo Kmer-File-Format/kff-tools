@@ -85,6 +85,41 @@ const lest::test module[] = {
 			EXPECT( same_wide );
 		}
 	},
+	CASE("colinear_longest_chain gives the longest chain of Colinear") {
+		mt19937_64 rnd(55);
+		for (int test = 0; test < 3000; test++) {
+			const size_t nb = 1 + rnd() % (test % 10 == 0 ? 2000 : 100);
+			const uint64_t nb_first = 2 + rnd() % (test % 3 == 0 ? 8 : nb + 5);
+			const uint64_t nb_second = 2 + rnd() % (test % 4 == 0 ? 8 : nb + 5);
+			if (nb > nb_first * nb_second)
+				continue;
+			vector<PairInt> pairs = random_pairs(rnd, nb, nb_first, nb_second);
+			// Sparse values (comparison sorts instead of counting sorts)
+			if (test % 5 == 0)
+				for (PairInt & p : pairs) {
+					p.first = p.first * 100000007ULL + 3;
+					p.second = p.second * 1000000009ULL + 7;
+				}
+
+			vector<PairInt> ref_pairs = pairs;
+			Colinear reference(ref_pairs);
+			reference.compute_scores(ref_pairs);
+			const vector<PairInt> expected = reference.longest_chain();
+
+			// Any order of the pairs (sorted by the function)
+			vector<PairInt> given = pairs;
+			if (test % 2 == 0)
+				sort(given.begin(), given.end(), [](const PairInt & a, const PairInt & b) {
+					return a.first != b.first ? a.first < b.first : a.second < b.second;
+				});
+			vector<PairInt> given_wide = given;
+			const bool same_chain = colinear_longest_chain(given) == expected;
+			const bool same_chain_wide = colinear_longest_chain(given_wide, false) == expected;
+			EXPECT( same_chain );
+			EXPECT( same_chain_wide );
+		}
+	},
+
 	CASE("Compact::colinear_chaining gives the longest chain of Colinear") {
 		mt19937_64 rnd(53);
 		Compact comp;
