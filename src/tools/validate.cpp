@@ -29,44 +29,44 @@ void Validate::exec() {
 		this->strif = Stringifyer(infile.encoding);
 
 		if (verbose) {
-			cout << "=== Header ===" << endl;
+			cout << "=== Header ===" << '\n';
 			// Important values
-			cout << "-> KFF file version " << (uint)infile.major_version << "." << (uint)infile.minor_version << endl;
-			cout << "-> Encoding: A=" << (uint)infile.encoding[0] << " C=" << (uint)infile.encoding[1] << " G=" << (uint)infile.encoding[2] << " T=" << (uint)infile.encoding[3] << endl;
-			cout << "-> Uniqueness: " << (uint)infile.uniqueness << endl;
-			cout << "-> Canonicity: " << (uint)infile.canonicity << endl;
+			cout << "-> KFF file version " << (uint)infile.major_version << "." << (uint)infile.minor_version << '\n';
+			cout << "-> Encoding: A=" << (uint)infile.encoding[0] << " C=" << (uint)infile.encoding[1] << " G=" << (uint)infile.encoding[2] << " T=" << (uint)infile.encoding[3] << '\n';
+			cout << "-> Uniqueness: " << (uint)infile.uniqueness << '\n';
+			cout << "-> Canonicity: " << (uint)infile.canonicity << '\n';
 
 
 			// Metadata
-			cout << "-> Metadata (" << ((uint)infile.metadata_size) << "B)" << endl;
+			cout << "-> Metadata (" << ((uint)infile.metadata_size) << "B)" << '\n';
 			uint8_t * metadata = new uint8_t[infile.metadata_size];
 			infile.read_metadata(metadata);
 			for (uint i=0 ; i<infile.metadata_size ; i++) {
 				cout << (uint)metadata[i] << "\t";
 				if (i % 16 == 15)
-					cout << endl;
+					cout << '\n';
 			}
 			if (infile.metadata_size % 16 != 0)
-				cout << endl;
+				cout << '\n';
 			delete[] metadata;
 
-			cout << endl;
+			cout << '\n';
 		}
 
 		char section_type = infile.read_section_type();
 		while(infile.tellp() < infile.end_position) {
 			if (verbose)
-				cout << "=== Section " << section_type << " ===" << endl;
+				cout << "=== Section " << section_type << " ===" << '\n';
 
 			// Global variable section
 			if (section_type == 'v') {
 				Section_GV sgv(&infile);
 
 				if (verbose) {
-					cout << "Start Byte " << sgv.beginning << endl;
-					cout << "-> " << sgv.nb_vars << " variables" << endl;
+					cout << "Start Byte " << sgv.beginning << '\n';
+					cout << "-> " << sgv.nb_vars << " variables" << '\n';
 					for (auto tuple : sgv.vars) {
-						cout << tuple.first << " = " << tuple.second << endl;
+						cout << tuple.first << " = " << tuple.second << '\n';
 					}
 				}
 
@@ -94,23 +94,23 @@ void Validate::exec() {
 			}
 
 			if (verbose)
-				cout << endl;
+				cout << '\n';
 			section_type = infile.read_section_type();
 		}
 
 		char kff[3];
 		infile.read((uint8_t *)kff, 3);
 		if (kff[0] != 'K' or kff[1] != 'F' or kff[2] !='F')
-			cout << "No KFF signature found at the end of the file. The file must be corrupted." << endl;
+			cout << "No KFF signature found at the end of the file. The file must be corrupted." << '\n';
 
 		if (infile.tellp() < infile.end_position + 3) {
-			cout << "/!\\ Remaining bytes at the end of the file !" << endl;
+			cout << "/!\\ Remaining bytes at the end of the file !" << '\n';
 		}
 		infile.close();
 		if (verbose)
-			cout << "=== End of the file ===" << endl << endl;
+			cout << "=== End of the file ===" << "\n\n";
 
-		cout << "No problem detected" << endl;
+		cout << "No problem detected" << '\n';
 	} catch (const char* msg) {
 		cerr << "/!\\ " << msg << endl;
 		exit(1);
@@ -125,8 +125,8 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 	uint data_size = infile.global_vars["data_size"];
 
 	if (verbose) {
-		cout << "Start Byte " << sr.beginning << endl;
-		cout << "-> Number of blocks: " << sr.nb_blocks << endl;
+		cout << "Start Byte " << sr.beginning << '\n';
+		cout << "-> Number of blocks: " << sr.nb_blocks << '\n';
 	}
 
 	uint max_nucl = k + max - 1;
@@ -146,8 +146,8 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 		}
 
 		if (verbose) {
-			cout << "* Number of kmers: " << nb_kmers << endl;
-			cout << strif.translate(seq_bytes, k + nb_kmers - 1) << endl;
+			cout << "* Number of kmers: " << nb_kmers << '\n';
+			cout << strif.translate(seq_bytes, k + nb_kmers - 1) << '\n';
 
 			if (data_size != 0) {
 				cout << "data array: ";
@@ -163,7 +163,7 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 					}
 					cout << "]";
 				}
-				cout << endl;
+				cout << '\n';
 			}
 		}
 	}
@@ -184,10 +184,10 @@ bool Validate::is_valid_m_section(Kff_file & infile) {
 	uint data_size = infile.global_vars["data_size"];
 
 	if (verbose) {
-		cout << "Start Byte " << sm.beginning << endl;
-		cout << "-> Minimizer: " << strif.translate(sm.minimizer, m) << endl;
-		cout << "-> Number of blocks: " << sm.nb_blocks << endl;
-		cout << endl;
+		cout << "Start Byte " << sm.beginning << '\n';
+		cout << "-> Minimizer: " << strif.translate(sm.minimizer, m) << '\n';
+		cout << "-> Number of blocks: " << sm.nb_blocks << '\n';
+		cout << '\n';
 	}
 
 	uint max_nucl = k - m + max - 1;
@@ -212,9 +212,9 @@ bool Validate::is_valid_m_section(Kff_file & infile) {
 		}
 
 		if (verbose) {
-			cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << endl;
+			cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << '\n';
 			string seq = strif.translate(seq_bytes, k - m + nb_kmers - 1);
-			cout << seq.substr(0, mini_pos) << "|" << seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos) << endl;
+			cout << seq.substr(0, mini_pos) << "|" << seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos) << '\n';
 			if (data_size != 0) {
 				cout << "data array: ";
 				for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
@@ -226,7 +226,7 @@ bool Validate::is_valid_m_section(Kff_file & infile) {
 					}
 					cout << "],\t";
 				}
-				cout << endl;
+				cout << '\n';
 			}
 		}
 	}
@@ -243,13 +243,13 @@ bool Validate::is_valid_i_section(Kff_file & infile) {
 	long end_byte = si.beginning + 17 + 9 * si.index.size();
 
 	if (this->verbose) {
-		cout << "Start Byte " << si.beginning << endl;
-		cout << "Section\trelative\tabsolute" << endl;
+		cout << "Start Byte " << si.beginning << '\n';
+		cout << "Section\trelative\tabsolute" << '\n';
 	}
 
 	for (const auto & pair : si.index) {
 		if (this->verbose)
-			cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << endl;
+			cout << pair.second << "\t" << pair.first << "\t" << (end_byte + pair.first) << '\n';
 
 		// Jump to the section
 		long section_pos = end_byte + pair.first;
@@ -267,7 +267,7 @@ bool Validate::is_valid_i_section(Kff_file & infile) {
 	}
 
 	if (this->verbose) {
-		cout << "Next index position " << si.next_index << endl;
+		cout << "Next index position " << si.next_index << '\n';
 	}
 	
 	if (si.next_index != 0) {
