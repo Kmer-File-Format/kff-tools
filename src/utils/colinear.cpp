@@ -11,18 +11,52 @@
 using namespace std;
 
 
+/* Stable counting sort of elements by a key in [0, max_key]. */
+template <typename T, typename Key>
+static void counting_sort(vector<T> & elements, uint64_t max_key, Key key) {
+	vector<uint64_t> starts(max_key + 2, 0);
+	for (const T & e : elements)
+		starts[key(e) + 1] += 1;
+	for (uint64_t k=1 ; k<starts.size() ; k++)
+		starts[k] += starts[k - 1];
+	vector<T> sorted(elements.size());
+	for (const T & e : elements)
+		sorted[starts[key(e)]++] = e;
+	elements.swap(sorted);
+}
+
+/* The pair values are kmer positions: counting sorts are used when they are not too sparse. */
+static bool dense_values(const vector<PairInt> & pairs, uint64_t & max_first, uint64_t & max_second) {
+	max_first = max_second = 0;
+	for (const PairInt & p : pairs) {
+		max_first = std::max(max_first, p.first);
+		max_second = std::max(max_second, p.second);
+	}
+	const uint64_t limit = 8 * pairs.size() + (1 << 20);
+	return max_first <= limit and max_second <= limit;
+}
+
+
 Colinear::Colinear(vector<PairInt> & pairs)
 {
-	// Insert the pairs as leves in the compatible tree with the right order
-	sort(pairs.begin(), pairs.end(), 
-    	[](const PairInt & a, const PairInt & b) -> bool
-		{ 
-			if (a.second != b.second)
-				return a.second < b.second; 
-			else
-				return a.first > b.first;
-		}
-	);
+	// Insert the pairs as leves in the compatible tree with the right order:
+	// second value, then first value in decreasing order
+	uint64_t max_first, max_second;
+	if (pairs.size() > 1 and dense_values(pairs, max_first, max_second)) {
+		// Same order in linear time: by decreasing first value, then (stable) by second value
+		counting_sort(pairs, max_first, [max_first](const PairInt & p) { return max_first - p.first; });
+		counting_sort(pairs, max_second, [](const PairInt & p) { return p.second; });
+	} else {
+		sort(pairs.begin(), pairs.end(), 
+			[](const PairInt & a, const PairInt & b) -> bool
+			{ 
+				if (a.second != b.second)
+					return a.second < b.second; 
+				else
+					return a.first > b.first;
+			}
+		);
+	}
 	this->init_tree(this->nc_tree, pairs);
 
 	// Create a list of previous compatible Node.
@@ -48,26 +82,32 @@ void Colinear::compute_scores(vector<PairInt> & pairs)
 	// rightmost one. The pairs of a group are therefore processed together: their scores are
 	// added to the tree at the end of the group, so that the tree only contains compatible
 	// leaves, and the group max is tracked apart.
-	auto order = [](const PairInt & a, const PairInt & b) {
-		return a.first != b.first ? a.first < b.first : a.second < b.second;
-	};
-	sort(pairs.begin(), pairs.end(), order);
-
-	// Leaves of the pairs, in the same order (the leaves hold the pairs)
+	// Leaves of the pairs in the (first, second) order. The leaves are sorted by second value
+	// (then decreasing first value): a stable sort by first value is enough.
 	const uint64_t no_leaf = this->nc_tree.size();
-	vector<uint64_t> leaves(pairs.size());
+	vector<uint64_t> leaves(this->chains.size());
 	for (size_t i=0 ; i<leaves.size() ; i++)
 		leaves[i] = 2 * i;
-	sort(leaves.begin(), leaves.end(), [this, &order](uint64_t a, uint64_t b) {
-		return order(this->nc_tree[a].first, this->nc_tree[b].first);
-	});
+	uint64_t max_first = 0;
+	for (uint64_t leaf : leaves)
+		max_first = std::max(max_first, this->nc_tree[leaf].first.first);
+	if (max_first <= 8 * leaves.size() + (1 << 20))
+		counting_sort(leaves, max_first, [this](uint64_t leaf) { return this->nc_tree[leaf].first.first; });
+	else
+		stable_sort(leaves.begin(), leaves.end(), [this](uint64_t a, uint64_t b) {
+			return this->nc_tree[a].first.first < this->nc_tree[b].first.first;
+		});
+	// The pairs are left sorted in this order, as before
+	pairs.resize(leaves.size());
+	for (size_t i=0 ; i<leaves.size() ; i++)
+		pairs[i] = this->nc_tree[leaves[i]].first;
 
 	vector<pair<uint64_t, uint64_t> > group;  // leaf, score
 	size_t group_start = 0;
-	while (group_start < pairs.size())
+	while (group_start < leaves.size())
 	{
 		size_t group_end = group_start;
-		while (group_end < pairs.size() and this->nc_tree[leaves[group_end]].first.first == this->nc_tree[leaves[group_start]].first.first)
+		while (group_end < leaves.size() and this->nc_tree[leaves[group_end]].first.first == this->nc_tree[leaves[group_start]].first.first)
 			group_end += 1;
 
 		group.clear();

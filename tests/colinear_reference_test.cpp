@@ -52,6 +52,23 @@ const lest::test module[] = {
 			Colinear colinear(new_pairs);
 			colinear.compute_scores(new_pairs);
 
+			// Orders of the pairs: tree order after the constructor, (first, second) after
+			// compute_scores, as with the original std::sort calls
+			vector<PairInt> tree_order = pairs;
+			sort(tree_order.begin(), tree_order.end(), [](const PairInt & a, const PairInt & b) {
+				return a.second != b.second ? a.second < b.second : a.first > b.first;
+			});
+			vector<PairInt> constructor_order = pairs;
+			Colinear sorting(constructor_order);
+			const bool same_tree_order = constructor_order == tree_order;
+			EXPECT( same_tree_order );
+			vector<PairInt> processing_order = pairs;
+			sort(processing_order.begin(), processing_order.end(), [](const PairInt & a, const PairInt & b) {
+				return a.first != b.first ? a.first < b.first : a.second < b.second;
+			});
+			const bool same_processing_order = new_pairs == processing_order;
+			EXPECT( same_processing_order );
+
 			const bool same_scores = colinear.nc_tree == reference.nc_tree;
 			const bool same_chains = colinear.chains == reference.chains;
 			const bool same_longest = colinear.longest_chain() == reference.longest_chain();
