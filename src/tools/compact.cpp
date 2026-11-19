@@ -563,20 +563,56 @@ void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 }
 
 #include <bitset>
+/* The nb_nucl <= 64 nucleotides of a kmer of the buffer (aligned on the right of its bytes) as a
+ * 128-bit integer (high, low), the last nucleotide in the 2 lowest bits, without the padding bits.
+ */
+static inline void kmer_value(const uint8_t * kmer, uint nb_nucl, uint64_t & high, uint64_t & low) {
+	high = low = 0;
+	for (uint b=0 ; b<(nb_nucl + 3) / 4 ; b++) {
+		high = (high << 8) | (low >> 56);
+		low = (low << 8) | kmer[b];
+	}
+	if (nb_nucl < 32)
+		low &= (uint64_t(1) << (2 * nb_nucl)) - 1;
+	else if (nb_nucl < 64)
+		high &= (uint64_t(1) << (2 * (nb_nucl - 32))) - 1;
+}
+
+
 vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
 	const uint nb_nucl = k - m;
     vector<pair<uint64_t, uint64_t> > pairs;
 	pairs.reserve(max(column1.size(), column2.size()));
 
+	// Hashes of the k-m-1 prefixes (second column) and suffixes (first column): their value
+	// (subseq_to_uint() truncates them to their 32 last nucleotides). From 2 to 64 nucleotides,
+	// they are extracted from the value of the kmer. When the prefixes have at most 32
+	// nucleotides, the hash is the whole prefix: kmers with the same hash overlap.
+	const bool from_value = nb_nucl >= 2 and nb_nucl <= 64;
+	const bool exact_hash = from_value and nb_nucl - 1 <= 32;
+	const uint64_t sub_mask = nb_nucl - 1 >= 32 ? ~uint64_t(0) : (uint64_t(1) << (2 * (nb_nucl - 1))) - 1;
+	auto prefix_hash = [&](const uint8_t * kmer) -> uint64_t {
+		if (not from_value)
+			return subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return ((low >> 2) | (high << 62)) & sub_mask;
+	};
+	auto suffix_hash = [&](const uint8_t * kmer) -> uint64_t {
+		if (not from_value)
+			return subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return low & sub_mask;
+	};
+
 	// Index the second column by their prefix hash: (hash, kmer position) sorted by hash, then
 	// by position (the candidates of a hash are tested in the column order)
 	vector<pair<uint64_t, uint64_t> > index;
 	index.reserve(column2.size());
-	for (uint64_t idx=0 ; idx<column2.size() ; idx++) {
-		// Get the hash corresponding to the k-m-1 prefix
-		index.emplace_back(subseq_to_uint(column2[idx], nb_nucl, 0, nb_nucl-2), idx);
-	}
-	// Explicit comparison: this file specialises std::operator< for pairs (second first)
+	for (uint64_t idx=0 ; idx<column2.size() ; idx++)
+		index.emplace_back(prefix_hash(column2[idx]), idx);
+	// By hash, then by position
 	auto by_hash = [](const pair<uint64_t, uint64_t> & a, const pair<uint64_t, uint64_t> & b) {
 		return a.first != b.first ? a.first < b.first : a.second < b.second;
 	};
@@ -586,15 +622,13 @@ vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & 
 	// Looks for suffix matches of the first column
 	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
 		uint8_t * kmer = column1[idx];
-
-		// Get the hash corresponding to the k-m-1 suffix
-		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
+		uint64_t hash = suffix_hash(kmer);
 
 		// Test each candidate with the same hash
 		auto candidate = lower_bound(index.begin(), index.end(), make_pair(hash, uint64_t(0)), by_hash);
 		for ( ; candidate != index.end() and candidate->first == hash ; candidate++) {
 			uint64_t candidate_vect_idx = candidate->second;
-            if (sequence_compare(
+            if (exact_hash or sequence_compare(
 						column2[candidate_vect_idx], nb_nucl, 0, nb_nucl-2,
 						kmer, nb_nucl, 1, nb_nucl-1
 					) == 0) {

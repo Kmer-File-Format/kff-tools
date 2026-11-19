@@ -11,6 +11,7 @@ set(SRCS
     colinear_reference_test.cpp
     compact_key_test.cpp
     polish_reference_test.cpp
+    pair_reference_test.cpp
 )
 
 # Unit tests ("test" is a target name reserved by CTest)
