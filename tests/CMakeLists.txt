@@ -7,6 +7,7 @@ set(SRCS
     skmers_test.cpp
     utils_test.cpp
     outstr_test.cpp
+    blocks_test.cpp
 )
 
 # Unit tests ("test" is a target name reserved by CTest)
