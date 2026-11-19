@@ -757,6 +757,76 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 
+/* Elements grouped by symbol with a hash table (open addressing: table holds the symbol of each
+ * slot, table_groups its group, none for an empty slot). The groups are numbered by first element;
+ * members lists the elements of each group in increasing order: the elements of the group g are
+ * members[group_start[g]] to members[group_start[g + 1] - 1]. The vectors are buffers kept by
+ * the caller. */
+template <typename Symbol>
+struct SymbolGroups {
+	vector<Symbol> & table;
+	vector<uint64_t> & table_groups;
+	vector<uint64_t> & group_of;
+	vector<uint64_t> & group_start;
+	vector<uint64_t> & members;
+	uint table_bits = 4;
+	uint64_t table_mask = 15;
+	static constexpr uint64_t none = numeric_limits<uint64_t>::max();
+
+	/** Group of the symbol, or none */
+	uint64_t find(const Symbol & symbol) const {
+		uint64_t slot = symbol.hash() >> (64 - this->table_bits);
+		while (this->table_groups[slot] != none) {
+			if (this->table[slot].same(symbol))
+				return this->table_groups[slot];
+			slot = (slot + 1) & this->table_mask;
+		}
+		return none;
+	}
+
+	/** Groups the elements 0 to nb - 1 (symbol_of(j): symbol of the element j) */
+	template <typename SymbolOf>
+	void build(size_t nb, SymbolOf symbol_of) {
+		this->table_bits = 4;
+		while ((uint64_t(1) << this->table_bits) < 2 * nb)
+			this->table_bits += 1;
+		this->table_mask = (uint64_t(1) << this->table_bits) - 1;
+		this->table.resize(this->table_mask + 1);
+		this->table_groups.assign(this->table_mask + 1, none);
+		this->group_start.clear();
+		this->group_of.resize(nb);
+		for (size_t j=0 ; j<nb ; j++) {
+			const Symbol symbol = symbol_of(j);
+			uint64_t slot = symbol.hash() >> (64 - this->table_bits);
+			while (this->table_groups[slot] != none and not this->table[slot].same(symbol))
+				slot = (slot + 1) & this->table_mask;
+			if (this->table_groups[slot] == none) {
+				this->table[slot] = symbol;
+				this->table_groups[slot] = this->group_start.size();
+				this->group_start.push_back(0);
+			}
+			this->group_of[j] = this->table_groups[slot];
+			this->group_start[this->group_of[j]] += 1;
+		}
+		// Elements of each group, in increasing order
+		uint64_t sum = 0;
+		for (uint64_t & start : this->group_start) {
+			const uint64_t count = start;
+			start = sum;
+			sum += count;
+		}
+		this->group_start.push_back(sum);
+		this->members.resize(nb);
+		for (size_t j=0 ; j<nb ; j++)
+			this->members[this->group_start[this->group_of[j]]++] = j;
+		// group_start[g] is now the end of the group g: shift back
+		for (size_t g=this->group_start.size() - 1 ; g-- > 0 ; )
+			this->group_start[g + 1] = this->group_start[g];
+		this->group_start[0] = 0;
+	}
+};
+
+
 template <typename Symbol>
 static void chain_columns_with(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2, uint nb_nucl,
                                vector<pair<uint64_t, uint64_t> > & chain, vector<Symbol> & xs, vector<Symbol> & index,
@@ -777,57 +847,14 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		xs[i] = Symbol::make(high & mask_hi, low & mask_lo, i);
 	}
 
-	// Groups of the kmers of the second column with the same symbol (hash table of the symbols:
-	// index holds the symbol of each slot, table_groups its group), numbered by first column
+	// Groups of the kmers of the second column with the same symbol, numbered by first column
 	const uint64_t none = numeric_limits<uint64_t>::max();
-	vector<uint64_t> & group_of_column = buffers.group_of_column;
-	vector<uint64_t> & group_start = buffers.group_start;
-	vector<uint64_t> & group_columns = buffers.group_columns;
+	SymbolGroups<Symbol> groups{index, buffers.table_groups, buffers.group_of_column, buffers.group_start, buffers.group_columns};
+	groups.build(column2.size(), [&](size_t j) { return prefix_symbol(column2[j], j); });
+	const vector<uint64_t> & group_of_column = groups.group_of;
+	const vector<uint64_t> & group_start = groups.group_start;
+	const vector<uint64_t> & group_columns = groups.members;
 	vector<uint64_t> & group_of_row = buffers.group_of_row;
-	vector<uint64_t> & table_groups = buffers.table_groups;
-	uint table_bits = 4;
-	while ((uint64_t(1) << table_bits) < 2 * column2.size())
-		table_bits += 1;
-	const uint64_t table_mask = (uint64_t(1) << table_bits) - 1;
-	index.resize(table_mask + 1);
-	table_groups.assign(table_mask + 1, none);
-	// Group of a symbol (none if absent and not inserted)
-	auto find_group = [&](const Symbol & symbol, bool insert) -> uint64_t {
-		uint64_t slot = symbol.hash() >> (64 - table_bits);
-		while (table_groups[slot] != none) {
-			if (index[slot].same(symbol))
-				return table_groups[slot];
-			slot = (slot + 1) & table_mask;
-		}
-		if (not insert)
-			return none;
-		index[slot] = symbol;
-		table_groups[slot] = group_start.size();
-		group_start.push_back(0);
-		return table_groups[slot];
-	};
-	group_start.clear();
-	group_of_column.resize(column2.size());
-	for (size_t j=0 ; j<column2.size() ; j++) {
-		const uint64_t group = find_group(prefix_symbol(column2[j], j), true);
-		group_of_column[j] = group;
-		group_start[group] += 1;
-	}
-	// Columns of each group, in increasing order
-	uint64_t sum = 0;
-	for (uint64_t & start : group_start) {
-		const uint64_t count = start;
-		start = sum;
-		sum += count;
-	}
-	group_start.push_back(sum);
-	group_columns.resize(column2.size());
-	for (size_t j=0 ; j<column2.size() ; j++)
-		group_columns[group_start[group_of_column[j]]++] = j;
-	// group_start[g] is now the end of the group g: shift back
-	for (size_t g=group_start.size() - 1 ; g-- > 0 ; )
-		group_start[g + 1] = group_start[g];
-	group_start[0] = 0;
 
 	// Thresholds and their changes (row, column, level, previous change of the level)
 	vector<uint64_t> & thresholds = buffers.thresholds;
@@ -855,7 +882,7 @@ static void chain_columns_with(const vector<uint8_t *> & column1, const vector<u
 		if (same)
 			group_of_row[i] = group_of_row[i - 1];
 		else {
-			const uint64_t group = find_group(xs[i], false);
+			const uint64_t group = groups.find(xs[i]);
 			group_of_row[i] = group;
 			match_begin = group == none ? 0 : group_start[group];
 			match_end = group == none ? 0 : group_start[group + 1];
