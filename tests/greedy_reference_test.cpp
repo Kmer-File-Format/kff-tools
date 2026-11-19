@@ -106,6 +106,38 @@ vector<uint8_t> greedy_kmer(mt19937_64 & rnd, const vector<uint8_t> & nucleotide
 	return kmer;
 }
 
+/** Original pairs_to_paths() (kff-tools 3522bd5) */
+vector<vector<uint8_t *> > reference_pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact, Compact & comp) {
+	vector<vector<uint8_t *> > paths;
+	// Path of the last kmer of each path, indexed by the position of the kmer in the kmer
+	// buffer. 0 for the other kmers (the default value of the previous std::unordered_map).
+	const uint64_t record_size = comp.bytes_compacted + comp.data_size + comp.mini_pos_size;
+	vector<uint> path_registry(comp.next_free / record_size + 1, 0);
+	auto registry = [&](uint8_t * kmer) -> uint & {
+		return path_registry[(kmer - comp.kmer_buffer) / record_size];
+	};
+
+	for (const pair<uint8_t *, uint8_t *> & p : to_compact) {
+		// First element of a compaction path
+		if (p.first == nullptr) {
+			registry(p.second) = paths.size();
+			paths.emplace_back(vector<uint8_t *>());
+
+			uint vec_idx = registry(p.second);
+			paths[vec_idx].push_back(p.second);
+		}
+		// Extending existing path
+		else {
+			uint vec_idx = registry(p.first);
+			paths[vec_idx].push_back(p.second);
+			registry(p.first) = 0;
+			registry(p.second) = vec_idx;
+		}
+	}
+
+	return paths;
+}
+
 } // namespace
 
 const lest::test module[] = {
@@ -162,6 +194,57 @@ const lest::test module[] = {
 			const vector<pair<uint8_t *, uint8_t *> > expected = reference_greedy_assembly(reference_matrix, comp.k, comp.m);
 			const bool same_links = comp.greedy_assembly(matrix) == expected;
 			EXPECT( same_links );
+		}
+	},
+
+	CASE("Compact::pairs_to_paths gives the paths of the original version") {
+		mt19937_64 rnd(59);
+		for (int test = 0; test < 800; test++) {
+			const uint nb_nucl = 2 + rnd() % 30;
+			Compact comp;
+			comp.m = 1 + rnd() % 10;
+			comp.k = comp.m + nb_nucl;
+			comp.data_size = rnd() % 2;
+			comp.mini_pos_size = 1;
+			comp.bytes_compacted = (nb_nucl + 3) / 4;
+			// Columns of kmers in the buffer of the object, overlapping kmers and equal kmers
+			vector<vector<long> > positions(nb_nucl + 1);
+			vector<vector<uint8_t> > previous;
+			vector<uint8_t> data(1);
+			for (uint col = 0; col <= nb_nucl; col++) {
+				vector<vector<uint8_t> > current;
+				for (size_t x = rnd() % (test % 10 == 0 ? 200 : 15); x > 0; x--) {
+					vector<uint8_t> nucl(nb_nucl);
+					if (not previous.empty() and rnd() % 3 != 0) {
+						const vector<uint8_t> & left = previous[rnd() % previous.size()];
+						copy(left.begin() + 1, left.end(), nucl.begin());
+						nucl.back() = rnd() % 4;
+					} else
+						for (uint8_t & n : nucl) n = rnd() % (test % 3 == 0 ? 2 : 4);
+					for (size_t r = 1 + rnd() % 3; r > 0; r--) {
+						vector<uint8_t> kmer = greedy_kmer(rnd, nucl);
+						data[0] = rnd();
+						positions[col].push_back(comp.add_kmer_to_buffer(kmer.data(), data.data(), nb_nucl - col));
+						current.push_back(nucl);
+					}
+				}
+				previous = current;
+			}
+			vector<vector<uint8_t *> > matrix(nb_nucl + 1);
+			for (uint col = 0; col <= nb_nucl; col++)
+				for (long pos : positions[col])
+					matrix[col].push_back(comp.kmer_buffer + pos);
+
+			const vector<pair<uint8_t *, uint8_t *> > links = comp.greedy_assembly(matrix);
+			const vector<vector<uint8_t *> > expected = reference_pairs_to_paths(links, comp);
+			Paths paths;
+			comp.pairs_to_paths(links, paths);
+			bool same_paths = paths.size() == expected.size();
+			for (size_t i = 0; i < paths.size() and same_paths; i++) {
+				const uint64_t start = i == 0 ? 0 : paths.ends[i - 1];
+				same_paths = vector<uint8_t *>(paths.kmers.begin() + start, paths.kmers.begin() + paths.ends[i]) == expected[i];
+			}
+			EXPECT( same_paths );
 		}
 	},
 };

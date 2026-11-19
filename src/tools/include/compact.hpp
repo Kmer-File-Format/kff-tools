@@ -100,6 +100,10 @@ public:
 	std::vector<std::vector<uint64_t> > column_keys;
 	bool column_keys_valid = false;
 
+	// Paths of the section, next kmer of each kmer and first kmers of the paths (pairs_to_paths())
+	Paths section_paths;
+	std::vector<uint8_t *> path_next, path_heads;
+
 	// Buffers of write_path(), kept from path to path
 	std::vector<uint8_t> skmer_bytes;
 	std::vector<uint8_t> skmer_data;
@@ -130,14 +134,14 @@ public:
 	/** Encode the block of one path of size kmers */
 	void write_path(uint8_t * const * path, size_t size, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
 
-	/** Take a list of kmer pair to assemble and return a list of paths from left to right of
-	 * virtual superkmers.
+	/** Take a list of kmer pair to assemble (greedy_assembly()) and write the paths from left to
+	 * right of virtual superkmers.
 	 * 
 	 * @param to_compact Pairs of kmers to compact into paths
-	 * 
-	 * @return A list of virtual superkmer paths (path = kmer list from left to right).
+	 * @param paths The virtual superkmer paths (path = kmer list from left to right), in their
+	 * order of creation.
 	 **/
-	std::vector<std::vector<uint8_t *> > pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact);
+	void pairs_to_paths(const std::vector<std::pair<uint8_t *, uint8_t *> > & to_compact, Paths & paths);
 
 	/** Add a kmer, its data and its minimizer position in the compaction buffer.
 	 * WARNING: All the requested values must be set in the compact object (ie k, m, data_size, mini_pos_size, bytes_compacted)

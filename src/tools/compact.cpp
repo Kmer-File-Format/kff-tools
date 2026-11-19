@@ -268,13 +268,12 @@ void Compact::compact_section(CompactSection & section) {
 	memset(this->kmer_buffer + this->next_free, 0, 8);
 	
 	// 2 - Compact kmers
-	Paths sorted_paths;
-	vector<vector<uint8_t *> > paths;
+	Paths & paths = this->section_paths;
 	if (this->sorted) {
-		this->sorted_assembly(kmers_per_index, sorted_paths);
+		this->sorted_assembly(kmers_per_index, paths);
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
-		paths = this->pairs_to_paths(to_compact);
+		this->pairs_to_paths(to_compact, paths);
 	}
 
 	// 3 - Bytes of the compacted section: type, minimizer, number of blocks, blocks
@@ -284,8 +283,7 @@ void Compact::compact_section(CompactSection & section) {
 	section.output.insert(section.output.end(), section.minimizer.begin(), section.minimizer.begin() + encoder.minimizer_bytes);
 	const size_t nb_blocks_position = section.output.size();
 	section.output.resize(nb_blocks_position + 8, 0);
-	uint64_t nb_blocks = this->sorted ? this->write_paths(sorted_paths, encoder, section.output)
-	                                  : this->write_paths(paths, encoder, section.output);
+	uint64_t nb_blocks = this->write_paths(paths, encoder, section.output);
 	for (uint b=0 ; b<8 ; b++)
 		section.output[nb_blocks_position + b] = static_cast<uint8_t>(nb_blocks >> (8 * (7 - b)));
 }
@@ -1394,35 +1392,31 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 	return assembly;
 }
 
-vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact) {
-	vector<vector<uint8_t *> > paths;
-	// Path of the last kmer of each path, indexed by the position of the kmer in the kmer
-	// buffer. 0 for the other kmers (the default value of the previous std::unordered_map).
+void Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact, Paths & paths) {
+	// Next kmer of each kmer in its path (by position of the record in the kmer buffer) and
+	// first kmers of the paths in their order of creation. A link extends the path whose last
+	// kmer is the first kmer of the link: greedy_assembly() uses a kmer once as the first kmer of
+	// a link, so the paths are the chains of links.
 	const uint64_t record_size = this->bytes_compacted + this->data_size + this->mini_pos_size;
-	vector<uint> path_registry(this->next_free / record_size + 1, 0);
-	auto registry = [&](uint8_t * kmer) -> uint & {
-		return path_registry[(kmer - this->kmer_buffer) / record_size];
-	};
-
+	vector<uint8_t *> & next = this->path_next;
+	vector<uint8_t *> & heads = this->path_heads;
+	next.assign(this->next_free / record_size + 1, nullptr);
+	heads.clear();
 	for (const pair<uint8_t *, uint8_t *> & p : to_compact) {
-		// First element of a compaction path
-		if (p.first == nullptr) {
-			registry(p.second) = paths.size();
-			paths.emplace_back(vector<uint8_t *>());
-
-			uint vec_idx = registry(p.second);
-			paths[vec_idx].push_back(p.second);
-		}
-		// Extending existing path
-		else {
-			uint vec_idx = registry(p.first);
-			paths[vec_idx].push_back(p.second);
-			registry(p.first) = 0;
-			registry(p.second) = vec_idx;
-		}
+		if (p.first == nullptr)
+			heads.push_back(p.second);
+		else
+			next[(p.first - this->kmer_buffer) / record_size] = p.second;
 	}
 
-	return paths;
+	paths.clear();
+	paths.kmers.reserve(to_compact.size());
+	paths.ends.reserve(heads.size());
+	for (uint8_t * head : heads) {
+		for (uint8_t * kmer=head ; kmer!=nullptr ; kmer=next[(kmer - this->kmer_buffer) / record_size])
+			paths.kmers.push_back(kmer);
+		paths.close_path();
+	}
 }
 
 uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
