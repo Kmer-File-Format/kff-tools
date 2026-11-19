@@ -116,8 +116,8 @@ void Sort::sort(string input, string output) {
                 cerr << "new 'r' section found" << endl;
                 cerr << "Max sequence size: " << max_nucl << " data size: " << data_size<< endl;
 
-                // All the blocks are stored in one array: the sorting key (the sequence
-                // bytes, plus one byte when the size is a multiple of 4) then the data.
+                // All the blocks are stored in one array: the sorting key (the bytes of
+                // the sequence) then the data.
                 // When data_size is 0, the number of kmers is stored as data.
                 struct Block {
                     uint64_t offset;
@@ -137,8 +137,8 @@ void Sort::sort(string input, string output) {
                     // Read the block.
                     int nb_kmers = in_section.read_compacted_sequence(seq_bytes, data_bytes);
                     int seq_len = k + nb_kmers - 1;
-                    Block block = {blocks_bytes.size(), (uint32_t)(seq_len/4+1), 0};
-                    blocks_bytes.insert(blocks_bytes.end(), &seq_bytes[0], &seq_bytes[seq_len/4+1]);
+                    Block block = {blocks_bytes.size(), (uint32_t)((seq_len+3)/4), 0};
+                    blocks_bytes.insert(blocks_bytes.end(), &seq_bytes[0], &seq_bytes[(seq_len+3)/4]);
                     if (data_size > 0) {
                         block.data_size = data_size*nb_kmers;
                         blocks_bytes.insert(blocks_bytes.end(), &data_bytes[0], &data_bytes[data_size*nb_kmers]);
