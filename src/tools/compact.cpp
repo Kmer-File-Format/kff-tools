@@ -514,9 +514,6 @@ vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
-	uint8_t encoding[4] = {0, 1, 3, 2};
-	Stringifyer strif(encoding);
-
 	// Index the kmer columns
 	unordered_map<uint8_t *, size_t> columns;
 	for (size_t col=0 ; col<matrix.size() ; col++)
@@ -866,8 +863,6 @@ void Compact::write_paths(const vector<vector<uint8_t *> > & paths, Section_Mini
 			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
 		}
 
-		uint8_t encoding[4] = {0, 1, 3, 2};
-		Stringifyer strif(encoding);
 		// cout << "write_compacted_sequence_without_mini" << endl;
 		// Write everything in the file
 		sm.write_compacted_sequence_without_mini(skmer_buffer, skmer_size, mini_pos, data_buffer);
