@@ -22,10 +22,19 @@
 using namespace std;
 
 
+/* Versions of kff-tools, of the library kff-cpp-api and of the KFF format of the files */
+static string versions() {
+	return string("kff-tools ") + KFF_TOOLS_VERSION
+		+ " (kff-cpp-api " + to_string(KFF_API_VERSION_MAJOR) + "." + to_string(KFF_API_VERSION_MINOR)
+		+ ", KFF format " + to_string(KFF_FORMAT_VERSION_MAJOR) + "." + to_string(KFF_FORMAT_VERSION_MINOR) + ")";
+}
+
+
 KffTool * parse_args(int argc, char** argv, vector<KffTool *> tools) {
 	// Main command
 	CLI::App app{"kff-tools is a software for kff file manipulations. For more details on kff format, please refer to https://github.com/Kmer-File-Format/kff-reference"};
 	app.require_subcommand(1);
+	app.set_version_flag("--version", versions(), "Print the versions of kff-tools, of the kff-cpp-api library and of the KFF format, then exit");
 	CLI::Option * help =	app.get_help_ptr();
 
 	// Subcommands prepare
