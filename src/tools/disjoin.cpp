@@ -114,8 +114,10 @@ void Disjoin::exec() {
 					memcpy(nucleotide_shifts[shift], nucleotide_shifts[shift-1], useful_bytes);
 					rightshift8(nucleotide_shifts[shift], useful_bytes, 2);
 				}
-				// Write kmer per kmer
+				// Write kmer per kmer (the data size is read once per block, at the first kmer as
+				// before: the map of the variables changes the same way)
 				uint first_nucl = (4 - (seq_nucl % 4)) % 4;
+				const uint64_t data_size = nb_kmers > 0 ? outfile.global_vars["data_size"] : 0;
 				for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
 					uint shift_idx = (nb_kmers - kmer_idx - 1) % 4;
 					uint first_byte = (first_nucl + kmer_idx + shift_idx) / 4;
@@ -123,7 +125,7 @@ void Disjoin::exec() {
 					out_section.write_compacted_sequence(
 							nucleotide_shifts[shift_idx] + first_byte,
 							k,
-							data + kmer_idx * outfile.global_vars["data_size"]
+							data + kmer_idx * data_size
 					);
 				}
 			}
