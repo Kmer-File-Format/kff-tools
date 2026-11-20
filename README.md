@@ -15,6 +15,9 @@ The binaries are written in `bin/`. The build is optimised (Release) by
 default; use `-DCMAKE_BUILD_TYPE=Debug` to debug. Needs CMake 3.16 or newer
 and a C++17 compiler.
 
+`kff-tools --version` gives the versions of kff-tools, of the kff-cpp-api
+library and of the KFF format of the files it writes.
+
 
 ## `kff-tools instr`
 

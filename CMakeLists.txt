@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16...3.31)
 
 # set the project name
-project(kff-tools VERSION 0.1 LANGUAGES CXX)
+project(kff-tools VERSION 1.1 LANGUAGES CXX)
 
 # Optimised build by default
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
