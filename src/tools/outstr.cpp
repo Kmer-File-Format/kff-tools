@@ -122,6 +122,42 @@ void Outstr::exec() {
 
 	// One line per kmer: "<kmer> <data>\n"
 	OutputBuffer output;
+
+	// Kmers as they are: each block is translated once, its kmers are copied from the text
+	if (not revcomp) {
+		vector<uint8_t> block_sequence, block_data;
+		vector<char> text;
+		while (reader.has_next()) {
+			// Variables of the next section (read by has_next())
+			const uint64_t block_k = reader.k;
+			const uint64_t data_size = reader.data_size;
+			const uint64_t max_nucl = block_k + reader.max - 1;
+			if (block_sequence.size() < (max_nucl + 3) / 4 + 8)
+				block_sequence.resize((max_nucl + 3) / 4 + 8);
+			if (block_data.size() < reader.max * data_size + 8)
+				block_data.resize(reader.max * data_size + 8);
+			if (text.size() < max_nucl)
+				text.resize(max_nucl);
+
+			uint8_t * sequence = block_sequence.data();
+			uint8_t * block_values = block_data.data();
+			const uint64_t nb_kmers = reader.next_block(sequence, block_values);
+			if (nb_kmers == 0)
+				continue;
+			strif.write(sequence, block_k + nb_kmers - 1, text.data());
+			for (uint64_t kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
+				char * line = output.reserve(block_k + 2 + outstr_data_chars(data_size));
+				memcpy(line, text.data() + kmer_idx, block_k);
+				line += block_k;
+				*(line++) = ' ';
+				line = outstr_write_data(block_values + kmer_idx * data_size, data_size, line);
+				*(line++) = '\n';
+				output.commit(line);
+			}
+		}
+		return;
+	}
+
 	while (reader.next_kmer(nucleotides, data)) {
 		const uint8_t * printed = nucleotides;
 
