@@ -234,6 +234,10 @@ public:
    * return value is (- 1 - index)
    **/
   int64_t kmer_minimizer_compute(const uint8_t * seq, uint64_t seq_size, uint64_t start_idx, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini);
+  /** Same, with the forward and reverse values of the k - m + 1 m-mers of the kmer given */
+  int64_t kmer_minimizer_of(const uint64_t * fwd_values, const uint64_t * rev_values, const uint8_t * seq, uint64_t seq_size, uint64_t start_idx, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini);
+  // Values of the m-mers of the sequence of get_skmers() and of the kmer of kmer_minimizer_compute()
+  std::vector<uint64_t> window_fwd, window_rev, kmer_fwd, kmer_rev;
 
   /** Get a vector of all the skmers in a sequence.
    * All the other methods of this class are called by this function.
