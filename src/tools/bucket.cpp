@@ -68,6 +68,15 @@ void Bucket::cli_prepare(CLI::App * app) {
 namespace {
 
 /** The minimizer section of a bucket, kept in memory until the end */
+/* Asks the processor to load the cache line of address (no effect without GCC/Clang builtins) */
+static inline void prefetch(const void * address) {
+#if defined(__GNUC__) || defined(__clang__)
+	__builtin_prefetch(address);
+#else
+	(void)address;
+#endif
+}
+
 /* Minimizer -> index of its bucket, open addressing (linear probing), doubled when half full */
 class MinimizerIndex {
 public:
@@ -80,6 +89,13 @@ public:
 			if (this->values[slot] == none or this->keys[slot] == key)
 				return this->values[slot];
 		}
+	}
+
+	/** Loads the first slot of the key in the cache */
+	void prefetch_slot(uint64_t key) const {
+		const uint64_t slot = this->slot_of(key);
+		prefetch(&this->keys[slot]);
+		prefetch(&this->values[slot]);
 	}
 
 	void insert(uint64_t key, uint32_t value) {
@@ -153,6 +169,8 @@ void Bucket::exec() {
 	// Variables init by thread
 	MinimizerSearcher * searcher = new MinimizerSearcher(0, m, stream.reader.get_encoding());
 	vector<uint8_t> subseq(1);
+	// Bucket of each skmer of the current sequence
+	vector<uint32_t> skmer_buckets;
 	uint max_seq = 1;
 	uint8_t * seq = new uint8_t[(max_seq + 3) / 4];
 	uint max_data = 1;
@@ -224,7 +242,15 @@ void Bucket::exec() {
 
         // Skmer deduction
         vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
-        for (skmer sk : skmers) {
+		// 1 - Bucket of each skmer (new buckets created in the order of the skmers). With several
+		// skmers, the slots of their minimizers in the index are loaded first.
+		const bool prefetching = skmers.size() >= 4;
+		if (prefetching)
+			for (const skmer & sk : skmers)
+				bucket_index.prefetch_slot(sk.minimizer);
+		skmer_buckets.resize(skmers.size());
+		for (size_t sk_idx=0 ; sk_idx<skmers.size() ; sk_idx++) {
+			const skmer & sk = skmers[sk_idx];
 			uint mutex_idx = sk.minimizer % nb_mutex;
 			uint32_t bucket_idx = bucket_index.find(sk.minimizer);
 			// New bucket
@@ -246,6 +272,20 @@ void Bucket::exec() {
 				}
 				memcpy(section.minimizer, subseq.data(), encoders[encoder_idx].minimizer_bytes);
 			}
+			skmer_buckets[sk_idx] = bucket_idx;
+		}
+		// The sections and the ends of their blocks are loaded before the appends
+		if (prefetching)
+			for (uint32_t bucket_idx : skmer_buckets) {
+				const BucketSection & section = sections[bucket_idx];
+				prefetch(&section);
+				prefetch(section.blocks.data() + section.blocks.size());
+			}
+
+		// 2 - Append the skmers to their buckets
+		for (size_t sk_idx=0 ; sk_idx<skmers.size() ; sk_idx++) {
+			const skmer & sk = skmers[sk_idx];
+			const uint32_t bucket_idx = skmer_buckets[sk_idx];
 
 			uint mini_pos = k + 2;
 			// Get the subsequence
