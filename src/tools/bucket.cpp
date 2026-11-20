@@ -1,5 +1,6 @@
 #include <utility>
 #include <vector>
+#include <limits>
 #include <string>
 #include <cstring>
 #include <utility>
@@ -67,6 +68,57 @@ void Bucket::cli_prepare(CLI::App * app) {
 namespace {
 
 /** The minimizer section of a bucket, kept in memory until the end */
+/* Minimizer -> index of its bucket, open addressing (linear probing), doubled when half full */
+class MinimizerIndex {
+public:
+	static constexpr uint32_t none = numeric_limits<uint32_t>::max();
+
+	MinimizerIndex() : keys(1 << 10), values(1 << 10, none), bits(10), count(0) {}
+
+	uint32_t find(uint64_t key) const {
+		for (uint64_t slot=this->slot_of(key) ; ; slot=(slot + 1) & (this->keys.size() - 1)) {
+			if (this->values[slot] == none or this->keys[slot] == key)
+				return this->values[slot];
+		}
+	}
+
+	void insert(uint64_t key, uint32_t value) {
+		if (2 * (this->count + 1) > this->keys.size())
+			this->grow();
+		this->place(key, value);
+		this->count += 1;
+	}
+
+private:
+	vector<uint64_t> keys;
+	vector<uint32_t> values;
+	uint bits;
+	size_t count;
+
+	uint64_t slot_of(uint64_t key) const {
+		return (key * 0x9E3779B97F4A7C15ULL) >> (64 - this->bits);
+	}
+
+	void place(uint64_t key, uint32_t value) {
+		uint64_t slot = this->slot_of(key);
+		while (this->values[slot] != none)
+			slot = (slot + 1) & (this->keys.size() - 1);
+		this->keys[slot] = key;
+		this->values[slot] = value;
+	}
+
+	void grow() {
+		vector<uint64_t> old_keys(this->keys.size() * 2);
+		vector<uint32_t> old_values(this->values.size() * 2, none);
+		old_keys.swap(this->keys);
+		old_values.swap(this->values);
+		this->bits += 1;
+		for (size_t slot=0 ; slot<old_keys.size() ; slot++)
+			if (old_values[slot] != none)
+				this->place(old_keys[slot], old_values[slot]);
+	}
+};
+
 struct BucketSection {
 	// Encoder of the variables declared when the bucket was created (k, m, max, data_size)
 	uint32_t encoder;
@@ -89,6 +141,8 @@ void Bucket::exec() {
 	// of the sections in the output file.
 	vector<unordered_map<uint64_t, uint32_t> > buckets;
 	buckets.resize(nb_mutex);
+	// Same index for the lookups (the maps are only used for the insertions, in the same order)
+	MinimizerIndex bucket_index;
 	vector<BucketSection> sections;
 	// One encoder per configuration of variables (usually only one)
 	vector<MinimizerBlockEncoder> encoders;
@@ -172,12 +226,12 @@ void Bucket::exec() {
         vector<skmer> skmers = searcher->get_skmers(seq, seq_size);
         for (skmer sk : skmers) {
 			uint mutex_idx = sk.minimizer % nb_mutex;
-			uint32_t bucket_idx;
-			auto found = buckets[mutex_idx].find(sk.minimizer);
+			uint32_t bucket_idx = bucket_index.find(sk.minimizer);
 			// New bucket
-			if (found == buckets[mutex_idx].end()) {
+			if (bucket_idx == MinimizerIndex::none) {
 				bucket_idx = sections.size();
 				buckets[mutex_idx][sk.minimizer] = bucket_idx;
+				bucket_index.insert(sk.minimizer, bucket_idx);
 				sections.emplace_back();
 				BucketSection & section = sections.back();
 				section.encoder = encoder_idx;
@@ -191,8 +245,6 @@ void Bucket::exec() {
 					subsequence(seq, seq_size, subseq.data(), sk.minimizer_position, sk.minimizer_position + m - 1);
 				}
 				memcpy(section.minimizer, subseq.data(), encoders[encoder_idx].minimizer_bytes);
-			} else {
-				bucket_idx = found->second;
 			}
 
 			uint mini_pos = k + 2;
