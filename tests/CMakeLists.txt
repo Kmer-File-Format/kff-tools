@@ -7,7 +7,6 @@ set(SRCS
     skmers_test.cpp
     utils_test.cpp
     outstr_test.cpp
-    blocks_test.cpp
     colinear_reference_test.cpp
     compact_key_test.cpp
     polish_reference_test.cpp

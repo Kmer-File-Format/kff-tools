@@ -4,7 +4,6 @@ add_library(kffutils
     sequences.cpp
     skmers.cpp
     colinear.cpp
-    blocks.cpp
 )
 
 target_link_libraries(kffutils
