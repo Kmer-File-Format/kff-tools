@@ -256,26 +256,43 @@ int64_t MinimizerSearcher::kmer_minimizer_compute(const uint8_t * seq, uint64_t 
  **/
 int64_t MinimizerSearcher::kmer_minimizer_compute(const uint8_t * seq, uint64_t seq_size, uint64_t start_idx, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini)
 {
+	// Values of the k - m + 1 m-mers of the kmer
+	this->kmer_fwd.resize(k - m + 1);
+	this->kmer_rev.resize(k - m + 1);
 	SlidingWindow window(m, seq, seq_size, start_idx, this->encoding);
-	uint64_t fwd_mini = window.fwd;
+	for (uint64_t i=0 ; i<=k-m ; i++) {
+		if (i > 0)
+			window.next_char();
+		this->kmer_fwd[i] = window.fwd;
+		this->kmer_rev[i] = window.rev;
+	}
+	return this->kmer_minimizer_of(this->kmer_fwd.data(), this->kmer_rev.data(), seq, seq_size, start_idx,
+	                               mini_value, multiple_mini, leftmost_mini);
+}
+
+
+int64_t MinimizerSearcher::kmer_minimizer_of(const uint64_t * fwd_values, const uint64_t * rev_values, const uint8_t * seq, uint64_t seq_size, uint64_t start_idx, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini)
+{
+	uint64_t fwd_mini = fwd_values[0];
 	int64_t fwd_idx = 0;
-	uint64_t rev_mini = window.rev;
+	uint64_t rev_mini = rev_values[0];
 	int64_t rev_idx = 0;
 
 	// Compute all the candidates
 	for (int64_t i=1 ; i<=k-m ; i++)
 	{
-		window.next_char();
+		const uint64_t window_fwd = fwd_values[i];
+		const uint64_t window_rev = rev_values[i];
 		
 		// --- Forward testing ---
 		// New minimizer
-		if (window.fwd < fwd_mini)
+		if (window_fwd < fwd_mini)
 		{
-			fwd_mini = window.fwd;
+			fwd_mini = window_fwd;
 			fwd_idx = i;
 		}
 		// Equivalent value
-		else if (window.fwd <= rev_mini and window.fwd == fwd_mini)
+		else if (window_fwd <= rev_mini and window_fwd == fwd_mini)
 		{
 			uint64_t window_interleaved = interleaved_size(k, m, i);
 			uint64_t fwd_interleaved = interleaved_size(k, m, fwd_idx);
@@ -283,20 +300,20 @@ int64_t MinimizerSearcher::kmer_minimizer_compute(const uint8_t * seq, uint64_t 
 			// Prefer the longest interleaved (the more central minimizer)
 			if (window_interleaved > fwd_interleaved)
 			{
-				fwd_mini = window.fwd;
+				fwd_mini = window_fwd;
 				fwd_idx = i;
 			}
 		}
 
 		// --- Reverse testing ---
 		// New minimizer
-		if (window.rev < rev_mini)
+		if (window_rev < rev_mini)
 		{
-			rev_mini = window.rev;
+			rev_mini = window_rev;
 			rev_idx = i;
 		}
 		// Equivalent value
-		else if (window.rev <= fwd_mini and window.rev == rev_mini)
+		else if (window_rev <= fwd_mini and window_rev == rev_mini)
 		{
 			uint64_t window_interleaved = interleaved_size(k, m, k-m-i);
 			uint64_t rev_interleaved = interleaved_size(k, m, k-m-rev_idx);
@@ -304,7 +321,7 @@ int64_t MinimizerSearcher::kmer_minimizer_compute(const uint8_t * seq, uint64_t 
 			// Prefer the longest interleaved (the more central minimizer)
 			if (window_interleaved > rev_interleaved)
 			{
-				rev_mini = window.rev;
+				rev_mini = window_rev;
 				rev_idx = i;
 			}
 		}
@@ -357,9 +374,33 @@ int64_t MinimizerSearcher::kmer_minimizer_compute(const uint8_t * seq, uint64_t 
 }
 
 
-vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_size) {
-	// Init the sliding window
-	SlidingWindow window(this->m, seq, seq_size, 0, this->encoding);
+/* Sliding window on precomputed forward and reverse values of the m-mers */
+struct ValuesWindow {
+	const uint64_t * fwd_values;
+	const uint64_t * rev_values;
+	uint64_t pos;
+	uint64_t fwd;
+	uint64_t rev;
+
+	ValuesWindow(const uint64_t * fwd_values, const uint64_t * rev_values)
+		: fwd_values(fwd_values), rev_values(rev_values), pos(0), fwd(fwd_values[0]), rev(rev_values[0]) {}
+
+	void next_char() {
+		this->pos += 1;
+		this->fwd = this->fwd_values[this->pos];
+		this->rev = this->rev_values[this->pos];
+	}
+};
+
+
+/* Superkmers of get_skmers(): window gives the forward and reverse values of the m-mers (next_char()
+ * moves it to the next one), kmer_minimizer(start, value, multiple, leftmost) computes the
+ * minimizer of the kmer at start (kmer_minimizer_compute()). */
+template <typename Window, typename KmerMinimizer>
+static vector<skmer> split_skmers(Window & window, uint k, uint m, uint seq_size, KmerMinimizer kmer_minimizer) {
+	uint64_t unused_mini = 0;
+	bool unused_multi = false;
+	uint64_t unused_leftmost = 0;
 
 	// Init the first minimizer value
 	uint64_t minimizer = min(window.fwd, window.rev);
@@ -437,7 +478,7 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 			skmer_start = idx + m - k;
 
 			// Compute new minimizer values
-			mini_pos = this->kmer_minimizer_compute(seq, seq_size, idx+m-k, minimizer, multi_mini, left_multi_idx);
+			mini_pos = kmer_minimizer(idx+m-k, minimizer, multi_mini, left_multi_idx);
 		}
 		// Same minimizer than previously
 		else if (current_mini == minimizer)
@@ -446,7 +487,7 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 			multi_mini = true;
 			left_multi_idx = current_double_mini ? idx : mini_pos;
 			
-			current_mini_pos = this->kmer_minimizer_compute(seq, seq_size, idx+m-k);
+			current_mini_pos = kmer_minimizer(idx+m-k, unused_mini, unused_multi, unused_leftmost);
 			// Verify previous skmer continuity
 			if (current_mini_pos != mini_pos)
 			{
@@ -461,7 +502,7 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 		else if (multi_mini)
 		{
 			// No minimizer value change
-			current_mini_pos = this->kmer_minimizer_compute(seq, seq_size, idx+m-k);
+			current_mini_pos = kmer_minimizer(idx+m-k, unused_mini, unused_multi, unused_leftmost);
 			// Verify previous skmer continuity
 			if (current_mini_pos != mini_pos)
 			{
@@ -478,6 +519,47 @@ vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_
 	skmers.push_back({skmer_start, static_cast<uint64_t>(seq_size-1), mini_pos, minimizer});
 
 	return skmers;
+}
+
+
+vector<skmer> MinimizerSearcher::get_skmers(const uint8_t * seq, const uint seq_size) {
+	// Forward and reverse values of all the m-mers of the sequence, for the minimizers of kmers
+	// computed again
+	auto fill_values = [&]() {
+		this->window_fwd.resize(seq_size - m + 1);
+		this->window_rev.resize(seq_size - m + 1);
+		SlidingWindow values(this->m, seq, seq_size, 0, this->encoding);
+		for (uint64_t pos=0 ; pos<=seq_size-m ; pos++) {
+			if (pos > 0)
+				values.next_char();
+			this->window_fwd[pos] = values.fwd;
+			this->window_rev[pos] = values.rev;
+		}
+	};
+	auto minimizer_from_values = [&](uint64_t start, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini) {
+		return this->kmer_minimizer_of(this->window_fwd.data() + start, this->window_rev.data() + start, seq, seq_size,
+		                               start, mini_value, multiple_mini, leftmost_mini);
+	};
+
+	// Long sequences (more kmers than m-mers in a kmer, minimizers computed again on the way):
+	// the values are computed first and read by the window
+	if (seq_size - k + 1 > k - m) {
+		fill_values();
+		ValuesWindow window(this->window_fwd.data(), this->window_rev.data());
+		return split_skmers(window, k, m, seq_size, minimizer_from_values);
+	}
+
+	// Short sequences: sliding window, values computed at the first minimizer computed again
+	SlidingWindow window(this->m, seq, seq_size, 0, this->encoding);
+	bool values_ready = false;
+	auto kmer_minimizer = [&](uint64_t start, uint64_t & mini_value, bool & multiple_mini, uint64_t & leftmost_mini) {
+		if (not values_ready) {
+			fill_values();
+			values_ready = true;
+		}
+		return minimizer_from_values(start, mini_value, multiple_mini, leftmost_mini);
+	};
+	return split_skmers(window, k, m, seq_size, kmer_minimizer);
 }
 
 
