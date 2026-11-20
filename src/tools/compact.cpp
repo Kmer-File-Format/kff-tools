@@ -117,10 +117,8 @@ void Compact::exec() {
 			worker->compact_section(in_flight[i]);
 	};
 	auto write_batch = [&](vector<CompactSection> & sections) {
-		for (CompactSection & section : sections) {
-			outfile.register_position('m');
-			outfile.write(section.output.data(), section.output.size());
-		}
+		for (CompactSection & section : sections)
+			Compact::write_section(section, outfile);
 		sections.clear();
 	};
 	auto finish = [&]() {
@@ -222,8 +220,21 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	CompactSection section;
 	this->load_section(ism, outfile, section);
 	this->compact_section(section);
-	outfile.register_position('m');
-	outfile.write(section.output.data(), section.output.size());
+	Compact::write_section(section, outfile);
+}
+
+
+void Compact::write_section(const CompactSection & section, Kff_file & outfile) {
+	Section_Minimizer sm(&outfile);
+	sm.write_minimizer(const_cast<uint8_t *>(section.minimizer.data()));
+	uint8_t * bytes = const_cast<uint8_t *>(section.superkmer_bytes.data());
+	for (const CompactSection::Superkmer & superkmer : section.superkmers) {
+		uint8_t * data = bytes + (superkmer.size + 3) / 4;
+		sm.write_compacted_sequence_without_mini(bytes, superkmer.size, superkmer.mini_pos, data);
+		const uint64_t nb_kmers = superkmer.size + section.out_m - section.out_k + 1;
+		bytes = data + nb_kmers * section.out_data_size;
+	}
+	sm.close();
 }
 
 
@@ -293,16 +304,10 @@ void Compact::compact_section(CompactSection & section) {
 		this->pairs_to_paths(to_compact, paths);
 	}
 
-	// 3 - Bytes of the compacted section: type, minimizer, number of blocks, blocks
-	MinimizerBlockEncoder encoder(k, m, section.out_max, data_size);
-	section.output.clear();
-	section.output.push_back('m');
-	section.output.insert(section.output.end(), section.minimizer.begin(), section.minimizer.begin() + encoder.minimizer_bytes);
-	const size_t nb_blocks_position = section.output.size();
-	section.output.resize(nb_blocks_position + 8, 0);
-	uint64_t nb_blocks = this->write_paths(paths, encoder, section.output);
-	for (uint b=0 ; b<8 ; b++)
-		section.output[nb_blocks_position + b] = static_cast<uint8_t>(nb_blocks >> (8 * (7 - b)));
+	// 3 - The compacted superkmers (written by write_section())
+	section.superkmers.clear();
+	section.superkmer_bytes.clear();
+	this->write_paths(paths, section);
 }
 
 
@@ -1458,24 +1463,24 @@ void Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_comp
 	}
 }
 
-uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
+uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, CompactSection & section) {
 	for (const vector<uint8_t *> & path : paths)
-		this->write_path(path.data(), path.size(), encoder, output);
+		this->write_path(path.data(), path.size(), section);
 	return paths.size();
 }
 
 
-uint64_t Compact::write_paths(const Paths & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
+uint64_t Compact::write_paths(const Paths & paths, CompactSection & section) {
 	for (size_t i=0 ; i<paths.size() ; i++) {
 		const uint64_t start = i == 0 ? 0 : paths.ends[i - 1];
-		this->write_path(paths.kmers.data() + start, paths.ends[i] - start, encoder, output);
+		this->write_path(paths.kmers.data() + start, paths.ends[i] - start, section);
 	}
 	return paths.size();
 }
 
 
-void Compact::write_path(uint8_t * const * path, size_t path_size, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
-	const uint data_size = encoder.data_size;
+void Compact::write_path(uint8_t * const * path, size_t path_size, CompactSection & section) {
+	const uint data_size = this->data_size;
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
 	// Width of the minimizer positions in the kmer buffer (computed from the input section)
@@ -1531,8 +1536,10 @@ void Compact::write_path(uint8_t * const * path, size_t path_size, const Minimiz
 		memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
 	}
 
-	// Write everything in the section
-	encoder.append_without_mini(output, skmer_buffer, skmer_size, mini_pos, data_buffer);
+	// Add the superkmer and its data to the section
+	section.superkmers.push_back({skmer_size, mini_pos});
+	section.superkmer_bytes.insert(section.superkmer_bytes.end(), skmer_buffer, skmer_buffer + (skmer_size + 3) / 4);
+	section.superkmer_bytes.insert(section.superkmer_bytes.end(), data_buffer, data_buffer + path_size * data_size);
 }
 
 

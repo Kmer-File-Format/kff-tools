@@ -5,7 +5,6 @@
 
 #include "CLI/CLI.hpp"
 #include "kfftools.hpp"
-#include "blocks.hpp"
 
 
 #ifndef COMPACT_H
@@ -28,8 +27,15 @@ struct CompactSection {
 	};
 	std::vector<Block> blocks;
 	std::vector<uint8_t> bytes;
-	// Bytes of the compacted section: type, minimizer, number of blocks and blocks
-	std::vector<uint8_t> output;
+	// The compacted superkmers, written by Compact::write_section(): number of nucleotides
+	// (without the minimizer) and minimizer position of each one, then their nucleotides and the
+	// data of their kmers, one superkmer after the other, in superkmer_bytes
+	struct Superkmer {
+		uint32_t size;
+		uint32_t mini_pos;
+	};
+	std::vector<Superkmer> superkmers;
+	std::vector<uint8_t> superkmer_bytes;
 };
 
 /** Superkmers as paths of kmers of the buffer, stored one after the other: the kmers of the path
@@ -125,18 +131,21 @@ public:
 	~Compact();
 
 
-	/** Encode the blocks of a minimizer section containing all the superkmers given as paths.
-	 * The process preserve the order of the superkmers.
+	/** Build the superkmers given as paths (with their data, data_size bytes per kmer) and add
+	 * them to the compacted superkmers of the section. The process preserve the order of the
+	 * superkmers.
 	 * 
 	 * @param paths List of all the kmer paths that represent virtual superkmers.
-	 * @param encoder Encoder of the blocks of the output section (gives the data size).
-	 * @param output The blocks are appended to this array.
-	 * @return The number of blocks written.
+	 * @param section The superkmers are appended to its compacted superkmers.
+	 * @return The number of superkmers added.
 	 **/
-	uint64_t write_paths(const std::vector<std::vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
-	uint64_t write_paths(const Paths & paths, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
-	/** Encode the block of one path of size kmers */
-	void write_path(uint8_t * const * path, size_t size, const MinimizerBlockEncoder & encoder, std::vector<uint8_t> & output);
+	uint64_t write_paths(const std::vector<std::vector<uint8_t *> > & paths, CompactSection & section);
+	uint64_t write_paths(const Paths & paths, CompactSection & section);
+	/** Build the superkmer of one path of size kmers */
+	void write_path(uint8_t * const * path, size_t size, CompactSection & section);
+	/** Write the compacted superkmers of the section as a minimizer section of outfile (one block
+	 * per superkmer), with the current variables of outfile */
+	static void write_section(const CompactSection & section, Kff_file & outfile);
 
 	/** Take a list of kmer pair to assemble (greedy_assembly()) and write the paths from left to
 	 * right of virtual superkmers.
@@ -303,7 +312,7 @@ public:
 	  */
 	void exec();
 	void compact_section(Section_Minimizer & ism, Kff_file & outfile);
-	/** Compact a section loaded in memory: fills section.output */
+	/** Compact a section loaded in memory: fills its compacted superkmers */
 	void compact_section(CompactSection & section);
 
 };
