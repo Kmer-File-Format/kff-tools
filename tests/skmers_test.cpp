@@ -1,5 +1,7 @@
 // C++11 - use multiple source files.
 
+#include <random>
+
 #include "lest.hpp"
 #include "skmers.hpp"
 
@@ -112,6 +114,45 @@ const lest::test module[] = {
 
             cout << "\t\tOK" << endl;
         }
+    },
+
+    CASE("interleaved_value gives the interleaved order nucleotide by nucleotide") {
+        // Reference: the nucleotides pushed one by one in the interleaved order
+        auto reference = [](const uint8_t * kmer, uint64_t first_pos, uint64_t nb_nucl, uint64_t pref,
+                            uint64_t & high, uint64_t & low) {
+            high = low = 0;
+            auto push = [&](uint64_t idx) {
+                const uint64_t pos = first_pos + idx;
+                const uint64_t nucl = (kmer[pos / 4] >> (2 * (3 - pos % 4))) & 0b11;
+                high = (high << 2) | (low >> 62);
+                low = (low << 2) | nucl;
+            };
+            for (uint64_t t=0 ; t<nb_nucl ; t++) {
+                if (pref + t < nb_nucl)
+                    push(pref + t);
+                if (t < pref)
+                    push(pref - 1 - t);
+            }
+        };
+
+        std::mt19937_64 rnd(52);
+        bool all_equal = true;
+        uint64_t nb_tests = 0;
+        for (uint64_t nb_nucl=1 ; nb_nucl<=64 ; nb_nucl++)
+            for (uint64_t first_pos=0 ; first_pos + nb_nucl <= 64 and first_pos < 4 ; first_pos++)
+                for (uint64_t pref=0 ; pref<=nb_nucl ; pref++)
+                    for (int rep=0 ; rep<8 ; rep++) {
+                        // Exactly the bytes of the nucleotides (random padding bits)
+                        std::vector<uint8_t> kmer((first_pos + nb_nucl + 3) / 4);
+                        for (uint8_t & b : kmer) b = rnd();
+                        uint64_t high, low, ref_high, ref_low;
+                        interleaved_value(kmer.data(), first_pos, nb_nucl, pref, high, low);
+                        reference(kmer.data(), first_pos, nb_nucl, pref, ref_high, ref_low);
+                        all_equal = all_equal and high == ref_high and low == ref_low;
+                        nb_tests += 1;
+                    }
+        EXPECT( all_equal );
+        EXPECT( nb_tests > 30000u );
     },
 
     CASE("Interleaved compare") {

@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <queue>
 #include <cassert>
 #include <unordered_set>
@@ -104,29 +106,47 @@ void Compact::exec() {
 		workers.back()->sorted = this->sorted;
 	}
 
+	// With several threads, a batch is compacted by the workers (in_flight) while the previous
+	// one is written (to_write) then the next one is loaded: finish() waits for the compaction of
+	// in_flight and writes it, flush() starts the compaction of the loaded batch then writes the
+	// previous one. The batches are written in order, by the main thread only.
+	vector<CompactSection> in_flight, to_write;
+	vector<thread> threads;
+	atomic<size_t> next_section(0);
+	auto work = [&](Compact * worker) {
+		for (size_t i = next_section++ ; i < in_flight.size() ; i = next_section++)
+			worker->compact_section(in_flight[i]);
+	};
+	auto write_batch = [&](vector<CompactSection> & sections) {
+		for (CompactSection & section : sections)
+			Compact::write_section(section, outfile);
+		sections.clear();
+	};
+	auto join = [&]() {
+		for (thread & th : threads)
+			th.join();
+		threads.clear();
+	};
+	auto finish = [&]() {
+		join();
+		write_batch(in_flight);
+	};
 	auto flush = [&]() {
 		if (batch.empty())
 			return;
-		if (workers.empty() or batch.size() == 1) {
+		if (workers.empty()) {
 			for (CompactSection & section : batch)
 				this->compact_section(section);
+			write_batch(batch);
 		} else {
-			atomic<size_t> next_section(0);
-			auto work = [&](Compact * worker) {
-				for (size_t i = next_section++ ; i < batch.size() ; i = next_section++)
-					worker->compact_section(batch[i]);
-			};
-			vector<thread> threads;
-			for (size_t t=0 ; t<workers.size() and t<batch.size() ; t++)
+			join();
+			to_write.swap(in_flight);
+			in_flight.swap(batch);
+			next_section = 0;
+			for (size_t t=0 ; t<workers.size() and t<in_flight.size() ; t++)
 				threads.emplace_back(work, workers[t].get());
-			for (thread & th : threads)
-				th.join();
+			write_batch(to_write);
 		}
-		for (CompactSection & section : batch) {
-			outfile.register_position('m');
-			outfile.write(section.output.data(), section.output.size());
-		}
-		batch.clear();
 		batch_bytes = 0;
 	};
 
@@ -135,6 +155,7 @@ void Compact::exec() {
 
 		if (section_type == 'v') {
 			flush();
+			finish();
 			Section_GV isgv(&infile);
 			isgv.close();
 
@@ -172,6 +193,7 @@ void Compact::exec() {
 			// Rewrite a value section if max is not sufficently large
 			if (outfile.global_vars["max"] < k - m + 1) {
 				flush();
+				finish();
 				unordered_map<string, uint64_t> values(outfile.global_vars);
 				Section_GV sgv(&outfile);
 
@@ -194,6 +216,7 @@ void Compact::exec() {
 		}
 	}
 	flush();
+	finish();
 
 	infile.close();
 	outfile.close();
@@ -203,8 +226,21 @@ void Compact::compact_section(Section_Minimizer & ism, Kff_file & outfile) {
 	CompactSection section;
 	this->load_section(ism, outfile, section);
 	this->compact_section(section);
-	outfile.register_position('m');
-	outfile.write(section.output.data(), section.output.size());
+	Compact::write_section(section, outfile);
+}
+
+
+void Compact::write_section(const CompactSection & section, Kff_file & outfile) {
+	Section_Minimizer sm(&outfile);
+	sm.write_minimizer(const_cast<uint8_t *>(section.minimizer.data()));
+	uint8_t * bytes = const_cast<uint8_t *>(section.superkmer_bytes.data());
+	for (const CompactSection::Superkmer & superkmer : section.superkmers) {
+		uint8_t * data = bytes + (superkmer.size + 3) / 4;
+		sm.write_compacted_sequence_without_mini(bytes, superkmer.size, superkmer.mini_pos, data);
+		const uint64_t nb_kmers = superkmer.size + section.out_m - section.out_k + 1;
+		bytes = data + nb_kmers * section.out_data_size;
+	}
+	sm.close();
 }
 
 
@@ -257,7 +293,8 @@ void Compact::compact_section(CompactSection & section) {
 
     // 1 - Load the input section (the kmers of the previous sections are not needed any more)
 	this->next_free = 0;
-	vector<vector<uint8_t *> > kmers_per_index = this->prepare_kmer_matrix(section);
+	vector<vector<uint8_t *> > & kmers_per_index = this->matrix;
+	this->prepare_kmer_matrix(section, kmers_per_index);
 	// write_paths() reads the minimizer positions with the width of the output section, which
 	// can be larger than the width used in the buffer: the bytes after the last kmer are then
 	// read. They are kept null, as they were when the buffer was never emptied (the loading
@@ -265,24 +302,18 @@ void Compact::compact_section(CompactSection & section) {
 	memset(this->kmer_buffer + this->next_free, 0, 8);
 	
 	// 2 - Compact kmers
-	vector<vector<uint8_t *> > paths;
+	Paths & paths = this->section_paths;
 	if (this->sorted) {
-		paths = this->sorted_assembly(kmers_per_index);
+		this->sorted_assembly(kmers_per_index, paths);
 	} else {
 		vector<pair<uint8_t *, uint8_t *> > to_compact = this->greedy_assembly(kmers_per_index);
-		paths = this->pairs_to_paths(to_compact);
+		this->pairs_to_paths(to_compact, paths);
 	}
 
-	// 3 - Bytes of the compacted section: type, minimizer, number of blocks, blocks
-	MinimizerBlockEncoder encoder(k, m, section.out_max, data_size);
-	section.output.clear();
-	section.output.push_back('m');
-	section.output.insert(section.output.end(), section.minimizer.begin(), section.minimizer.begin() + encoder.minimizer_bytes);
-	const size_t nb_blocks_position = section.output.size();
-	section.output.resize(nb_blocks_position + 8, 0);
-	uint64_t nb_blocks = this->write_paths(paths, encoder, section.output);
-	for (uint b=0 ; b<8 ; b++)
-		section.output[nb_blocks_position + b] = static_cast<uint8_t>(nb_blocks >> (8 * (7 - b)));
+	// 3 - The compacted superkmers (written by write_section())
+	section.superkmers.clear();
+	section.superkmer_bytes.clear();
+	this->write_paths(paths, section);
 }
 
 
@@ -333,59 +364,97 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 }
 
 
+/* The (nb_nucl + 3) / 4 first bytes that subsequence(seq, seq_size, out, begin, begin + nb_nucl - 1)
+ * writes (nb_nucl <= 28): the bytes of the sequence that hold the nucleotides, as an integer
+ * shifted right by the nucleotides after the last one in its byte, on the bytes of the kmer
+ * (subsequence() also writes one more byte in some cases). */
+void extract_kmer(const uint8_t * seq, uint64_t seq_size, uint8_t * out, uint64_t begin, uint64_t nb_nucl) {
+	const uint64_t offset = (4 - seq_size % 4) % 4;
+	const uint64_t last = offset + begin + nb_nucl - 1;
+	const uint64_t start_byte = (offset + begin) / 4;
+	const uint64_t stop_byte = last / 4;
+	uint64_t value = 0;
+	for (uint64_t b=start_byte ; b<=stop_byte ; b++)
+		value = (value << 8) | seq[b];
+	value >>= 2 * (3 - last % 4);
+	const uint64_t nb_bytes = (nb_nucl + 3) / 4;
+	for (uint64_t b=0 ; b<nb_bytes ; b++)
+		out[b] = static_cast<uint8_t>(value >> (8 * (nb_bytes - 1 - b)));
+}
+
+
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(const CompactSection & sm) {
-	vector<vector<long> > pos_matrix(sm.k - sm.m + 1, vector<long>());
+	vector<vector<uint8_t *> > kmer_matrix;
+	this->prepare_kmer_matrix(sm, kmer_matrix);
+	return kmer_matrix;
+}
 
-	uint64_t kmer_bytes = (sm.k - sm.m + 3) / 4;
-    uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
 
-	// 1 - Load the input section
+void Compact::prepare_kmer_matrix(const CompactSection & sm, vector<vector<uint8_t *> > & kmer_matrix) {
+	const uint64_t nb_nucl = sm.k - sm.m;
+	const uint64_t kmer_bytes = (nb_nucl + 3) / 4;
+	const uint64_t mini_pos_size = (static_cast<uint>(ceil(log2(sm.k + sm.max - sm.m))) + 7) / 8;
+	const uint64_t record_size = kmer_bytes + sm.data_size + mini_pos_size;
+
+	// Number of kmers of each column: the kmers of a block are in consecutive columns
+	vector<uint64_t> & counts = this->column_counts;
+	counts.assign(nb_nucl + 2, 0);
+	uint64_t nb_kmers_total = 0;
+	for (const CompactSection::Block & block : sm.blocks) {
+		if (block.nb_kmers == 0)
+			continue;
+		if (block.mini_pos > nb_nucl or block.mini_pos + 1 < block.nb_kmers)
+			throw runtime_error("compact: minimizer position out of the kmers of a block");
+		counts[nb_nucl - block.mini_pos] += 1;
+		counts[nb_nucl - block.mini_pos + block.nb_kmers] -= 1;
+		nb_kmers_total += block.nb_kmers;
+	}
+	kmer_matrix.resize(nb_nucl + 1);
+	uint64_t column_count = 0;
+	for (uint64_t col=0 ; col<=nb_nucl ; col++) {
+		column_count += counts[col];
+		kmer_matrix[col].clear();
+		kmer_matrix[col].reserve(column_count);
+	}
+
+	// Buffer size: doubled until the kmers and 8 free bytes fit (as when it was doubled kmer by
+	// kmer), the new bytes are null. The kmers do not move any more: the matrix holds pointers.
+	if (nb_kmers_total > 0 and this->buffer_size - this->next_free < nb_kmers_total * record_size + 8) {
+		uint64_t new_size = this->buffer_size;
+		while (new_size - this->next_free < nb_kmers_total * record_size + 8)
+			new_size *= 2;
+		this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, new_size);
+		memset(this->kmer_buffer + this->buffer_size, 0, new_size - this->buffer_size);
+		this->buffer_size = new_size;
+	}
+
+	// Load the input section
 	for (const CompactSection::Block & block : sm.blocks) {
 		uint64_t mini_pos = block.mini_pos;
 		uint nb_kmers = block.nb_kmers;
 		const uint8_t * seq_buffer = sm.bytes.data() + block.offset;
-		const uint8_t * data_buffer = seq_buffer + (sm.k - sm.m + nb_kmers - 1 + 3) / 4;
+		const uint8_t * data_buffer = seq_buffer + (nb_nucl + nb_kmers - 1 + 3) / 4;
 
 		// Add kmer by index
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
-			uint kmer_pos = sm.k - (uint)sm.m - mini_pos + kmer_idx;
-
-			// Realloc if needed (8 bytes are kept free after the last kmer, see compact_section)
-			if (this->buffer_size - this->next_free < kmer_bytes + sm.data_size + mini_pos_size + 8) {
-				this->kmer_buffer = (uint8_t *) realloc((void *)this->kmer_buffer, this->buffer_size*2);
-				memset(this->kmer_buffer + this->buffer_size, 0, this->buffer_size);
-				this->buffer_size *= 2;
-			}
-
+			uint8_t * record = this->kmer_buffer + this->next_free;
 			// Copy kmer sequence
-			subsequence(seq_buffer, sm.k - sm.m + nb_kmers - 1, this->kmer_buffer + next_free, kmer_idx, kmer_idx + sm.k - sm.m - 1);
+			if (nb_nucl <= 28)
+				extract_kmer(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, nb_nucl);
+			else
+				subsequence(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, kmer_idx + nb_nucl - 1);
 			// Copy data array
-			memcpy(this->kmer_buffer + next_free + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
+			memcpy(record + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
 			// Write mini position
 			uint kmer_mini_pos = mini_pos - kmer_idx;
-
-            for (int b=mini_pos_size-1 ; b>=0 ; b--) {
-				*(this->kmer_buffer + next_free + kmer_bytes + sm.data_size + b) = kmer_mini_pos & 0xFF;
+			for (int b=mini_pos_size-1 ; b>=0 ; b--) {
+				record[kmer_bytes + sm.data_size + b] = kmer_mini_pos & 0xFF;
 				kmer_mini_pos >>= 8;
 			}
-			// Update
-			pos_matrix[kmer_pos].push_back(this->next_free);
-			next_free += kmer_bytes + sm.data_size + mini_pos_size;
+			kmer_matrix[nb_nucl - mini_pos + kmer_idx].push_back(record);
+			this->next_free += record_size;
 		}
 	}
-
-	// Transform the position matrix into the kmer matrix
-	vector<vector<uint8_t *> > kmer_matrix(sm.k - sm.m + 1, vector<uint8_t *>());
-	size_t idx = 0;
-
-	for (vector<long> & positions : pos_matrix) {
-		for (long pos : positions) {
-			kmer_matrix[idx].push_back(this->kmer_buffer + pos);
-		}
-		idx += 1;
-	}
-
-	return kmer_matrix;
 }
 
 
@@ -519,93 +588,214 @@ int Compact::interleaved_compare_kmers(const uint8_t * kmer1, const uint8_t * km
 }
 
 
+void Compact::interleaved_key(const uint8_t * kmer, uint64_t & high, uint64_t & low) const {
+	const uint nb_nucl = this->k - this->m;
+	const uint offset = (4 - (nb_nucl % 4)) % 4;
+	interleaved_value(kmer, offset, nb_nucl, this->mini_pos_from_buffer(kmer), high, low);
+}
+
+
+/* Stable LSD radix sort of the elements by their key of key_bits <= 64 bits: 8 bits per pass, the
+ * counts of all the passes in one read of the elements, the passes where all the elements have
+ * the same digit are skipped (the elements fit in 32-bit counts) */
+static void radix_sort_keys(vector<Compact::Keyed64> & items, vector<Compact::Keyed64> & tmp, uint key_bits) {
+	const uint nb_passes = (key_bits + 7) / 8;
+	uint32_t counts[8][256] = {{0}};
+	for (const Compact::Keyed64 & item : items)
+		for (uint pass=0 ; pass<nb_passes ; pass++)
+			counts[pass][(item.key >> (8 * pass)) & 0xFF] += 1;
+	tmp.resize(items.size());
+	for (uint pass=0 ; pass<nb_passes ; pass++) {
+		uint32_t * count = counts[pass];
+		const uint shift = 8 * pass;
+		if (count[(items[0].key >> shift) & 0xFF] == items.size())
+			continue;
+		uint32_t sum = 0;
+		for (uint d=0 ; d<256 ; d++) {
+			const uint32_t n = count[d];
+			count[d] = sum;
+			sum += n;
+		}
+		for (const Compact::Keyed64 & item : items)
+			tmp[count[(item.key >> shift) & 0xFF]++] = item;
+		items.swap(tmp);
+	}
+}
+
+
 void Compact::sort_matrix(vector<vector<uint8_t *> > & kmer_matrix) {
 	// Sort by column
 
+	// Keys of the comparison: same comparisons, so std::sort gives the same order
+	struct Keyed {
+		uint64_t high;
+		uint64_t low;
+		uint8_t * kmer;
+	};
+	vector<Keyed> keyed;
+	vector<Keyed64> & keyed64 = this->sort_keys;
+	vector<Keyed64> & keyed64_tmp = this->sort_keys_tmp;
+	// The keys of the sorted columns are kept when they have 64 bits
+	this->column_keys_valid = this->k - this->m <= 32;
+	this->column_keys.resize(kmer_matrix.size());
+
 	for (uint i=0 ; i<kmer_matrix.size() ; i++) {
-		// Comparison function (depends on minimizer position)
-		auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
-			return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
-		};
+		if (this->k - this->m > 64) {
+			// Comparison function (depends on minimizer position)
+			auto comp_function = [this](const uint8_t * kmer1, const uint8_t * kmer2) {
+				return this->interleaved_compare_kmers(kmer1, kmer2) < 0;
+			};
+			sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+			continue;
+		}
 
-		sort(kmer_matrix[i].begin(), kmer_matrix[i].end(), comp_function);
+		if (this->k - this->m <= 32) {
+			// The keys fit in 64 bits (high is 0): same comparisons on smaller elements
+			keyed64.resize(kmer_matrix[i].size());
+			for (size_t j=0 ; j<keyed64.size() ; j++) {
+				uint64_t high;
+				keyed64[j].kmer = kmer_matrix[i][j];
+				this->interleaved_key(keyed64[j].kmer, high, keyed64[j].key);
+			}
+			// Columns of 128 to 65536 kmers: radix sort (no branch misprediction; above, its passes
+			// over the column miss the caches and std::sort is faster on the many equal keys of
+			// large columns). The order of distinct keys is
+			// the order of std::sort; the kmers with equal keys can be in another order only if
+			// their records are identical (then any order gives the same output), otherwise the
+			// column is sorted again with std::sort from its first order.
+			bool sorted_by_radix = false;
+			if (keyed64.size() >= 128 and keyed64.size() <= 65536) {
+				radix_sort_keys(keyed64, keyed64_tmp, 2 * (this->k - this->m));
+				const size_t record_size = this->bytes_compacted + this->data_size + this->mini_pos_size;
+				sorted_by_radix = true;
+				for (size_t j=1 ; j<keyed64.size() and sorted_by_radix ; j++)
+					if (keyed64[j].key == keyed64[j - 1].key and memcmp(keyed64[j].kmer, keyed64[j - 1].kmer, record_size) != 0)
+						sorted_by_radix = false;
+				if (not sorted_by_radix)
+					for (size_t j=0 ; j<keyed64.size() ; j++) {
+						uint64_t high;
+						keyed64[j].kmer = kmer_matrix[i][j];
+						this->interleaved_key(keyed64[j].kmer, high, keyed64[j].key);
+					}
+			}
+			if (not sorted_by_radix)
+				sort(keyed64.begin(), keyed64.end(), [](const Keyed64 & a, const Keyed64 & b) {
+					return a.key < b.key;
+				});
+			vector<uint64_t> & keys = this->column_keys[i];
+			keys.resize(keyed64.size());
+			for (size_t j=0 ; j<keyed64.size() ; j++) {
+				kmer_matrix[i][j] = keyed64[j].kmer;
+				keys[j] = keyed64[j].key;
+			}
+			continue;
+		}
+
+		keyed.resize(kmer_matrix[i].size());
+		for (size_t j=0 ; j<keyed.size() ; j++) {
+			keyed[j].kmer = kmer_matrix[i][j];
+			this->interleaved_key(keyed[j].kmer, keyed[j].high, keyed[j].low);
+		}
+		sort(keyed.begin(), keyed.end(), [](const Keyed & a, const Keyed & b) {
+			return a.high != b.high ? a.high < b.high : a.low < b.low;
+		});
+		for (size_t j=0 ; j<keyed.size() ; j++)
+			kmer_matrix[i][j] = keyed[j].kmer;
 	}
-
 }
 
 #include <bitset>
+/* The nb_nucl <= 64 nucleotides of a kmer of the buffer (aligned on the right of its bytes) as a
+ * 128-bit integer (high, low), the last nucleotide in the 2 lowest bits, without the padding bits.
+ */
+static inline void kmer_value(const uint8_t * kmer, uint nb_nucl, uint64_t & high, uint64_t & low) {
+	high = low = 0;
+	for (uint b=0 ; b<(nb_nucl + 3) / 4 ; b++) {
+		high = (high << 8) | (low >> 56);
+		low = (low << 8) | kmer[b];
+	}
+	if (nb_nucl < 32)
+		low &= (uint64_t(1) << (2 * nb_nucl)) - 1;
+	else if (nb_nucl < 64)
+		high &= (uint64_t(1) << (2 * (nb_nucl - 32))) - 1;
+}
+
+
 vector<pair<uint64_t, uint64_t> > Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2) const {
-	const uint nb_nucl = k - m;
-    vector<pair<uint64_t, uint64_t> > pairs;
-	pairs.reserve(max(column1.size(), column2.size()));
-
-	// Index the second column by their prefix hash
-	//            hash      kmer positions
-	unordered_map<uint64_t, vector<uint64_t> > index;
-	//            kmer position, used
-	unordered_map<uint64_t, bool> used;
-	for (uint64_t idx=0 ; idx<column2.size() ; idx++) {
-		uint8_t * kmer = column2[idx];
-		// Get the hash corresponding to the k-m-1 prefix
-		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
-
-		if (index.find(hash) == index.end())
-			index[hash] = vector<uint64_t>();
-		index[hash].push_back(idx);
-		used[idx] = false;
-	}
-
-
-	// Looks for suffix matches of the first column
-	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
-		uint8_t * kmer = column1[idx];
-
-		// Get the hash corresponding to the k-m-1 suffix
-		uint64_t hash = subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
-
-		// Test for hash collision
-		if (index.find(hash) != index.end()) {
-//			Test each of the
-			for (uint64_t candidate_lst_idx=0 ; candidate_lst_idx < index[hash].size() ; candidate_lst_idx++) {
-				uint64_t candidate_vect_idx = index[hash][candidate_lst_idx];
-				uint8_t * candidate = column2[candidate_vect_idx];
-                if (sequence_compare(
-							candidate, nb_nucl, 0, nb_nucl-2,
-							kmer, nb_nucl, 1, nb_nucl-1
-						) == 0) {
-                	// cout << " " << idx << " " << candidate_vect_idx << endl;
-					pairs.emplace_back(idx, candidate_vect_idx);
-					used[candidate_vect_idx] = true;
-				}
-			}
-		}
-	}
-
+	vector<pair<uint64_t, uint64_t> > pairs, index;
+	this->pair_kmers(column1, column2, pairs, index);
 	return pairs;
 }
 
 
-struct pair_hash {
-    template <class T1, class T2>
-    std::size_t operator () (const std::pair<T1,T2> &p) const {
-        auto h1 = std::hash<T1>{}(p.first);
-        auto h2 = std::hash<T2>{}(p.second);
+void Compact::pair_kmers(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2,
+                         vector<pair<uint64_t, uint64_t> > & pairs, vector<pair<uint64_t, uint64_t> > & index) const {
+	const uint nb_nucl = k - m;
+	pairs.clear();
+	pairs.reserve(max(column1.size(), column2.size()));
 
-        // Mainly for demonstration purposes, i.e. works but is overly simple
-        // In the real world, use sth. like boost.hash_combine
-        return h1 ^ h2;  
-    }
-};
+	// Hashes of the k-m-1 prefixes (second column) and suffixes (first column): their value
+	// (subseq_to_uint() truncates them to their 32 last nucleotides). From 2 to 64 nucleotides,
+	// they are extracted from the value of the kmer. When the prefixes have at most 32
+	// nucleotides, the hash is the whole prefix: kmers with the same hash overlap.
+	const bool from_value = nb_nucl >= 2 and nb_nucl <= 64;
+	const bool exact_hash = from_value and nb_nucl - 1 <= 32;
+	const uint64_t sub_mask = nb_nucl - 1 >= 32 ? ~uint64_t(0) : (uint64_t(1) << (2 * (nb_nucl - 1))) - 1;
+	auto prefix_hash = [&](const uint8_t * kmer) -> uint64_t {
+		if (not from_value)
+			return subseq_to_uint(kmer, nb_nucl, 0, nb_nucl-2);
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return ((low >> 2) | (high << 62)) & sub_mask;
+	};
+	auto suffix_hash = [&](const uint8_t * kmer) -> uint64_t {
+		if (not from_value)
+			return subseq_to_uint(kmer, nb_nucl, 1, nb_nucl-1);
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return low & sub_mask;
+	};
+
+	// Index the second column by their prefix hash: (hash, kmer position) sorted by hash, then
+	// by position (the candidates of a hash are tested in the column order)
+	index.clear();
+	index.reserve(column2.size());
+	for (uint64_t idx=0 ; idx<column2.size() ; idx++)
+		index.emplace_back(prefix_hash(column2[idx]), idx);
+	// By hash, then by position
+	auto by_hash = [](const pair<uint64_t, uint64_t> & a, const pair<uint64_t, uint64_t> & b) {
+		return a.first != b.first ? a.first < b.first : a.second < b.second;
+	};
+	sort(index.begin(), index.end(), by_hash);
 
 
-template<>
-bool std::operator<(const PairInt& l, const PairInt& r)
-{
-	if (l.second == r.second)
-		return l.first < r.first;
-	else
-		return l.second < r.second;
+	// Looks for suffix matches of the first column. Equal kmers are next to each other in the
+	// sorted columns: the candidates of the previous hash are reused when the hash is the same.
+	auto first_candidate = index.begin();
+	uint64_t previous_hash = 0;
+	for (uint64_t idx=0 ; idx<column1.size() ; idx++) {
+		uint8_t * kmer = column1[idx];
+		uint64_t hash = suffix_hash(kmer);
+
+		// Test each candidate with the same hash
+		if (idx == 0 or hash != previous_hash)
+			first_candidate = lower_bound(index.begin(), index.end(), make_pair(hash, uint64_t(0)), by_hash);
+		previous_hash = hash;
+		for (auto candidate = first_candidate ; candidate != index.end() and candidate->first == hash ; candidate++) {
+			uint64_t candidate_vect_idx = candidate->second;
+            if (exact_hash or sequence_compare(
+						column2[candidate_vect_idx], nb_nucl, 0, nb_nucl-2,
+						kmer, nb_nucl, 1, nb_nucl-1
+					) == 0) {
+				pairs.emplace_back(idx, candidate_vect_idx);
+			}
+		}
+	}
 }
+
+
+
+
 
 ostream& operator<<(ostream& os, const PairInt& p)
 {
@@ -615,208 +805,554 @@ ostream& operator<<(ostream& os, const PairInt& p)
 
 
 
+/* Elements grouped by symbol with a hash table (open addressing: table holds the symbol of each
+ * slot, table_groups its group, none for an empty slot). The groups are numbered by first element;
+ * members lists the elements of each group in increasing order: the elements of the group g are
+ * members[group_start[g]] to members[group_start[g + 1] - 1]. The vectors are buffers kept by
+ * the caller. */
+template <typename Symbol>
+struct SymbolGroups {
+	vector<Symbol> & table;
+	vector<uint64_t> & table_groups;
+	vector<uint64_t> & group_of;
+	vector<uint64_t> & group_start;
+	vector<uint64_t> & members;
+	uint table_bits = 4;
+	uint64_t table_mask = 15;
+	static constexpr uint64_t none = numeric_limits<uint64_t>::max();
+
+	/** Group of the symbol, or none */
+	uint64_t find(const Symbol & symbol) const {
+		uint64_t slot = symbol.hash() >> (64 - this->table_bits);
+		while (this->table_groups[slot] != none) {
+			if (this->table[slot].same(symbol))
+				return this->table_groups[slot];
+			slot = (slot + 1) & this->table_mask;
+		}
+		return none;
+	}
+
+	/** Groups the elements 0 to nb - 1 (symbol_of(j): symbol of the element j) */
+	template <typename SymbolOf>
+	void build(size_t nb, SymbolOf symbol_of) {
+		this->table_bits = 4;
+		while ((uint64_t(1) << this->table_bits) < 2 * nb)
+			this->table_bits += 1;
+		this->table_mask = (uint64_t(1) << this->table_bits) - 1;
+		this->table.resize(this->table_mask + 1);
+		this->table_groups.assign(this->table_mask + 1, none);
+		this->group_start.clear();
+		this->group_of.resize(nb);
+		for (size_t j=0 ; j<nb ; j++) {
+			const Symbol symbol = symbol_of(j);
+			uint64_t slot = symbol.hash() >> (64 - this->table_bits);
+			while (this->table_groups[slot] != none and not this->table[slot].same(symbol))
+				slot = (slot + 1) & this->table_mask;
+			if (this->table_groups[slot] == none) {
+				this->table[slot] = symbol;
+				this->table_groups[slot] = this->group_start.size();
+				this->group_start.push_back(0);
+			}
+			this->group_of[j] = this->table_groups[slot];
+			this->group_start[this->group_of[j]] += 1;
+		}
+		// Elements of each group, in increasing order
+		uint64_t sum = 0;
+		for (uint64_t & start : this->group_start) {
+			const uint64_t count = start;
+			start = sum;
+			sum += count;
+		}
+		this->group_start.push_back(sum);
+		this->members.resize(nb);
+		for (size_t j=0 ; j<nb ; j++)
+			this->members[this->group_start[this->group_of[j]]++] = j;
+		// group_start[g] is now the end of the group g: shift back
+		for (size_t g=this->group_start.size() - 1 ; g-- > 0 ; )
+			this->group_start[g + 1] = this->group_start[g];
+		this->group_start[0] = 0;
+	}
+};
+
+
+template <typename Symbol>
+static void chain_columns_with(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2, uint nb_nucl,
+                               vector<pair<uint64_t, uint64_t> > & chain, vector<Symbol> & xs, vector<Symbol> & index,
+                               Compact::ChainBuffers & buffers) {
+	// Symbols (k-m-1 <= 63 nucleotides)
+	const uint sym_bits = 2 * (nb_nucl - 1);
+	const uint64_t mask_lo = sym_bits >= 64 ? ~uint64_t(0) : (uint64_t(1) << sym_bits) - 1;
+	const uint64_t mask_hi = sym_bits <= 64 ? 0 : (uint64_t(1) << (sym_bits - 64)) - 1;
+	auto prefix_symbol = [nb_nucl](const uint8_t * kmer, uint64_t pos) {
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		return Symbol::make(high >> 2, (low >> 2) | (high << 62), pos);
+	};
+	xs.resize(column1.size());
+	for (size_t i=0 ; i<column1.size() ; i++) {
+		uint64_t high, low;
+		kmer_value(column1[i], nb_nucl, high, low);
+		xs[i] = Symbol::make(high & mask_hi, low & mask_lo, i);
+	}
+
+	// Groups of the kmers of the second column with the same symbol, numbered by first column
+	const uint64_t none = numeric_limits<uint64_t>::max();
+	SymbolGroups<Symbol> groups{index, buffers.table_groups, buffers.group_of_column, buffers.group_start, buffers.group_columns};
+	groups.build(column2.size(), [&](size_t j) { return prefix_symbol(column2[j], j); });
+	const vector<uint64_t> & group_of_column = groups.group_of;
+	const vector<uint64_t> & group_start = groups.group_start;
+	const vector<uint64_t> & group_columns = groups.members;
+	vector<uint64_t> & group_of_row = buffers.group_of_row;
+
+	// Thresholds and their changes (row, column, level, previous change of the level)
+	vector<uint64_t> & thresholds = buffers.thresholds;
+	vector<uint64_t> & level_head = buffers.level_head;
+	vector<Compact::ChainChange> & changes = buffers.changes;
+	vector<pair<uint64_t, uint64_t> > & pending = buffers.pending;  // level, column
+	thresholds.clear();
+	level_head.clear();
+	changes.clear();
+	auto record = [&](uint64_t row, uint64_t level, uint64_t column) {
+		if (level == thresholds.size()) {
+			thresholds.push_back(column);
+			level_head.push_back(none);
+		} else
+			thresholds[level] = column;
+		changes.push_back(Compact::ChainChange{row, column, level, level_head[level]});
+		level_head[level] = changes.size() - 1;
+	};
+
+	size_t match_begin = 0, match_end = 0;      // matches of the current symbol in group_columns
+	size_t previous_begin = 0, previous_end = 0;  // changes of the previous row
+	group_of_row.resize(xs.size());
+	for (size_t i=0 ; i<xs.size() ; i++) {
+		const bool same = i > 0 and xs[i].same(xs[i - 1]);
+		if (same)
+			group_of_row[i] = group_of_row[i - 1];
+		else {
+			const uint64_t group = groups.find(xs[i]);
+			group_of_row[i] = group;
+			match_begin = group == none ? 0 : group_start[group];
+			match_end = group == none ? 0 : group_start[group + 1];
+		}
+		const size_t row_begin = changes.size();
+		if (match_begin == match_end) {
+			previous_begin = previous_end = row_begin;
+			continue;
+		}
+
+		if (same) {
+			// Only the levels following the levels changed by the previous row can change: the
+			// first match after their threshold (old values of the thresholds)
+			pending.clear();
+			for (size_t c=previous_begin ; c<previous_end ; c++) {
+				const uint64_t level = changes[c].level;
+				if (c > previous_begin and changes[c - 1].level == level)
+					continue;
+				const uint64_t value = thresholds[level];
+				size_t lo = match_begin, hi = match_end;
+				while (lo < hi) {
+					const size_t mid = (lo + hi) / 2;
+					if (group_columns[mid] > value) hi = mid; else lo = mid + 1;
+				}
+				if (lo < match_end and (level + 1 == thresholds.size() or group_columns[lo] < thresholds[level + 1]))
+					pending.emplace_back(level + 1, group_columns[lo]);
+			}
+			// The new level (if any) is the highest one: applied last
+			sort(pending.begin(), pending.end());
+			for (const pair<uint64_t, uint64_t> & change : pending)
+				record(i, change.first, change.second);
+		} else {
+			// Matches by decreasing column: each one can lower the threshold of its level
+			for (size_t idx=match_end ; idx-- > match_begin ; ) {
+				const uint64_t column = group_columns[idx];
+				if (thresholds.empty() or column > thresholds.back()) {
+					// After all the thresholds: new level
+					record(i, thresholds.size(), column);
+					continue;
+				}
+				const uint64_t level = lower_bound(thresholds.begin(), thresholds.end(), column) - thresholds.begin();
+				if (thresholds[level] > column)
+					record(i, level, column);
+			}
+		}
+		previous_begin = row_begin;
+		previous_end = changes.size();
+	}
+
+	// Chain from the end: threshold of the level before the current row, then the last row with
+	// the symbol of this column
+	const uint64_t length = thresholds.size();
+	chain.resize(length);
+	uint64_t row_limit = xs.size();
+	for (uint64_t level=length ; level-- > 0 ; ) {
+		uint64_t c = level_head[level];
+		while (changes[c].row >= row_limit)
+			c = changes[c].prev;
+		const uint64_t column = changes[c].column;
+		const uint64_t group = group_of_column[column];
+		uint64_t row = row_limit - 1;
+		while (group_of_row[row] != group)
+			row -= 1;
+		chain[level] = make_pair(row, column);
+		row_limit = row;
+	}
+}
+
+
+void Compact::chain_columns(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2,
+                            vector<pair<uint64_t, uint64_t> > & chain) {
+	// Same chain as colinear_chaining(pair_kmers(column1, column2)), without the candidate pairs.
+	//
+	// The candidates are the pairs (i, j) whose k-m-1 suffix of column1[i] and k-m-1 prefix of
+	// column2[j] (the symbols X[i] and Y[j]) are equal: the chain is a longest common subsequence
+	// of X and Y. The score of a pair is 1 + the length of the longest common subsequence of
+	// X[0..i-1] and Y[0..j-1]. colinear_longest_chain() takes the pair with the max score and the
+	// min (j, -i), then, from each pair (i, j) of score t, the pair of score t - 1 with i' < i and
+	// j' < j and the min (j', -i'). With the thresholds T_r[s] (min column j such that X[0..r-1]
+	// and Y[0..j] have a common subsequence of length s), this pair is (i', T_i[t - 1]) where i'
+	// is the last row before i with X[i'] = Y[T_i[t - 1]] (rows are scanned backwards once).
+	//
+	// The thresholds are computed row by row (Hunt-Szymanski): the matches of a row (columns j
+	// with Y[j] = X[i], decreasing) update T. The equal kmers of a column are next to each other
+	// and give the same matches: after a row, the next row with the same symbol can only change
+	// the level s + 1 of the levels s changed by the row, with the first match after T[s]. The
+	// work is then about the size of the chains instead of the number of candidate pairs.
+	const uint nb_nucl = this->k - this->m;
+	chain.clear();
+	if (column1.empty() or column2.empty())
+		return;
+	if (nb_nucl - 1 <= 32)
+		chain_columns_with(column1, column2, nb_nucl, chain, this->chain_xs64, this->chain_index64, this->chain_buffers);
+	else
+		chain_columns_with(column1, column2, nb_nucl, chain, this->chain_xs128, this->chain_index128, this->chain_buffers);
+}
+
+
 vector<pair<uint64_t, uint64_t> > Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates) const {
+	vector<pair<uint64_t, uint64_t> > given = candidates;
+	vector<pair<uint64_t, uint64_t> > chain;
+	this->colinear_chaining(given, chain);
+	return chain;
+}
 
-    if (candidates.empty()) {
-        return {};
-    }
 
-    Colinear colinear(candidates);
-    colinear.compute_scores(candidates);
-    
-	return colinear.longest_chain();
+void Compact::colinear_chaining(vector<pair<uint64_t, uint64_t> > & candidates, vector<pair<uint64_t, uint64_t> > & chain) const {
+	if (candidates.empty()) {
+		chain.clear();
+		return;
+	}
+
+	// Candidates increasing on both sides (frequent): they are the only longest chain
+	bool increasing = true;
+	for (size_t i=1 ; i<candidates.size() and increasing ; i++)
+		increasing = candidates[i].first > candidates[i-1].first and candidates[i].second > candidates[i-1].second;
+	if (increasing) {
+		chain.swap(candidates);
+		return;
+	}
+
+	chain = colinear_longest_chain(candidates);
+}
+
+
+/* Number of trailing null bits of x != 0 */
+static inline unsigned count_trailing_zeros(uint64_t x) {
+#if defined(__GNUC__) || defined(__clang__)
+	return __builtin_ctzll(x);
+#else
+	unsigned n = 0;
+	while ((x & 1) == 0) {
+		x >>= 1;
+		n += 1;
+	}
+	return n;
+#endif
 }
 
 
 vector<vector<uint8_t *> > Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs) const {
-	// Index the kmer columns
-	unordered_map<uint8_t *, size_t> columns;
-	for (size_t col=0 ; col<matrix.size() ; col++)
-		for (uint8_t * kmer : matrix[col])
-			columns[kmer] = col;
+	Paths paths;
+	PolishBuffers buffers;
+	this->polish_sort(matrix, pairs, paths, buffers);
+	vector<vector<uint8_t *> > result(paths.size());
+	for (size_t i=0 ; i<paths.size() ; i++)
+		result[i].assign(paths.kmers.begin() + (i == 0 ? 0 : paths.ends[i - 1]), paths.kmers.begin() + paths.ends[i]);
+	return result;
+}
 
-	// Unify kmers into skmers
-	unordered_map<uint8_t *, vector<uint8_t *> *> rev_skmers_index;
-	unordered_set<vector<uint8_t *> *> skmers;
-	for (size_t col_idx = 0 ; col_idx<pairs.size() ; col_idx++) {
-		// Get the current column
-		const vector<pair<uint64_t, uint64_t> > & column = pairs[col_idx];
 
-		// for each new link, try to extend previous skmers
-		for (const pair<uint64_t, uint64_t> & link : column) {
-			uint8_t * lkmer = matrix[col_idx][link.first];
-			uint8_t * rkmer = matrix[col_idx+1][link.second];
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs, Paths & paths) {
+	this->polish_sort(matrix, pairs, paths, this->polish_buffers);
+}
 
-			// Previous kmer not found
-			if (rev_skmers_index.find(lkmer) == rev_skmers_index.end()) {
-				// Create a new superkmer
-				vector<uint8_t *> * new_sk = new vector<uint8_t *>();
-				skmers.insert(new_sk);
-				new_sk->push_back(lkmer); new_sk->push_back(rkmer);
-				// Insert it in the rev index
-				rev_skmers_index[rkmer] = new_sk;
+
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs,
+                          Paths & paths, PolishBuffers & buffers) const {
+	this->polish_sort(matrix, pairs, paths, buffers, nullptr);
+}
+
+
+void Compact::polish_sort(const vector<vector<uint8_t *> > & matrix , const vector<vector<pair<uint64_t, uint64_t> > > & pairs,
+                          Paths & paths, PolishBuffers & buffers, const vector<vector<uint64_t> > * keys) const {
+	const size_t nb_cols = matrix.size();
+	const uint64_t none = numeric_limits<uint64_t>::max();
+
+	// Kmer ids: the kmer of the row r of the column c is col_start[c] + r
+	vector<uint64_t> & col_start = buffers.col_start;
+	col_start.assign(nb_cols + 1, 0);
+	for (size_t col=0 ; col<nb_cols ; col++)
+		col_start[col + 1] = col_start[col] + matrix[col].size();
+	const uint64_t nb_kmers = col_start[nb_cols];
+
+	// Unify kmers into skmers. The links between 2 columns are a colinear chain (increasing on
+	// both sides): a kmer is in at most one link on each side and the skmers are the paths of
+	// linked kmers, from column to column (lonely kmers are skmers of 1 kmer).
+	// Previous kmer of each kmer in its skmer (none for the first kmers)
+	vector<uint64_t> & prev_kmer = buffers.prev_kmer;
+	prev_kmer.assign(nb_kmers, none);
+	for (size_t col=0 ; col<pairs.size() ; col++)
+		for (const pair<uint64_t, uint64_t> & link : pairs[col])
+			prev_kmer[col_start[col + 1] + link.second] = col_start[col] + link.first;
+	// Skmer of each kmer, first kmer, its column and size of each skmer
+	vector<uint64_t> & sk_of = buffers.sk_of;
+	vector<uint64_t> & sk_first = buffers.sk_first;
+	vector<uint64_t> & sk_col = buffers.sk_col;
+	vector<uint64_t> & sk_size = buffers.sk_size;
+	sk_of.resize(nb_kmers);
+	sk_first.clear();
+	sk_col.clear();
+	sk_size.clear();
+	// Kmers in memory order: a kmer is in the skmer of its previous kmer (in the previous
+	// column), or starts a new skmer (numbered by first kmer)
+	for (size_t col=0 ; col<nb_cols ; col++)
+		for (uint64_t id=col_start[col] ; id<col_start[col + 1] ; id++) {
+			if (prev_kmer[id] != none) {
+				const uint64_t sk = sk_of[prev_kmer[id]];
+				sk_of[id] = sk;
+				sk_size[sk] += 1;
+				continue;
 			}
-			// Previous kmer found: extend it
-			else {
-				// Get the skmer
-				vector<uint8_t *> * sk = rev_skmers_index[lkmer];
-				// Extend it
-				sk->push_back(rkmer);
-				// change the reference of the sk in the index
-				rev_skmers_index.erase(lkmer);
-				rev_skmers_index[rkmer] = sk;
-			}
+			sk_of[id] = sk_first.size();
+			sk_first.push_back(id);
+			sk_col.push_back(col);
+			sk_size.push_back(1);
 		}
-	}
 
+	// Number of kmers of each skmer that are the first remaining kmer of their column (0 for the
+	// skmers already selected). A skmer can be selected when all its kmers are first.
+	vector<uint64_t> & sk_counts = buffers.sk_counts;
+	sk_counts.assign(sk_first.size(), 0);
+	// Row of the first remaining kmer of each column, its skmer and if the skmer can be selected
+	// (sk_counts[sk] == sk_size[sk], updated when the count of a skmer or the first kmer of a
+	// column changes)
+	vector<size_t> & current_kmers = buffers.current_kmers;
+	vector<uint64_t> & head_sk = buffers.head_sk;
+	vector<uint8_t> & head_ready = buffers.head_ready;
+	current_kmers.assign(nb_cols, 0);
+	head_sk.assign(nb_cols, 0);
+	head_ready.assign(nb_cols, 0);
 
-	// Index skmers
-	unordered_map<uint8_t *, vector<uint8_t *> *> sk_index;
-	for(auto & kv: rev_skmers_index) {
-		vector<uint8_t *> * sk = kv.second;
-		// Index by kmer
-		for (uint8_t * kmer: *sk)
-			sk_index[kmer] = sk;
-	}
-
-	// Index lonely kmers
-	for(size_t col=0 ; col<matrix.size() ; col++) {
-		for (uint8_t * kmer : matrix[col]) {
-			if (sk_index.find(kmer) == sk_index.end()) {
-				sk_index[kmer] = new vector<uint8_t *>{kmer};
-				skmers.insert(sk_index[kmer]);
-			}
-		}
-	}
-
-	// Init the kmer per superkmer counters with the first row
-	unordered_map<vector<uint8_t *> *, uint64_t> sk_counts;
-	for (const vector<uint8_t *> & col: matrix) {
-		if (col.size() == 0) continue;
-
-		auto & sk = sk_index[col[0]];
-		if (sk_counts.find(sk) == sk_counts.end())
-			sk_counts[sk] = 0;
-		sk_counts[sk] += 1;
-	}
-
-	bool matrix_consumed = false;
-	// Row indexes for each or the columns in the kmer matrix.
-	vector<size_t> current_kmers(matrix.size(), 0);
-	// Memory to strore interleaves
+	// Interleaved values of the first remaining kmers: the kmers of the column c have their
+	// minimizer after num_kmer_nucl - c nucleotides (the bytes are read from their first bit, as
+	// interleaved() does). Up to 64 nucleotides, they are 128-bit integers aligned on the left.
+	const size_t num_kmer_nucl = this->k - this->m;
+	const bool use_values = num_kmer_nucl <= 64;
+	vector<pair<uint64_t, uint64_t> > & current_values = buffers.current_values;
+	current_values.assign(use_values ? nb_cols : 0, make_pair(uint64_t(0), uint64_t(0)));
 	vector<uint8_t *> memory;
-	// Interleaves of current pointed kmers
 	vector<interleved_t> current_interleaves;
-
-	size_t num_kmer_nucl = this->k - this->m;
-	// Fill the first interleaves
-	for (size_t i=0 ; i<matrix.size() ; i++) {
-		memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
-		current_interleaves.push_back((interleved_t){0,0,0});
-		if (matrix[i].size() > 0) {
-			current_interleaves[i] = interleaved(matrix[i][0], memory[i],
-												num_kmer_nucl, num_kmer_nucl - i);
+	if (not use_values)
+		for (size_t col=0 ; col<nb_cols ; col++) {
+			memory.push_back(new uint8_t[(num_kmer_nucl + 3) / 4]);
+			current_interleaves.push_back((interleved_t){0,0,0});
 		}
+	// Columns in the order of the candidates: the one in the middle first, then alternate
+	// left-right. Up to 64 columns, the selectable columns are also bits of ready_mask, in the
+	// order of the candidates (bit candidate_rank[col]).
+	vector<size_t> & candidate_order = buffers.candidate_order;
+	vector<size_t> & candidate_rank = buffers.candidate_rank;
+	candidate_order.resize(nb_cols);
+	candidate_rank.resize(nb_cols);
+	for (size_t i=0 ; i<nb_cols ; i++) {
+		candidate_order[i] = i % 2 == 0 ? nb_cols / 2 + i / 2 : nb_cols / 2 - 1 - i / 2;
+		candidate_rank[candidate_order[i]] = i;
 	}
+	const bool use_mask = nb_cols <= 64;
+	uint64_t ready_mask = 0;
+	auto set_ready = [&](size_t col, bool ready) {
+		head_ready[col] = ready;
+		if (use_mask) {
+			if (ready)
+				ready_mask |= uint64_t(1) << candidate_rank[col];
+			else
+				ready_mask &= ~(uint64_t(1) << candidate_rank[col]);
+		}
+	};
 
-	vector<vector<uint8_t *> > result;
+	auto set_current = [&](size_t col) {
+		const uint64_t id = col_start[col] + current_kmers[col];
+		const uint64_t sk = sk_of[id];
+		head_sk[col] = sk;
+		sk_counts[sk] += 1;
+		if (sk_counts[sk] == sk_size[sk]) {
+			// All the kmers of the skmer are first in their columns
+			for (size_t sk_column=sk_col[sk] ; sk_column<sk_col[sk]+sk_size[sk] ; sk_column++)
+				set_ready(sk_column, true);
+		} else
+			set_ready(col, false);
+		const uint8_t * kmer = matrix[col][current_kmers[col]];
+		if (not use_values) {
+			current_interleaves[col] = interleaved(kmer, memory[col], num_kmer_nucl, num_kmer_nucl - col);
+			return;
+		}
+		uint64_t high, low;
+		if (keys != nullptr) {
+			// Same value as the sort key (no padding bit: the same nucleotides are read)
+			high = 0;
+			low = (*keys)[col][current_kmers[col]];
+		} else
+			interleaved_value(kmer, 0, num_kmer_nucl, num_kmer_nucl - col, high, low);
+		const uint shift = 128 - 2 * num_kmer_nucl;
+		if (shift >= 64) {
+			high = low << (shift - 64);
+			low = 0;
+		} else if (shift > 0) {
+			high = (high << shift) | (low >> (64 - shift));
+			low <<= shift;
+		}
+		current_values[col] = make_pair(high, low);
+	};
+	// inf_interleaved(): the values are compared on the interleaved part of the 2 kmers (the
+	// shortest one), then on the whole kmers if they have the same prefix size.
+	auto inter_size = [num_kmer_nucl](size_t pref) -> size_t {
+		const size_t suf = num_kmer_nucl - pref;
+		return pref < suf ? 2 * pref + 1 : 2 * suf;
+	};
+	auto inf_current = [&](size_t col1, size_t col2) -> bool {
+		if (not use_values)
+			return inf_interleaved(current_interleaves[col1], current_interleaves[col2]);
+		uint64_t high1 = current_values[col1].first, low1 = current_values[col1].second;
+		uint64_t high2 = current_values[col2].first, low2 = current_values[col2].second;
+		if (col1 != col2) {
+			const size_t bits = 2 * min(inter_size(num_kmer_nucl - col1), inter_size(num_kmer_nucl - col2));
+			if (bits <= 64) {
+				const uint64_t mask = bits == 0 ? 0 : ~uint64_t(0) << (64 - bits);
+				high1 &= mask; high2 &= mask;
+				low1 = low2 = 0;
+			} else {
+				const uint64_t mask = ~uint64_t(0) << (128 - bits);
+				low1 &= mask; low2 &= mask;
+			}
+		}
+		return high1 != high2 ? high1 < high2 : low1 < low2;
+	};
+
+	for (size_t col=0 ; col<nb_cols ; col++)
+		if (matrix[col].size() > 0)
+			set_current(col);
+
+	paths.ends.reserve(paths.ends.size() + sk_first.size());
+	paths.kmers.reserve(paths.kmers.size() + nb_kmers);
 
 	// Add iteratively the skmers into the sorted list
-	while(not matrix_consumed) {
-		vector<interleved_t> candidates;
-		// Construct the list of compatible kmers
-		for (size_t i=0 ; i<matrix.size() ; i++) {
-			// Add the interleaved kmer with also a position interleaved.
-			// The one in the middle is first in the list and then alternate left-right
-			size_t position = matrix.size()/2;
-			if (i % 2 == 0)
-				position += i/2;
-			else
-				position -= 1 + i/2;
-
-			if (current_kmers[position] < matrix[position].size()) {
-				// Get the related skmer
-				uint8_t * kmer = matrix[position][current_kmers[position]];
-				vector<uint8_t *> * sk = sk_index[kmer];
-
-				// Add the skmer only if all the related kmers are present
-				if ((sk_counts.find(sk) != sk_counts.end()) and (sk_counts[sk] == sk->size())) {
-					candidates.push_back(current_interleaves[position]);
-				}
+	uint64_t remaining = nb_kmers;
+	while (remaining > 0) {
+		// Select the min first kmer whose skmer has all its kmers first (min_interleaved())
+		size_t selected = nb_cols;
+		if (use_mask) {
+			for (uint64_t mask=ready_mask ; mask!=0 ; mask&=mask-1) {
+				const size_t position = candidate_order[count_trailing_zeros(mask)];
+				if (selected == nb_cols or inf_current(position, selected))
+					selected = position;
 			}
-		}
+		} else
+			for (size_t position : candidate_order)
+				if (head_ready[position] and (selected == nb_cols or inf_current(position, selected)))
+					selected = position;
+		if (selected == nb_cols)
+			throw runtime_error("compact: no superkmer can be selected (the links are not colinear)");
 
-		// Select the min kmer and add the related skmer to the output
-		interleved_t selected = min_interleaved(candidates.begin(), candidates.end());
-		candidates = vector<interleved_t>();
-		size_t col = selected.suf_size;
-		uint8_t * selected_kmer = matrix[col][current_kmers[col]];
-		vector<uint8_t *> * selected_sk = sk_index[selected_kmer];
-
-		result.push_back(*selected_sk);
-
-		// remove selected kmers from the counts
-		sk_counts.erase(selected_sk);
-
-		// Jump over selected kmers in the matrix
-		for (uint8_t * kmer : *selected_sk) {
-			col = columns[kmer];
+		// Add the related skmer to the output
+		const uint64_t sk = head_sk[selected];
+		sk_counts[sk] = 0;
+		// Jump over its kmers in the matrix: they are the first remaining kmers of its columns
+		for (size_t col=sk_col[sk] ; col<sk_col[sk]+sk_size[sk] ; col++) {
+			paths.kmers.push_back(matrix[col][current_kmers[col]]);
 			current_kmers[col] += 1;
-
-			size_t row = current_kmers[col];
-			if (row < matrix[col].size()) {
-				// Update the interleaved value
-				current_interleaves[col] = interleaved(matrix[col][row], memory[col],
-													num_kmer_nucl, num_kmer_nucl - col);
-				// Update the sk counts
-				auto sk = sk_index[matrix[col][row]];
-				if (sk_counts.find(sk) == sk_counts.end())
-					sk_counts[sk] = 0;
-				sk_counts[sk] += 1;
-			}
+			remaining -= 1;
+			if (current_kmers[col] < matrix[col].size())
+				set_current(col);
+			else
+				set_ready(col, false);
 		}
-
-		// Is it over
-		matrix_consumed = true;
-		for (size_t i=0 ; i<matrix.size() ; i++)
-			if (current_kmers[i] < matrix[i].size()) {
-				matrix_consumed = false;
-				break;
-			}
+		paths.close_path();
 	}
 
 	// free memory
 	for (uint8_t * mem : memory)
 		delete[](mem);
-	for (vector<uint8_t *> * sk : skmers)
-		delete(sk);
-
-	return result;
 }
 
 
-vector<vector<uint8_t *> > Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers) {
+void Compact::sorted_assembly(vector<vector<uint8_t *> > & kmers, Paths & paths) {
 	// 1 - Sort Matrix per column
 	this->sort_matrix(kmers);
 
-    vector<vector<pair<uint64_t, uint64_t> > > kmer_pairs;
+	// Pair columns (the buffers are kept from section to section)
+	const uint nb_links = this->k - this->m;
+	this->links.resize(nb_links);
+	for (uint i=0 ; i<nb_links ; i++) {
+		// 2 and 3 - Links of the 2 columns: chain of the overlapping kmers
+		if (nb_links >= 2 and nb_links <= 64) {
+			this->chain_columns(kmers[i], kmers[i+1], this->links[i]);
+			continue;
+		}
 
-	// Pair columns
-	for (uint i=0 ; i<this->k-this->m ; i++) {
 		// 2 - Find all the possible overlaps of kmers
-        vector<pair<uint64_t, uint64_t> > candidate_links = this->pair_kmers(kmers[i], kmers[i+1]);
+		this->pair_kmers(kmers[i], kmers[i+1], this->candidates, this->pair_index);
 
 		// 3 - Filter out kmer pairs that are not in optimal colinear chainings
-		const vector<pair<uint64_t, uint64_t> > colinear_links = this->colinear_chaining(candidate_links);
-
-		kmer_pairs.push_back(colinear_links);
+		this->colinear_chaining(this->candidates, this->links[i]);
 	}
 
-	// // 4 - Finish the ordering by sorting skmers that could have been interchanged
-	const vector<vector<uint8_t *> > skmers = polish_sort(kmers, kmer_pairs);
+	// 4 - Finish the ordering by sorting skmers that could have been interchanged. Without padding
+	// bit (k - m multiple of 4), the interleaved values of polish_sort() are the sort keys.
+	paths.clear();
+	const bool same_values = this->column_keys_valid and (this->k - this->m) % 4 == 0;
+	this->polish_sort(kmers, this->links, paths, this->polish_buffers, same_values ? &this->column_keys : nullptr);
+}
 
-	// return skmers;
-	return skmers;
+
+/* Links of greedy_assembly() between 2 columns (2 to 64 nucleotides): each kmer of the second
+ * column (in order) takes the first unused kmer of the first column whose k-m-1 suffix is its
+ * k-m-1 prefix, in the order of the first column. With the kmers of the first column grouped by
+ * suffix (in column order), it is the next one of its group. */
+template <typename Symbol>
+static void greedy_links(const vector<uint8_t *> & column1, const vector<uint8_t *> & column2, uint nb_nucl,
+                         vector<pair<uint8_t *, uint8_t *> > & assembly, vector<Symbol> & table,
+                         Compact::ChainBuffers & buffers) {
+	const uint sym_bits = 2 * (nb_nucl - 1);
+	const uint64_t mask_lo = sym_bits >= 64 ? ~uint64_t(0) : (uint64_t(1) << sym_bits) - 1;
+	const uint64_t mask_hi = sym_bits <= 64 ? 0 : (uint64_t(1) << (sym_bits - 64)) - 1;
+	SymbolGroups<Symbol> groups{table, buffers.table_groups, buffers.group_of_column, buffers.group_start, buffers.group_columns};
+	groups.build(column1.size(), [&](size_t i) {
+		uint64_t high, low;
+		kmer_value(column1[i], nb_nucl, high, low);
+		return Symbol::make(high & mask_hi, low & mask_lo, i);
+	});
+	// Next unused kmer of each group
+	vector<uint64_t> & next = buffers.group_of_row;
+	next.assign(groups.group_start.begin(), groups.group_start.end() - 1);
+	for (uint8_t * kmer : column2) {
+		uint64_t high, low;
+		kmer_value(kmer, nb_nucl, high, low);
+		const uint64_t group = groups.find(Symbol::make(high >> 2, (low >> 2) | (high << 62), 0));
+		if (group != SymbolGroups<Symbol>::none and next[group] < groups.group_start[group + 1])
+			assembly.emplace_back(column1[groups.members[next[group]++]], kmer);
+		else
+			assembly.emplace_back(nullptr, kmer);
+	}
 }
 
 
@@ -839,6 +1375,14 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 	vector<Candidate> index;
 
 	for (uint i=0 ; i<nb_nucl ; i++) {
+		if (nb_nucl >= 2 and nb_nucl <= 64) {
+			if (nb_nucl - 1 <= 32)
+				greedy_links(kmers[i], kmers[i+1], nb_nucl, assembly, this->chain_index64, this->chain_buffers);
+			else
+				greedy_links(kmers[i], kmers[i+1], nb_nucl, assembly, this->chain_index128, this->chain_buffers);
+			continue;
+		}
+
 		// Index kmers in ith set
 		index.clear();
 		for (uint8_t * kmer : kmers[i]) {
@@ -898,109 +1442,110 @@ vector<pair<uint8_t *, uint8_t *> > Compact::greedy_assembly(vector<vector<uint8
 	return assembly;
 }
 
-vector<vector<uint8_t *> > Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact) {
-	vector<vector<uint8_t *> > paths;
-	// Path of the last kmer of each path, indexed by the position of the kmer in the kmer
-	// buffer. 0 for the other kmers (the default value of the previous std::unordered_map).
+void Compact::pairs_to_paths(const vector<pair<uint8_t *, uint8_t *> > & to_compact, Paths & paths) {
+	// Next kmer of each kmer in its path (by position of the record in the kmer buffer) and
+	// first kmers of the paths in their order of creation. A link extends the path whose last
+	// kmer is the first kmer of the link: greedy_assembly() uses a kmer once as the first kmer of
+	// a link, so the paths are the chains of links.
 	const uint64_t record_size = this->bytes_compacted + this->data_size + this->mini_pos_size;
-	vector<uint> path_registry(this->next_free / record_size + 1, 0);
-	auto registry = [&](uint8_t * kmer) -> uint & {
-		return path_registry[(kmer - this->kmer_buffer) / record_size];
-	};
-
+	vector<uint8_t *> & next = this->path_next;
+	vector<uint8_t *> & heads = this->path_heads;
+	next.assign(this->next_free / record_size + 1, nullptr);
+	heads.clear();
 	for (const pair<uint8_t *, uint8_t *> & p : to_compact) {
-		// First element of a compaction path
-		if (p.first == nullptr) {
-			registry(p.second) = paths.size();
-			paths.emplace_back(vector<uint8_t *>());
-
-			uint vec_idx = registry(p.second);
-			paths[vec_idx].push_back(p.second);
-		}
-		// Extending existing path
-		else {
-			uint vec_idx = registry(p.first);
-			paths[vec_idx].push_back(p.second);
-			registry(p.first) = 0;
-			registry(p.second) = vec_idx;
-		}
+		if (p.first == nullptr)
+			heads.push_back(p.second);
+		else
+			next[(p.first - this->kmer_buffer) / record_size] = p.second;
 	}
 
-	return paths;
+	paths.clear();
+	paths.kmers.reserve(to_compact.size());
+	paths.ends.reserve(heads.size());
+	for (uint8_t * head : heads) {
+		for (uint8_t * kmer=head ; kmer!=nullptr ; kmer=next[(kmer - this->kmer_buffer) / record_size])
+			paths.kmers.push_back(kmer);
+		paths.close_path();
+	}
 }
 
-uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, const MinimizerBlockEncoder & encoder, vector<uint8_t> & output) {
-	const uint data_size = encoder.data_size;
-	uint64_t nb_blocks = 0;
+uint64_t Compact::write_paths(const vector<vector<uint8_t *> > & paths, CompactSection & section) {
+	for (const vector<uint8_t *> & path : paths)
+		this->write_path(path.data(), path.size(), section);
+	return paths.size();
+}
+
+
+uint64_t Compact::write_paths(const Paths & paths, CompactSection & section) {
+	for (size_t i=0 ; i<paths.size() ; i++) {
+		const uint64_t start = i == 0 ? 0 : paths.ends[i - 1];
+		this->write_path(paths.kmers.data() + start, paths.ends[i] - start, section);
+	}
+	return paths.size();
+}
+
+
+void Compact::write_path(uint8_t * const * path, size_t path_size, CompactSection & section) {
+	const uint data_size = this->data_size;
 	uint kmer_bytes = (k - m + 3) / 4;
 	uint kmer_offset = (4 - ((k - m) % 4)) % 4;
 	// Width of the minimizer positions in the kmer buffer (computed from the input section)
 	uint mini_pos_size = this->mini_pos_size;
 
+	// Buffers of the superkmer and of its data, kept from path to path (a path has at most
+	// k - m + 1 kmers)
 	uint max_skmer_bytes = (2 * (k - m) + 3) / 4;
-	uint8_t * skmer_buffer = new uint8_t[max_skmer_bytes + 1];
 	uint data_bytes = (k - m + 1) * data_size;
-	uint8_t * data_buffer = new uint8_t[data_bytes];
+	if (this->skmer_bytes.size() < max_skmer_bytes + 1)
+		this->skmer_bytes.resize(max_skmer_bytes + 1);
+	if (this->skmer_data.size() < data_bytes + 1)
+		this->skmer_data.resize(data_bytes + 1);
+	uint8_t * skmer_buffer = this->skmer_bytes.data();
+	uint8_t * data_buffer = this->skmer_data.data();
 
-	// uint8_t encoding[] = {0, 1, 3, 2};
-	// Stringifyer strif(encoding);
+	// Cleaning previous skmers/data
+	memset(skmer_buffer, 0, max_skmer_bytes + 1);
+	memset(data_buffer, 0, data_bytes);
 
-	// Write skmer per skmer
-	for (const vector<uint8_t *> & path : paths) {
-		// cout << "path " << ++idx << "/" << paths.size() << endl;
-		// Cleaning previous skmers/data
-		memset(skmer_buffer, 0, max_skmer_bytes + 1);
-		memset(data_buffer, 0, data_bytes);
-
-		// Get the skmer minimizer position
-		uint mini_pos = 0;
-		uint8_t * mini_pos_pointer = path[0] + kmer_bytes + data_size;
-		for (uint b=0 ; b<mini_pos_size ; b++) {
-			mini_pos <<= 8;
-			mini_pos += *mini_pos_pointer;
-			mini_pos_pointer += 1;
-		}
-
-		// Usefull variables
-		uint skmer_size = k - m - 1 + path.size();
-		// uint skmer_bytes = (skmer_size + 3) / 4;
-		uint skmer_offset = (4 - (skmer_size % 4)) % 4;
-
-		// cout << "first kmer" << endl;
-		// Save the first kmer
-		memcpy(skmer_buffer, path[0], kmer_bytes);
-		leftshift8(skmer_buffer, kmer_bytes, 2 * kmer_offset);
-		rightshift8(skmer_buffer, kmer_bytes + 1, 2 * skmer_offset);
-		// Save the first data
-		memcpy(data_buffer, path[0] + kmer_bytes, data_size);
-
-		// Compact kmer+data one by one
-		for (uint kmer_idx = 1 ; kmer_idx<path.size() ; kmer_idx++) {
-			// cout << "kmer " << kmer_idx << endl;
-			uint8_t * kmer = path[kmer_idx];
-
-			// Compute compaction position
-			uint compact_nucl_pos = skmer_offset + k - m - 1 + kmer_idx;
-			uint compact_byte = compact_nucl_pos / 4;
-			uint compact_shift = 3 - (compact_nucl_pos % 4);
-			// Compact the nucleotide
-			uint8_t last_nucl = kmer[kmer_bytes - 1] & 0b11;
-			skmer_buffer[compact_byte] |= last_nucl << (2 * compact_shift);
-			// Copy data
-			memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
-		}
-
-		// cout << "write_compacted_sequence_without_mini" << endl;
-		// Write everything in the section
-		encoder.append_without_mini(output, skmer_buffer, skmer_size, mini_pos, data_buffer);
-		nb_blocks += 1;
+	// Get the skmer minimizer position
+	uint mini_pos = 0;
+	uint8_t * mini_pos_pointer = path[0] + kmer_bytes + data_size;
+	for (uint b=0 ; b<mini_pos_size ; b++) {
+		mini_pos <<= 8;
+		mini_pos += *mini_pos_pointer;
+		mini_pos_pointer += 1;
 	}
 
-	// cout << "delete" << endl;
+	// Usefull variables
+	uint skmer_size = k - m - 1 + path_size;
+	uint skmer_offset = (4 - (skmer_size % 4)) % 4;
 
-	delete[] skmer_buffer;
-	delete[] data_buffer;
-	return nb_blocks;
+	// Save the first kmer
+	memcpy(skmer_buffer, path[0], kmer_bytes);
+	leftshift8(skmer_buffer, kmer_bytes, 2 * kmer_offset);
+	rightshift8(skmer_buffer, kmer_bytes + 1, 2 * skmer_offset);
+	// Save the first data
+	memcpy(data_buffer, path[0] + kmer_bytes, data_size);
+
+	// Compact kmer+data one by one
+	for (uint kmer_idx = 1 ; kmer_idx<path_size ; kmer_idx++) {
+		uint8_t * kmer = path[kmer_idx];
+
+		// Compute compaction position
+		uint compact_nucl_pos = skmer_offset + k - m - 1 + kmer_idx;
+		uint compact_byte = compact_nucl_pos / 4;
+		uint compact_shift = 3 - (compact_nucl_pos % 4);
+		// Compact the nucleotide
+		uint8_t last_nucl = kmer[kmer_bytes - 1] & 0b11;
+		skmer_buffer[compact_byte] |= last_nucl << (2 * compact_shift);
+		// Copy data
+		memcpy(data_buffer + kmer_idx * data_size, path[kmer_idx] + kmer_bytes, data_size);
+	}
+
+	// Add the superkmer and its data to the section
+	section.superkmers.push_back({skmer_size, mini_pos});
+	section.superkmer_bytes.insert(section.superkmer_bytes.end(), skmer_buffer, skmer_buffer + (skmer_size + 3) / 4);
+	section.superkmer_bytes.insert(section.superkmer_bytes.end(), data_buffer, data_buffer + path_size * data_size);
 }
 
 

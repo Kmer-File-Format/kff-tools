@@ -35,6 +35,22 @@ uint64_t interleaved_size(const uint64_t k, const uint64_t m, const uint64_t min
 interleved_t interleaved(const uint8_t * skmer, uint8_t * interleaved_skmer, std::size_t size, std::size_t mini_position);
 
 
+/** Nucleotides of a kmer in the interleaved order around its minimizer, as a 128-bit integer.
+ * The interleaved order is the order of interleaved(): for each distance t to the minimizer, the
+ * suffix nucleotide (index pref + t), then the prefix one (index pref - 1 - t), when they exist.
+ *
+ * @param kmer Byte array of the nucleotides (2 bits each, from the most significant bits of the
+ * first byte).
+ * @param first_pos Position of the first nucleotide of the kmer in the byte array.
+ * @param nb_nucl Number of nucleotides of the kmer (first_pos + nb_nucl <= 64).
+ * @param pref Number of nucleotides before the minimizer (pref <= nb_nucl).
+ * @param high, low The value, aligned on the right: the last nucleotide is in the 2 lowest bits
+ * of low.
+ */
+void interleaved_value(const uint8_t * kmer, uint64_t first_pos, uint64_t nb_nucl, uint64_t pref,
+                       uint64_t & high, uint64_t & low);
+
+
 /** Compare 2 interleaved values
  * 
  * @param i1 A skmer in the interleaved format

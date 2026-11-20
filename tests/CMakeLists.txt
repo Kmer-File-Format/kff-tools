@@ -8,6 +8,12 @@ set(SRCS
     utils_test.cpp
     outstr_test.cpp
     blocks_test.cpp
+    colinear_reference_test.cpp
+    compact_key_test.cpp
+    polish_reference_test.cpp
+    pair_reference_test.cpp
+    chain_columns_test.cpp
+    greedy_reference_test.cpp
 )
 
 # Unit tests ("test" is a target name reserved by CTest)
