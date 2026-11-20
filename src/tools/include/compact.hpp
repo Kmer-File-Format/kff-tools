@@ -69,6 +69,10 @@ struct ChainSymbol128 {
 	uint64_t hash() const { return (lo ^ (hi * 0xBF58476D1CE4E5B9ULL)) * 0x9E3779B97F4A7C15ULL; }
 };
 
+/** The (nb_nucl + 3) / 4 first bytes of subsequence(seq, seq_size, out, begin, begin + nb_nucl - 1),
+ * for nb_nucl <= 28 */
+void extract_kmer(const uint8_t * seq, uint64_t seq_size, uint8_t * out, uint64_t begin, uint64_t nb_nucl);
+
 class Compact: public KffTool {
 private:
 	std::string input_filename;

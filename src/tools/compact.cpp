@@ -353,6 +353,25 @@ vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(Section_Minimizer & sm) 
 }
 
 
+/* The (nb_nucl + 3) / 4 first bytes that subsequence(seq, seq_size, out, begin, begin + nb_nucl - 1)
+ * writes (nb_nucl <= 28): the bytes of the sequence that hold the nucleotides, as an integer
+ * shifted right by the nucleotides after the last one in its byte, on the bytes of the kmer
+ * (subsequence() also writes one more byte in some cases). */
+void extract_kmer(const uint8_t * seq, uint64_t seq_size, uint8_t * out, uint64_t begin, uint64_t nb_nucl) {
+	const uint64_t offset = (4 - seq_size % 4) % 4;
+	const uint64_t last = offset + begin + nb_nucl - 1;
+	const uint64_t start_byte = (offset + begin) / 4;
+	const uint64_t stop_byte = last / 4;
+	uint64_t value = 0;
+	for (uint64_t b=start_byte ; b<=stop_byte ; b++)
+		value = (value << 8) | seq[b];
+	value >>= 2 * (3 - last % 4);
+	const uint64_t nb_bytes = (nb_nucl + 3) / 4;
+	for (uint64_t b=0 ; b<nb_bytes ; b++)
+		out[b] = static_cast<uint8_t>(value >> (8 * (nb_bytes - 1 - b)));
+}
+
+
 vector<vector<uint8_t *> > Compact::prepare_kmer_matrix(const CompactSection & sm) {
 	vector<vector<uint8_t *> > kmer_matrix;
 	this->prepare_kmer_matrix(sm, kmer_matrix);
@@ -409,7 +428,10 @@ void Compact::prepare_kmer_matrix(const CompactSection & sm, vector<vector<uint8
 		for (uint kmer_idx=0 ; kmer_idx<nb_kmers ; kmer_idx++) {
 			uint8_t * record = this->kmer_buffer + this->next_free;
 			// Copy kmer sequence
-			subsequence(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, kmer_idx + nb_nucl - 1);
+			if (nb_nucl <= 28)
+				extract_kmer(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, nb_nucl);
+			else
+				subsequence(seq_buffer, nb_nucl + nb_kmers - 1, record, kmer_idx, kmer_idx + nb_nucl - 1);
 			// Copy data array
 			memcpy(record + kmer_bytes, data_buffer + kmer_idx * sm.data_size, sm.data_size);
 			// Write mini position

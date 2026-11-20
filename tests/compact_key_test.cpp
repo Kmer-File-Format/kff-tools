@@ -8,6 +8,7 @@
 
 #include "lest.hpp"
 #include "compact.hpp"
+#include "sequences.hpp"
 
 using namespace std;
 
@@ -73,6 +74,28 @@ const lest::test module[] = {
 				same_column = memcmp(matrix[0][j], expected_column[j], record_size) == 0;
 			EXPECT( same_column );
 		}
+	},
+
+	CASE("extract_kmer gives the bytes of subsequence") {
+		mt19937_64 rnd(61);
+		bool same = true;
+		uint64_t nb_tests = 0;
+		for (uint64_t nb_nucl = 1; nb_nucl <= 28; nb_nucl++)
+			for (uint64_t seq_size = nb_nucl; seq_size <= nb_nucl + 40; seq_size++)
+				for (int rep = 0; rep < 3; rep++) {
+					// Random bytes (padding bits included), 1 more byte for subsequence()
+					vector<uint8_t> seq((seq_size + 3) / 4 + 1);
+					for (uint8_t & b : seq) b = rnd();
+					for (uint64_t begin = 0; begin + nb_nucl <= seq_size; begin++) {
+						vector<uint8_t> expected((nb_nucl + 3) / 4 + 2, 0), result((nb_nucl + 3) / 4 + 2, 0);
+						subsequence(seq.data(), seq_size, expected.data(), begin, begin + nb_nucl - 1);
+						extract_kmer(seq.data(), seq_size, result.data(), begin, nb_nucl);
+						same = same and equal(result.begin(), result.begin() + (nb_nucl + 3) / 4, expected.begin());
+						nb_tests += 1;
+					}
+				}
+		EXPECT( same );
+		EXPECT( nb_tests > 30000u );
 	},
 };
 
