@@ -106,10 +106,11 @@ void Compact::exec() {
 		workers.back()->sorted = this->sorted;
 	}
 
-	// With several threads, a batch is compacted by the workers while the next one is loaded
-	// (in_flight): finish() waits for it and writes it, flush() writes the previous batch then
-	// starts the compaction of the loaded one. The batches are written in order.
-	vector<CompactSection> in_flight;
+	// With several threads, a batch is compacted by the workers (in_flight) while the previous
+	// one is written (to_write) then the next one is loaded: finish() waits for the compaction of
+	// in_flight and writes it, flush() starts the compaction of the loaded batch then writes the
+	// previous one. The batches are written in order, by the main thread only.
+	vector<CompactSection> in_flight, to_write;
 	vector<thread> threads;
 	atomic<size_t> next_section(0);
 	auto work = [&](Compact * worker) {
@@ -121,10 +122,13 @@ void Compact::exec() {
 			Compact::write_section(section, outfile);
 		sections.clear();
 	};
-	auto finish = [&]() {
+	auto join = [&]() {
 		for (thread & th : threads)
 			th.join();
 		threads.clear();
+	};
+	auto finish = [&]() {
+		join();
 		write_batch(in_flight);
 	};
 	auto flush = [&]() {
@@ -135,11 +139,13 @@ void Compact::exec() {
 				this->compact_section(section);
 			write_batch(batch);
 		} else {
-			finish();
+			join();
+			to_write.swap(in_flight);
 			in_flight.swap(batch);
 			next_section = 0;
 			for (size_t t=0 ; t<workers.size() and t<in_flight.size() ; t++)
 				threads.emplace_back(work, workers[t].get());
+			write_batch(to_write);
 		}
 		batch_bytes = 0;
 	};
