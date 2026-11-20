@@ -1,10 +1,28 @@
 #include <vector>
 #include <string>
 
+#include <charconv>
+
 #include "validate.hpp"
 
 
 using namespace std;
+
+
+/* Appends the decimal value to text (as cout << value) */
+static inline void append_uint(string & text, uint64_t value) {
+	char digits[24];
+	text.append(digits, to_chars(digits, digits + sizeof(digits), value).ptr - digits);
+}
+
+/* Appends the nucleotides of the sequence (as Stringifyer::translate()) */
+static inline void append_nucleotides(string & text, const Stringifyer & strif, const uint8_t * sequence, size_t nucl_length) {
+	const size_t start = text.size();
+	text.resize(start + nucl_length + 4);
+	char * end = strif.write(sequence, nucl_length, &text[start]);
+	text.resize(end - text.data());
+}
+
 
 
 
@@ -132,6 +150,7 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 	uint max_nucl = k + max - 1;
 	uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
 	uint8_t * data_bytes = new uint8_t[data_size * max];
+	string text;
 
 	for (uint64_t i=0 ; i<sr.nb_blocks ; i++) {
 		if (infile.tellp() >= infile.end_position) {
@@ -146,25 +165,31 @@ bool Validate::is_valid_r_section(Kff_file & infile) {
 		}
 
 		if (verbose) {
-			cout << "* Number of kmers: " << nb_kmers << '\n';
-			cout << strif.translate(seq_bytes, k + nb_kmers - 1) << '\n';
+			// The lines of the block in a buffer, written at once
+			text.clear();
+			text += "* Number of kmers: ";
+			append_uint(text, nb_kmers);
+			text += '\n';
+			append_nucleotides(text, strif, seq_bytes, k + nb_kmers - 1);
+			text += '\n';
 
 			if (data_size != 0) {
-				cout << "data array: ";
+				text += "data array: ";
 				for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
 					if (i_data > 0)
-						cout << ",\t";
+						text += ",\t";
 
-					cout << "[";
+					text += '[';
 					for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
 						if (b_idx > 0)
-							cout << "\t";
-						cout << (uint)data_bytes[data_size*i_data+b_idx];
+							text += '\t';
+						append_uint(text, data_bytes[data_size*i_data+b_idx]);
 					}
-					cout << "]";
+					text += ']';
 				}
-				cout << '\n';
+				text += '\n';
 			}
+			cout.write(text.data(), text.size());
 		}
 	}
 
@@ -193,6 +218,7 @@ bool Validate::is_valid_m_section(Kff_file & infile) {
 	uint max_nucl = k - m + max - 1;
 	uint8_t * seq_bytes = new uint8_t[max_nucl / 4 + 1];
 	uint8_t * data_bytes = new uint8_t[data_size * max];
+	string text, seq;
 
 	for (uint i=0 ; i<sm.nb_blocks ; i++) {
 		if (infile.tellp() >= infile.end_position) {
@@ -212,22 +238,36 @@ bool Validate::is_valid_m_section(Kff_file & infile) {
 		}
 
 		if (verbose) {
-			cout << "* minimizer position: " << mini_pos << "\tNumber of kmers: " << nb_kmers << '\n';
-			string seq = strif.translate(seq_bytes, k - m + nb_kmers - 1);
-			cout << seq.substr(0, mini_pos) << "|" << seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos) << '\n';
+			// Lines of the block in a buffer. The part before the second substr() (which can throw
+			// for an invalid position) is written first, as the chain of << did.
+			text.clear();
+			text += "* minimizer position: ";
+			append_uint(text, mini_pos);
+			text += "\tNumber of kmers: ";
+			append_uint(text, nb_kmers);
+			text += '\n';
+			seq.clear();
+			append_nucleotides(seq, strif, seq_bytes, k - m + nb_kmers - 1);
+			text.append(seq, 0, mini_pos);
+			text += '|';
+			cout.write(text.data(), text.size());
+			text.clear();
+			text += seq.substr(mini_pos, k - m + nb_kmers - 1 - mini_pos);
+			text += '\n';
 			if (data_size != 0) {
-				cout << "data array: ";
+				text += "data array: ";
 				for (uint i_data=0 ; i_data<nb_kmers ; i_data++) {
-					cout << "[";
+					text += '[';
 					for (uint b_idx=0 ; b_idx<data_size ; b_idx++) {
 						if (b_idx > 0)
-							cout << "\t";
-						cout << (uint)data_bytes[data_size*i_data+b_idx];
+							text += '\t';
+						append_uint(text, data_bytes[data_size*i_data+b_idx]);
 					}
-					cout << "],\t";
+					text += "],\t";
 				}
-				cout << '\n';
+				text += '\n';
 			}
+			cout.write(text.data(), text.size());
 		}
 	}
 
