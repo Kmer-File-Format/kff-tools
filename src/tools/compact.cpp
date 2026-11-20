@@ -106,29 +106,43 @@ void Compact::exec() {
 		workers.back()->sorted = this->sorted;
 	}
 
-	auto flush = [&]() {
-		if (batch.empty())
-			return;
-		if (workers.empty() or batch.size() == 1) {
-			for (CompactSection & section : batch)
-				this->compact_section(section);
-		} else {
-			atomic<size_t> next_section(0);
-			auto work = [&](Compact * worker) {
-				for (size_t i = next_section++ ; i < batch.size() ; i = next_section++)
-					worker->compact_section(batch[i]);
-			};
-			vector<thread> threads;
-			for (size_t t=0 ; t<workers.size() and t<batch.size() ; t++)
-				threads.emplace_back(work, workers[t].get());
-			for (thread & th : threads)
-				th.join();
-		}
-		for (CompactSection & section : batch) {
+	// With several threads, a batch is compacted by the workers while the next one is loaded
+	// (in_flight): finish() waits for it and writes it, flush() writes the previous batch then
+	// starts the compaction of the loaded one. The batches are written in order.
+	vector<CompactSection> in_flight;
+	vector<thread> threads;
+	atomic<size_t> next_section(0);
+	auto work = [&](Compact * worker) {
+		for (size_t i = next_section++ ; i < in_flight.size() ; i = next_section++)
+			worker->compact_section(in_flight[i]);
+	};
+	auto write_batch = [&](vector<CompactSection> & sections) {
+		for (CompactSection & section : sections) {
 			outfile.register_position('m');
 			outfile.write(section.output.data(), section.output.size());
 		}
-		batch.clear();
+		sections.clear();
+	};
+	auto finish = [&]() {
+		for (thread & th : threads)
+			th.join();
+		threads.clear();
+		write_batch(in_flight);
+	};
+	auto flush = [&]() {
+		if (batch.empty())
+			return;
+		if (workers.empty()) {
+			for (CompactSection & section : batch)
+				this->compact_section(section);
+			write_batch(batch);
+		} else {
+			finish();
+			in_flight.swap(batch);
+			next_section = 0;
+			for (size_t t=0 ; t<workers.size() and t<in_flight.size() ; t++)
+				threads.emplace_back(work, workers[t].get());
+		}
 		batch_bytes = 0;
 	};
 
@@ -137,6 +151,7 @@ void Compact::exec() {
 
 		if (section_type == 'v') {
 			flush();
+			finish();
 			Section_GV isgv(&infile);
 			isgv.close();
 
@@ -174,6 +189,7 @@ void Compact::exec() {
 			// Rewrite a value section if max is not sufficently large
 			if (outfile.global_vars["max"] < k - m + 1) {
 				flush();
+				finish();
 				unordered_map<string, uint64_t> values(outfile.global_vars);
 				Section_GV sgv(&outfile);
 
@@ -196,6 +212,7 @@ void Compact::exec() {
 		}
 	}
 	flush();
+	finish();
 
 	infile.close();
 	outfile.close();
